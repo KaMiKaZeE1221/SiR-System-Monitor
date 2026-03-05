@@ -3,6 +3,52 @@ const http = require('http');
 const os = require('os');
 const { shell, ipcRenderer } = require('electron');
 
+const APP_PACKAGE = (() => {
+  try {
+    return require('./package.json');
+  } catch (error) {
+    return {};
+  }
+})();
+
+function parseGithubRepoFromRepositoryField(repositoryField) {
+  const raw = typeof repositoryField === 'string'
+    ? repositoryField
+    : typeof repositoryField?.url === 'string'
+      ? repositoryField.url
+      : '';
+
+  const text = String(raw || '').trim();
+  if (!text) return null;
+
+  const shorthandMatch = text.match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);
+  if (shorthandMatch) {
+    return {
+      owner: shorthandMatch[1],
+      repo: shorthandMatch[2].replace(/\.git$/i, '')
+    };
+  }
+
+  const normalized = text
+    .replace(/^git\+/i, '')
+    .replace(/^git@github\.com:/i, 'https://github.com/');
+
+  const urlMatch = normalized.match(/^https?:\/\/github\.com\/([^/]+)\/([^/#?]+)(?:[/?#].*)?$/i);
+  if (!urlMatch) return null;
+
+  return {
+    owner: urlMatch[1],
+    repo: urlMatch[2].replace(/\.git$/i, '')
+  };
+}
+
+const APP_VERSION = String(APP_PACKAGE?.version || '').trim();
+const DEFAULT_LATEST_RELEASE_URL = (() => {
+  const repo = parseGithubRepoFromRepositoryField(APP_PACKAGE?.repository);
+  if (!repo) return '';
+  return `https://github.com/${repo.owner}/${repo.repo}/releases/latest`;
+})();
+
 let sensorReader = new SensorReader();
 let updateInterval = 1000;
 let updateTimer;
@@ -286,6 +332,11 @@ function buildWebMonitorHtml() {
       --bg-tertiary: #3a3a3a;
       --text-primary: #e0e0e0;
       --text-secondary: #b0b0b0;
+      --sensor-label-color: #b0b0b0;
+      --sensor-value-color: #4d9fff;
+      --icon-color: #4d9fff;
+      --graph-color: #4d9fff;
+      --block-header-color: #0066ff;
       --border-color: #444;
       --accent: #0066ff;
       --accent-light: #4d9fff;
@@ -294,24 +345,24 @@ function buildWebMonitorHtml() {
     .wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
     .header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; }
     .header-right { display: inline-flex; align-items: center; gap: 8px; }
-    .title { font-size: calc(22px * var(--font-scale)); font-weight: var(--font-weight-bold); color: var(--accent); }
+    .title { font-size: calc(22px * var(--font-scale)); font-weight: var(--font-weight-bold); color: var(--text-primary); }
     .meta { color: var(--text-secondary); font-size: calc(13px * var(--font-scale)); }
-    .summary-toggle { border: 1px solid var(--accent); background: var(--bg-tertiary); color: var(--accent-light); border-radius: 7px; padding: 6px 10px; cursor: pointer; font-size: calc(12px * var(--font-scale)); font-weight: var(--font-weight-bold); }
-    .summary-toggle:hover { background: var(--accent); color: #000; }
+    .summary-toggle { border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); border-radius: 7px; padding: 6px 10px; cursor: pointer; font-size: calc(12px * var(--font-scale)); font-weight: var(--font-weight-bold); }
+    .summary-toggle:hover { background: var(--border-color); color: var(--text-primary); }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; }
     .card { border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); padding: 12px; overflow: hidden; display: flex; flex-direction: column; }
-    .card h3 { margin: 0 0 10px; font-size: calc(13px * var(--font-scale)); letter-spacing: .08em; color: var(--accent); text-transform: uppercase; font-weight: var(--font-weight-bold); display: flex; align-items: center; gap: 8px; }
-    .group-icon { color: var(--accent-light); font-size: calc(14px * var(--font-scale)); line-height: 1; }
+    .card h3 { margin: 0 0 10px; font-size: calc(13px * var(--font-scale)); letter-spacing: .08em; color: var(--block-header-color); text-transform: uppercase; font-weight: var(--font-weight-bold); display: flex; align-items: center; gap: 8px; }
+    .group-icon { color: var(--icon-color); font-size: calc(14px * var(--font-scale)); line-height: 1; }
     .rows { overflow-y: auto; min-height: 0; flex: 1 1 auto; scrollbar-gutter: stable both-edges; padding-bottom: 10px; scroll-padding-bottom: 10px; }
     .row { display: block; border-bottom: 1px solid var(--border-color); padding: 7px 0; font-size: calc(13px * var(--font-scale)); }
     .row:last-child { border-bottom: none; }
     .row-main { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
-    .label { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--font-weight-regular); }
-    .value { color: var(--accent-light); font-family: var(--value-font-family); white-space: normal; overflow-wrap: anywhere; word-break: break-word; text-align: right; max-width: 58%; font-weight: var(--font-weight-bold); }
+    .label { color: var(--sensor-label-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--font-weight-regular); }
+    .value { color: var(--sensor-value-color); font-family: var(--value-font-family); white-space: normal; overflow-wrap: anywhere; word-break: break-word; text-align: right; max-width: 58%; font-weight: var(--font-weight-bold); }
     .empty { color: var(--text-secondary); font-size: calc(13px * var(--font-scale)); }
     .error { color: #ff8f8f; }
     .graph { width: 100%; height: 58px; margin-top: 6px; display: block; }
-    .graph-line { fill: none; stroke: var(--accent-light); stroke-width: 2; vector-effect: non-scaling-stroke; }
+    .graph-line { fill: none; stroke: var(--graph-color); stroke-width: 2; vector-effect: non-scaling-stroke; }
     .graph-meta { margin-top: 3px; display: flex; justify-content: space-between; gap: 6px; color: var(--text-secondary); font-size: calc(10px * var(--font-scale)); }
     body.summary-mode .wrap { max-width: 1700px; }
     body.summary-mode .grid { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
@@ -323,7 +374,7 @@ function buildWebMonitorHtml() {
     .summary-line { margin-top: 5px; display: flex; align-items: center; justify-content: flex-end; gap: 10px; font-size: calc(11px * var(--font-scale)); color: var(--text-secondary); flex-wrap: wrap; white-space: normal; overflow: visible; text-overflow: unset; }
     .summary-part { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: 4px; min-width: 165px; }
     .summary-label { text-transform: uppercase; font-size: calc(10px * var(--font-scale)); letter-spacing: .4px; color: var(--text-secondary); }
-    .summary-value { color: var(--accent-light); font-family: var(--value-font-family); font-weight: var(--font-weight-bold); min-width: 95px; text-align: right; font-variant-numeric: tabular-nums; }
+    .summary-value { color: var(--sensor-value-color); font-family: var(--value-font-family); font-weight: var(--font-weight-bold); min-width: 95px; text-align: right; font-variant-numeric: tabular-nums; }
     .summary-sep { opacity: .65; }
   </style>
 </head>
@@ -335,7 +386,7 @@ function buildWebMonitorHtml() {
         <div id="meta" class="meta">Waiting for data...</div>
       </div>
       <div class="header-right">
-        <button id="summaryModeToggle" class="summary-toggle" type="button" title="Toggle Summary mode (Min/Max values)">Summary Mode</button>
+        <button id="summaryModeToggle" class="summary-toggle" type="button">Summary Mode</button>
       </div>
     </div>
     <div id="grid" class="grid"></div>
@@ -468,9 +519,6 @@ function buildWebMonitorHtml() {
       const button = document.getElementById('summaryModeToggle');
       if (button) {
         button.textContent = domState.summaryMode ? 'Exit Summary Mode' : 'Summary Mode';
-        button.title = domState.summaryMode
-          ? 'Return to graph/regular view'
-          : 'Toggle Summary mode (Min/Max values)';
       }
       if (persist) {
         try {
@@ -526,6 +574,16 @@ function buildWebMonitorHtml() {
       if (palette.bgTertiary) root.style.setProperty('--bg-tertiary', palette.bgTertiary);
       if (palette.textPrimary) root.style.setProperty('--text-primary', palette.textPrimary);
       if (palette.textSecondary) root.style.setProperty('--text-secondary', palette.textSecondary);
+      if (palette.sensorLabel) root.style.setProperty('--sensor-label-color', palette.sensorLabel);
+      else if (palette.textSecondary) root.style.setProperty('--sensor-label-color', palette.textSecondary);
+      if (palette.sensorValue) root.style.setProperty('--sensor-value-color', palette.sensorValue);
+      else if (palette.accentLight) root.style.setProperty('--sensor-value-color', palette.accentLight);
+      if (palette.iconColor) root.style.setProperty('--icon-color', palette.iconColor);
+      else if (palette.accentLight) root.style.setProperty('--icon-color', palette.accentLight);
+      if (palette.graphColor) root.style.setProperty('--graph-color', palette.graphColor);
+      else if (palette.accentLight) root.style.setProperty('--graph-color', palette.accentLight);
+      if (palette.blockHeaderColor) root.style.setProperty('--block-header-color', palette.blockHeaderColor);
+      else if (palette.accent) root.style.setProperty('--block-header-color', palette.accent);
       if (palette.borderColor) root.style.setProperty('--border-color', palette.borderColor);
       if (palette.accent) root.style.setProperty('--accent', palette.accent);
       if (palette.accentLight) root.style.setProperty('--accent-light', palette.accentLight);
@@ -699,10 +757,10 @@ function buildWebMonitorHtml() {
       }
 
       applySyncedSettings(payload.settings || {});
-        applyLowOverheadLock(payload.settings || {});
-        const rawMode = String(payload.mode || '').toLowerCase();
-        const modeLabel = rawMode === 'msi' ? 'Shared Memory' : (payload.mode || 'N/A');
-        meta.textContent = 'Mode: ' + modeLabel + ' | Updated: ' + toLocalTime(payload.updatedAt);
+      applyLowOverheadLock(payload.settings || {});
+      const rawMode = String(payload.mode || '').toLowerCase();
+      const modeLabel = rawMode === 'msi' ? 'Shared Memory' : (payload.mode || 'N/A');
+      meta.textContent = 'Mode: ' + modeLabel + ' | Updated: ' + toLocalTime(payload.updatedAt);
 
       if (!domState.initializedSummaryMode) {
         let initialSummaryMode = false;
@@ -812,6 +870,11 @@ function publishWebMonitorPayload(mode, externalText) {
     bgTertiary: computed.getPropertyValue('--bg-tertiary').trim() || '#3a3a3a',
     textPrimary: computed.getPropertyValue('--text-primary').trim() || '#e0e0e0',
     textSecondary: computed.getPropertyValue('--text-secondary').trim() || '#b0b0b0',
+    sensorLabel: computed.getPropertyValue('--sensor-label-color').trim() || computed.getPropertyValue('--text-secondary').trim() || '#b0b0b0',
+    sensorValue: computed.getPropertyValue('--sensor-value-color').trim() || computed.getPropertyValue('--accent-light').trim() || '#4d9fff',
+    iconColor: computed.getPropertyValue('--icon-color').trim() || computed.getPropertyValue('--accent-light').trim() || '#4d9fff',
+    graphColor: computed.getPropertyValue('--graph-color').trim() || computed.getPropertyValue('--accent-light').trim() || '#4d9fff',
+    blockHeaderColor: computed.getPropertyValue('--block-header-color').trim() || computed.getPropertyValue('--accent').trim() || '#0066ff',
     borderColor: computed.getPropertyValue('--border-color').trim() || '#444',
     accent: computed.getPropertyValue('--accent').trim() || '#0066ff',
     accentLight: computed.getPropertyValue('--accent-light').trim() || '#4d9fff'
@@ -1371,8 +1434,6 @@ function initializeSetupGuideModal() {
 function setSettingsSectionExpanded(section, toggleButton, expanded) {
   section.classList.toggle('is-collapsed', !expanded);
   toggleButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-  const sectionTitle = (toggleButton.dataset.sectionTitle || 'section').trim();
-  toggleButton.title = expanded ? `Collapse ${sectionTitle}` : `Expand ${sectionTitle}`;
 }
 
 function setupSettingsAccordion() {
@@ -1401,7 +1462,6 @@ function setupSettingsAccordion() {
     const toggleButton = document.createElement('button');
     toggleButton.type = 'button';
     toggleButton.className = 'settings-toggle-btn';
-    toggleButton.dataset.sectionTitle = sectionTitle;
     const titleIconHtml = sectionTitleIconClass
       ? `<i class="${escapeHtml(sectionTitleIconClass)}" aria-hidden="true"></i>`
       : '';
@@ -1696,9 +1756,6 @@ function applyMonitoringMode(enabled) {
   const button = document.getElementById('monitoringModeBtn');
   if (button) {
     button.textContent = enabled ? 'Exit Monitoring Mode' : 'Monitoring Mode';
-    button.title = enabled
-      ? 'Return to normal layout (disable Monitoring mode)'
-      : 'Toggle monitoring-focused view for better readability';
   }
 }
 
@@ -1739,9 +1796,6 @@ function applySummaryMode(enabled) {
   const button = document.getElementById('summaryModeBtn');
   if (button) {
     button.textContent = summaryModeEnabled ? 'Exit Summary Mode' : 'Summary Mode';
-    button.title = summaryModeEnabled
-      ? 'Return to graph/regular view (disable Summary mode)'
-      : 'Toggle summary view (Min/Max values)';
   }
 
   if (summaryModeEnabled) {
@@ -1762,9 +1816,6 @@ function updateLowOverheadModeButtonState(enabled) {
   if (lowOverheadButton) {
     lowOverheadButton.textContent = enabled ? 'Exit Low Overhead Mode' : 'Low Overhead Mode';
     lowOverheadButton.classList.toggle('active', !!enabled);
-    lowOverheadButton.title = enabled
-      ? 'Return to normal updates and controls'
-      : 'Reduce overhead by disabling Summary updates and forcing Monitoring mode';
   }
 
   const summaryButton = document.getElementById('summaryModeBtn');
@@ -2321,8 +2372,8 @@ function renderSensorOptions(groupedSensors) {
               <span class="sensor-drag-handle" title="Drag to reorder" aria-hidden="true">⋮⋮</span>
               <label class="checkbox-label sensor-item-label"><input type="checkbox" data-sensor-id="${sensor.id}" ${checked} ${disabled}><span>${label}</span></label>
               <div class="sensor-order-controls">
-                <button type="button" class="sensor-order-btn" data-order-group="${group}" data-order-sensor-id="${sensor.id}" data-order-dir="up" ${disableUp} aria-label="Move ${label} up" title="Move ${label} up">↑</button>
-                <button type="button" class="sensor-order-btn" data-order-group="${group}" data-order-sensor-id="${sensor.id}" data-order-dir="down" ${disableDown} aria-label="Move ${label} down" title="Move ${label} down">↓</button>
+                <button type="button" class="sensor-order-btn" data-order-group="${group}" data-order-sensor-id="${sensor.id}" data-order-dir="up" ${disableUp} aria-label="Move ${label} up">↑</button>
+                <button type="button" class="sensor-order-btn" data-order-group="${group}" data-order-sensor-id="${sensor.id}" data-order-dir="down" ${disableDown} aria-label="Move ${label} down">↓</button>
               </div>
             </div>
           `;
@@ -2340,7 +2391,7 @@ function renderSensorOptions(groupedSensors) {
               <span class="sensor-category-title"><i class="bi ${iconClass} sensor-category-icon" aria-hidden="true"></i><strong>${escapeHtml(groupLabel)}</strong></span>
               <span class="sensor-category-count">${sensors.length}</span>
             </label>
-            <button type="button" class="sensor-category-toggle" data-toggle-sensor-group="${group}" aria-expanded="${isCollapsed ? 'false' : 'true'}" aria-label="Toggle ${escapeHtml(groupLabel)} sensors" title="Expand/collapse ${escapeHtml(groupLabel)} sensor list">▾</button>
+            <button type="button" class="sensor-category-toggle" data-toggle-sensor-group="${group}" aria-expanded="${isCollapsed ? 'false' : 'true'}" aria-label="Toggle ${escapeHtml(groupLabel)} sensors">▾</button>
           </div>
           <div class="sensor-category-items${isCollapsed ? ' is-collapsed' : ''}">
             ${items}
@@ -2682,11 +2733,128 @@ function setupSensorGraphInteractions() {
 }
 
 // Theme and Settings
+const CUSTOM_COLORS_KEY = 'customColors';
+const BASE_COLOR_DEFAULTS = {
+  font: '#e0e0e0',
+  sensorLabel: '#b0b0b0',
+  sensorValue: '#4d9fff',
+  icon: '#4d9fff',
+  graph: '#4d9fff',
+  blockHeader: '#0066ff',
+  outline: '#444444',
+  background: '#1a1a1a'
+};
+const THEME_ACCENT_LIGHT_MAP = {
+  blue: '#4d9fff',
+  purple: '#c77dff',
+  green: '#26d0b8',
+  red: '#f07b7d',
+  cyan: '#4dfdff',
+  orange: '#ffb347'
+};
+
+function getThemeDefaults(themeName) {
+  const key = String(themeName || 'blue').toLowerCase();
+  return {
+    ...BASE_COLOR_DEFAULTS,
+    sensorValue: THEME_ACCENT_LIGHT_MAP[key] || BASE_COLOR_DEFAULTS.sensorValue,
+    icon: THEME_ACCENT_LIGHT_MAP[key] || BASE_COLOR_DEFAULTS.icon,
+    graph: THEME_ACCENT_LIGHT_MAP[key] || BASE_COLOR_DEFAULTS.graph
+  };
+}
+
+function normalizeHexColor(value, fallback) {
+  const text = String(value || '').trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(text)) return text;
+  if (/^#[0-9a-f]{3}$/.test(text)) {
+    return `#${text[1]}${text[1]}${text[2]}${text[2]}${text[3]}${text[3]}`;
+  }
+  return fallback;
+}
+
+function adjustHexColor(hex, delta) {
+  const normalized = normalizeHexColor(hex, '#000000');
+  const raw = normalized.slice(1);
+  const clamp = (v) => Math.max(0, Math.min(255, v));
+  const r = clamp(parseInt(raw.slice(0, 2), 16) + delta);
+  const g = clamp(parseInt(raw.slice(2, 4), 16) + delta);
+  const b = clamp(parseInt(raw.slice(4, 6), 16) + delta);
+  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+const CustomColorManager = {
+  getColors(themeName) {
+    const defaults = getThemeDefaults(themeName || localStorage.getItem('theme') || 'blue');
+    try {
+      const raw = localStorage.getItem(CUSTOM_COLORS_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return {
+        font: normalizeHexColor(parsed.font, defaults.font),
+        sensorLabel: normalizeHexColor(parsed.sensorLabel, defaults.sensorLabel),
+        sensorValue: normalizeHexColor(parsed.sensorValue, defaults.sensorValue),
+        icon: normalizeHexColor(parsed.icon, defaults.icon),
+        graph: normalizeHexColor(parsed.graph, defaults.graph),
+        blockHeader: normalizeHexColor(parsed.blockHeader, defaults.blockHeader),
+        outline: normalizeHexColor(parsed.outline, defaults.outline),
+        background: normalizeHexColor(parsed.background, defaults.background)
+      };
+    } catch (error) {
+      return { ...defaults };
+    }
+  },
+  saveColors(colors) {
+    const defaults = getThemeDefaults(localStorage.getItem('theme') || 'blue');
+    const normalized = {
+      font: normalizeHexColor(colors && colors.font, defaults.font),
+      sensorLabel: normalizeHexColor(colors && colors.sensorLabel, defaults.sensorLabel),
+      sensorValue: normalizeHexColor(colors && colors.sensorValue, defaults.sensorValue),
+      icon: normalizeHexColor(colors && colors.icon, defaults.icon),
+      graph: normalizeHexColor(colors && colors.graph, defaults.graph),
+      blockHeader: normalizeHexColor(colors && colors.blockHeader, defaults.blockHeader),
+      outline: normalizeHexColor(colors && colors.outline, defaults.outline),
+      background: normalizeHexColor(colors && colors.background, defaults.background)
+    };
+    localStorage.setItem(CUSTOM_COLORS_KEY, JSON.stringify(normalized));
+  },
+  applyColors(colors) {
+    const defaults = getThemeDefaults(localStorage.getItem('theme') || 'blue');
+    const normalized = {
+      font: normalizeHexColor(colors && colors.font, defaults.font),
+      sensorLabel: normalizeHexColor(colors && colors.sensorLabel, defaults.sensorLabel),
+      sensorValue: normalizeHexColor(colors && colors.sensorValue, defaults.sensorValue),
+      icon: normalizeHexColor(colors && colors.icon, defaults.icon),
+      graph: normalizeHexColor(colors && colors.graph, defaults.graph),
+      blockHeader: normalizeHexColor(colors && colors.blockHeader, defaults.blockHeader),
+      outline: normalizeHexColor(colors && colors.outline, defaults.outline),
+      background: normalizeHexColor(colors && colors.background, defaults.background)
+    };
+
+    document.body.style.setProperty('--text-primary', normalized.font);
+    document.body.style.setProperty('--text-secondary', normalized.font);
+    document.body.style.setProperty('--sensor-label-color', normalized.sensorLabel);
+    document.body.style.setProperty('--sensor-value-color', normalized.sensorValue);
+    document.body.style.setProperty('--icon-color', normalized.icon);
+    document.body.style.setProperty('--graph-color', normalized.graph);
+    document.body.style.setProperty('--block-header-color', normalized.blockHeader);
+    document.body.style.setProperty('--border-color', normalized.outline);
+    document.body.style.setProperty('--bg-primary', normalized.background);
+    document.body.style.setProperty('--bg-secondary', adjustHexColor(normalized.background, 19));
+    document.body.style.setProperty('--bg-tertiary', adjustHexColor(normalized.background, 32));
+  },
+  resetToThemeDefaults(themeName) {
+    const defaults = getThemeDefaults(themeName || localStorage.getItem('theme') || 'blue');
+    this.saveColors(defaults);
+    this.applyColors(defaults);
+    return defaults;
+  }
+};
+
 const ThemeManager = {
   setTheme(theme) {
     document.body.classList.remove('theme-blue', 'theme-purple', 'theme-green', 'theme-red', 'theme-cyan', 'theme-orange');
     document.body.classList.add(`theme-${theme}`);
     localStorage.setItem('theme', theme);
+    CustomColorManager.applyColors(CustomColorManager.getColors());
   },
   getTheme() {
     return localStorage.getItem('theme') || 'blue';
@@ -2705,6 +2873,67 @@ const SettingsManager = {
         ThemeManager.setTheme(e.target.dataset.theme);
       });
     });
+
+    const customFontColorInput = document.getElementById('customFontColor');
+    const customSensorNameColorInput = document.getElementById('customSensorNameColor');
+    const customSensorValueColorInput = document.getElementById('customSensorValueColor');
+    const customIconColorInput = document.getElementById('customIconColor');
+    const customGraphColorInput = document.getElementById('customGraphColor');
+    const customBlockHeaderColorInput = document.getElementById('customBlockHeaderColor');
+    const customOutlineColorInput = document.getElementById('customOutlineColor');
+    const customBackgroundColorInput = document.getElementById('customBackgroundColor');
+    const resetThemeColorsBtn = document.getElementById('resetThemeColorsBtn');
+    let customColors = CustomColorManager.getColors();
+    CustomColorManager.applyColors(customColors);
+
+    if (customFontColorInput && customSensorNameColorInput && customSensorValueColorInput && customIconColorInput && customGraphColorInput && customBlockHeaderColorInput && customOutlineColorInput && customBackgroundColorInput) {
+      customFontColorInput.value = customColors.font;
+      customSensorNameColorInput.value = customColors.sensorLabel;
+      customSensorValueColorInput.value = customColors.sensorValue;
+      customIconColorInput.value = customColors.icon;
+      customGraphColorInput.value = customColors.graph;
+      customBlockHeaderColorInput.value = customColors.blockHeader;
+      customOutlineColorInput.value = customColors.outline;
+      customBackgroundColorInput.value = customColors.background;
+
+      const syncCustomColors = () => {
+        customColors = {
+          font: normalizeHexColor(customFontColorInput.value, BASE_COLOR_DEFAULTS.font),
+          sensorLabel: normalizeHexColor(customSensorNameColorInput.value, BASE_COLOR_DEFAULTS.sensorLabel),
+          sensorValue: normalizeHexColor(customSensorValueColorInput.value, BASE_COLOR_DEFAULTS.sensorValue),
+          icon: normalizeHexColor(customIconColorInput.value, BASE_COLOR_DEFAULTS.icon),
+          graph: normalizeHexColor(customGraphColorInput.value, BASE_COLOR_DEFAULTS.graph),
+          blockHeader: normalizeHexColor(customBlockHeaderColorInput.value, BASE_COLOR_DEFAULTS.blockHeader),
+          outline: normalizeHexColor(customOutlineColorInput.value, BASE_COLOR_DEFAULTS.outline),
+          background: normalizeHexColor(customBackgroundColorInput.value, BASE_COLOR_DEFAULTS.background)
+        };
+        CustomColorManager.saveColors(customColors);
+        CustomColorManager.applyColors(customColors);
+      };
+
+      customFontColorInput.addEventListener('input', syncCustomColors);
+      customSensorNameColorInput.addEventListener('input', syncCustomColors);
+      customSensorValueColorInput.addEventListener('input', syncCustomColors);
+      customIconColorInput.addEventListener('input', syncCustomColors);
+      customGraphColorInput.addEventListener('input', syncCustomColors);
+      customBlockHeaderColorInput.addEventListener('input', syncCustomColors);
+      customOutlineColorInput.addEventListener('input', syncCustomColors);
+      customBackgroundColorInput.addEventListener('input', syncCustomColors);
+
+      if (resetThemeColorsBtn) {
+        resetThemeColorsBtn.addEventListener('click', () => {
+          const defaults = CustomColorManager.resetToThemeDefaults(ThemeManager.getTheme());
+          customFontColorInput.value = defaults.font;
+          customSensorNameColorInput.value = defaults.sensorLabel;
+          customSensorValueColorInput.value = defaults.sensorValue;
+          customIconColorInput.value = defaults.icon;
+          customGraphColorInput.value = defaults.graph;
+          customBlockHeaderColorInput.value = defaults.blockHeader;
+          customOutlineColorInput.value = defaults.outline;
+          customBackgroundColorInput.value = defaults.background;
+        });
+      }
+    }
 
     // Refresh rate slider
     const refreshSlider = document.getElementById('refreshRate');
@@ -2965,6 +3194,314 @@ const SettingsManager = {
       applyAppBehaviorToUi(settings);
     });
 
+    const checkForUpdatesBtn = document.getElementById('checkForUpdatesBtn');
+    const openLatestReleaseBtn = document.getElementById('openLatestReleaseBtn');
+    const updateCheckStatus = document.getElementById('updateCheckStatus');
+    const updateAvailableModal = document.getElementById('updateAvailableModal');
+    const closeUpdateModalBtn = document.getElementById('closeUpdateModalBtn');
+    const updateModalLaterBtn = document.getElementById('updateModalLaterBtn');
+    const updateModalDownloadBtn = document.getElementById('updateModalDownloadBtn');
+    const updateModalInstallBtn = document.getElementById('updateModalInstallBtn');
+    const updateModalMessage = document.getElementById('updateModalMessage');
+    const updateModalProgress = document.getElementById('updateModalProgress');
+    let latestReleaseUrl = DEFAULT_LATEST_RELEASE_URL;
+    let inAppDownloadAvailable = true;
+
+    const setUpdateModalVisible = (visible) => {
+      if (!updateAvailableModal) return;
+      updateAvailableModal.classList.toggle('is-hidden', !visible);
+    };
+
+    const setUpdateModalMessage = (message) => {
+      if (updateModalMessage) {
+        updateModalMessage.textContent = message;
+      }
+    };
+
+    const setUpdateModalProgress = (message) => {
+      if (updateModalProgress) {
+        updateModalProgress.textContent = message || '';
+      }
+    };
+
+    const setUpdateStatus = (message) => {
+      if (updateCheckStatus) {
+        updateCheckStatus.textContent = message;
+      }
+    };
+
+    const toggleOpenLatestButton = (enabled) => {
+      if (!openLatestReleaseBtn) return;
+      openLatestReleaseBtn.disabled = !enabled;
+    };
+
+    toggleOpenLatestButton(/^https?:\/\//i.test(latestReleaseUrl));
+
+    const toggleInstallNowButton = (enabled) => {
+      if (updateModalInstallBtn) {
+        updateModalInstallBtn.hidden = !enabled;
+        updateModalInstallBtn.disabled = !enabled;
+      }
+    };
+
+    if (updateAvailableModal) {
+      closeUpdateModalBtn?.addEventListener('click', () => setUpdateModalVisible(false));
+      updateModalLaterBtn?.addEventListener('click', () => setUpdateModalVisible(false));
+      updateAvailableModal.addEventListener('click', (event) => {
+        if (event.target === updateAvailableModal) {
+          setUpdateModalVisible(false);
+        }
+      });
+    }
+
+    if (ipcRenderer && typeof ipcRenderer.on === 'function') {
+      ipcRenderer.on('app-update:status', (_event, payload) => {
+        const state = String(payload?.state || '').trim();
+
+        if (state === 'checking') {
+          setUpdateStatus('Checking for updates...');
+          toggleInstallNowButton(false);
+          return;
+        }
+
+        if (state === 'available') {
+          const latestVersion = String(payload?.latestVersion || '').trim();
+          latestReleaseUrl = String(payload?.releaseUrl || latestReleaseUrl || '').trim();
+          const availableMessage = latestVersion
+            ? `Update available: ${latestVersion}.`
+            : 'Update available.';
+          setUpdateStatus(`${availableMessage} Open the prompt to download inside the app.`);
+          setUpdateModalMessage(`${availableMessage} Do you want to download it now?`);
+          setUpdateModalProgress('');
+          if (updateModalDownloadBtn) {
+            updateModalDownloadBtn.disabled = !inAppDownloadAvailable;
+            updateModalDownloadBtn.textContent = inAppDownloadAvailable ? 'Download Update' : 'In-App Download Unavailable';
+          }
+          toggleInstallNowButton(false);
+          setUpdateModalVisible(true);
+          toggleOpenLatestButton(/^https?:\/\//i.test(latestReleaseUrl));
+          return;
+        }
+
+        if (state === 'downloading') {
+          const percent = Number(payload?.percent || 0);
+          const progressText = Number.isFinite(percent) && percent > 0
+            ? `Downloading update... ${percent.toFixed(1)}%`
+            : 'Downloading update...';
+          if (Number.isFinite(percent) && percent > 0) {
+            setUpdateStatus(progressText);
+          } else {
+            setUpdateStatus(progressText);
+          }
+          setUpdateModalProgress(progressText);
+          if (updateModalDownloadBtn) {
+            updateModalDownloadBtn.disabled = true;
+            updateModalDownloadBtn.textContent = 'Downloading...';
+          }
+          toggleInstallNowButton(false);
+          return;
+        }
+
+        if (state === 'downloaded') {
+          const latestVersion = String(payload?.latestVersion || '').trim();
+          const downloadedText = latestVersion
+            ? `Update ${latestVersion} downloaded. Restart to install now.`
+            : 'Update downloaded. Restart to install now.';
+          setUpdateStatus(downloadedText);
+          setUpdateModalMessage(downloadedText);
+          setUpdateModalProgress('Ready to install.');
+          if (updateModalDownloadBtn) {
+            updateModalDownloadBtn.disabled = true;
+            updateModalDownloadBtn.textContent = 'Downloaded';
+          }
+          toggleInstallNowButton(true);
+          setUpdateModalVisible(true);
+          return;
+        }
+
+        if (state === 'not-available') {
+          setUpdateStatus('No Updates Found');
+          toggleInstallNowButton(false);
+          return;
+        }
+
+        if (state === 'error') {
+          const errorText = payload?.code === 'missing-latest-yml'
+            ? 'In-app updater metadata is missing on the release. Use Open Latest Release.'
+            : `Auto update failed: ${payload?.error || 'Unknown error.'}`;
+          setUpdateStatus(errorText);
+          setUpdateModalProgress(errorText);
+          if (updateModalDownloadBtn && updateModalDownloadBtn.textContent !== 'Downloaded') {
+            updateModalDownloadBtn.disabled = false;
+            updateModalDownloadBtn.textContent = 'Download Update';
+          }
+          toggleInstallNowButton(false);
+        }
+      });
+    }
+
+    if (checkForUpdatesBtn) {
+      checkForUpdatesBtn.addEventListener('click', async () => {
+        if (!ipcRenderer || typeof ipcRenderer.invoke !== 'function') {
+          setUpdateStatus('Update check is unavailable in this runtime.');
+          return;
+        }
+
+        checkForUpdatesBtn.disabled = true;
+        latestReleaseUrl = DEFAULT_LATEST_RELEASE_URL;
+        toggleOpenLatestButton(/^https?:\/\//i.test(latestReleaseUrl));
+        setUpdateStatus('Checking for updates...');
+
+        try {
+          const result = await ipcRenderer.invoke('app-update:check');
+          const currentVersion = String(result?.currentVersion || 'unknown');
+          const latestVersion = String(result?.latestVersion || '').trim();
+          latestReleaseUrl = String(result?.releaseUrl || latestReleaseUrl || DEFAULT_LATEST_RELEASE_URL || '').trim();
+          toggleOpenLatestButton(/^https?:\/\//i.test(latestReleaseUrl));
+          inAppDownloadAvailable = result?.manualDownloadOnly !== true;
+          if (result?.warning) {
+            setUpdateStatus(result.warning);
+          }
+
+          if (!result || result.ok !== true) {
+            setUpdateStatus(result?.error || 'Update check failed.');
+            return;
+          }
+
+          if (result.usingAutoUpdater) {
+            if (result.updateAvailable) {
+              setUpdateStatus(result.message || (latestVersion ? `Update available: ${latestVersion}.` : 'Update available.'));
+            } else {
+              setUpdateStatus('No Updates Found');
+            }
+            return;
+          }
+
+          if (result.updateAvailable && latestVersion) {
+            latestReleaseUrl = String(result.releaseUrl || '').trim();
+            setUpdateStatus(inAppDownloadAvailable
+              ? `Update available: ${latestVersion} (current: ${currentVersion}).`
+              : `Update available: ${latestVersion} (current: ${currentVersion}). In-app download is unavailable; use Open Latest Release.`);
+            toggleOpenLatestButton(/^https?:\/\//i.test(latestReleaseUrl));
+            toggleInstallNowButton(false);
+            setUpdateModalMessage(inAppDownloadAvailable
+              ? `Update available: ${latestVersion}. Do you want to download it now?`
+              : `Update available: ${latestVersion}. In-app download is unavailable for this release.`);
+            if (updateModalDownloadBtn) {
+              updateModalDownloadBtn.disabled = !inAppDownloadAvailable;
+              updateModalDownloadBtn.textContent = inAppDownloadAvailable ? 'Download Update' : 'In-App Download Unavailable';
+            }
+            setUpdateModalVisible(true);
+            return;
+          }
+
+          if (latestVersion) {
+            setUpdateStatus('No Updates Found');
+          } else {
+            setUpdateStatus('No Updates Found');
+          }
+          toggleInstallNowButton(false);
+        } catch (error) {
+          setUpdateStatus(`Update check failed: ${error.message}`);
+        } finally {
+          checkForUpdatesBtn.disabled = false;
+        }
+      });
+    }
+
+    if (openLatestReleaseBtn) {
+      openLatestReleaseBtn.addEventListener('click', async () => {
+        const targetUrl = String(latestReleaseUrl || DEFAULT_LATEST_RELEASE_URL || '').trim();
+        if (!targetUrl) {
+          setUpdateStatus('No release link available for this update source.');
+          return;
+        }
+
+        if (!ipcRenderer || typeof ipcRenderer.invoke !== 'function') {
+          shell.openExternal(targetUrl);
+          return;
+        }
+
+        try {
+          const openResult = await ipcRenderer.invoke('app-update:open-url', targetUrl);
+          if (!openResult || openResult.ok !== true) {
+            setUpdateStatus(openResult?.error || 'Failed to open release page.');
+          }
+        } catch (error) {
+          setUpdateStatus(`Failed to open release page: ${error.message}`);
+        }
+      });
+    }
+
+    if (updateModalDownloadBtn) {
+      updateModalDownloadBtn.addEventListener('click', async () => {
+        if (!inAppDownloadAvailable) {
+          setUpdateStatus('In-app download is unavailable for this release. Use Open Latest Release.');
+          return;
+        }
+        if (!ipcRenderer || typeof ipcRenderer.invoke !== 'function') {
+          setUpdateStatus('In-app download is unavailable in this runtime.');
+          return;
+        }
+
+        updateModalDownloadBtn.disabled = true;
+        updateModalDownloadBtn.textContent = 'Starting Download...';
+        setUpdateModalProgress('Preparing download...');
+
+        try {
+          const downloadResult = await ipcRenderer.invoke('app-update:download');
+          if (!downloadResult || downloadResult.ok !== true) {
+            const message = downloadResult?.code === 'missing-latest-yml'
+              ? 'In-app download is unavailable because latest.yml is missing. Use Open Latest Release.'
+              : (downloadResult?.error || 'Failed to start update download.');
+            setUpdateStatus(message);
+            setUpdateModalProgress(message);
+            updateModalDownloadBtn.disabled = false;
+            updateModalDownloadBtn.textContent = 'Download Update';
+            return;
+          }
+
+          setUpdateStatus('Downloading update...');
+          setUpdateModalProgress('Downloading update...');
+          updateModalDownloadBtn.textContent = 'Downloading...';
+        } catch (error) {
+          const message = `Failed to start update download: ${error.message}`;
+          setUpdateStatus(message);
+          setUpdateModalProgress(message);
+          updateModalDownloadBtn.disabled = false;
+          updateModalDownloadBtn.textContent = 'Download Update';
+        }
+      });
+    }
+
+    if (updateModalInstallBtn) {
+      updateModalInstallBtn.addEventListener('click', async () => {
+        if (!ipcRenderer || typeof ipcRenderer.invoke !== 'function') {
+          setUpdateStatus('Install action is unavailable in this runtime.');
+          return;
+        }
+
+        updateModalInstallBtn.disabled = true;
+        setUpdateStatus('Restarting to install update...');
+        setUpdateModalProgress('Restarting to install update...');
+
+        try {
+          const installResult = await ipcRenderer.invoke('app-update:quit-and-install');
+          if (!installResult || installResult.ok !== true) {
+            const message = installResult?.error || 'No downloaded update is ready to install yet.';
+            setUpdateStatus(message);
+            setUpdateModalProgress(message);
+            updateModalInstallBtn.disabled = false;
+          }
+        } catch (error) {
+          const message = `Install failed: ${error.message}`;
+          setUpdateStatus(message);
+          setUpdateModalProgress(message);
+          updateModalInstallBtn.disabled = false;
+        }
+      });
+    }
+
     sensorSelection = loadSensorSelection();
     sensorCategorySelection = loadSensorCategorySelection();
     sensorCategoryCollapse = loadSensorCategoryCollapse();
@@ -3119,6 +3656,7 @@ const SettingsManager = {
     if (savedTheme !== 'blue') {
       document.querySelector(`[data-theme="${savedTheme}"]`).click();
     }
+    CustomColorManager.applyColors(CustomColorManager.getColors());
     
     if (savedRefreshRate) {
       updateInterval = clampRefreshInterval(savedRefreshRate);
@@ -3248,6 +3786,7 @@ function restartUpdateTimer() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+  document.title = APP_VERSION ? `SiR System Monitor v${APP_VERSION}` : 'SiR System Monitor';
   expandedGraphSensors = loadExpandedGraphSensors();
   SettingsManager.init();
   applyWindowOrder();

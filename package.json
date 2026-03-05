@@ -1,7 +1,11 @@
 {
   "name": "sir-system-monitor",
-  "version": "1.0.0",
+  "version": "1.0.5",
   "description": "Electron app for monitoring system statistics",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KaMiKaZeE1221/SiR-System-Monitor"
+  },
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -9,10 +13,11 @@
     "dist": "electron-builder"
   },
   "devDependencies": {
-    "electron-builder": "^24.13.3",
-    "electron": "^25.0.0"
+    "electron": "40.7.0",
+    "electron-builder": "^24.13.3"
   },
   "dependencies": {
+    "electron-updater": "^6.8.3",
     "koffi": "^2.15.1",
     "systeminformation": "^5.21.0"
   },
@@ -22,15 +27,16 @@
     "files": [
       "**/*",
       "!dist/**",
+      "!dist*/**",
       "!build/**",
       "!recovered_source_from_setup_1_0_6/**",
       "!restored_from_setup_1_0_6/**",
       "!docs/**",
       "!.git/**",
       "!.vscode/**",
-      "!_sensor_dump*.txt",
       "!GITHUB_UPLOAD_GUIDE.md",
       "!$null",
+      "!_sensor_dump*.txt",
       "!*.log",
       "!README.md",
       "!test-*.js"
@@ -46,6 +52,13 @@
         "portable"
       ]
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "KaMiKaZeE1221",
+        "repo": "SiR-System-Monitor"
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "perMachine": false,

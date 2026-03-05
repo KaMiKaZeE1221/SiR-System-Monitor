@@ -18,12 +18,12 @@
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-palette-fill settings-label-icon" aria-hidden="true"></i><span>Color Theme</span></label>
         <div class="theme-selector">
-          <button class="theme-btn active" data-theme="blue" title="Switch to Blue theme">Blue</button>
-          <button class="theme-btn" data-theme="purple" title="Switch to Purple theme">Purple</button>
-          <button class="theme-btn" data-theme="green" title="Switch to Green theme">Green</button>
-          <button class="theme-btn" data-theme="red" title="Switch to Red theme">Red</button>
-          <button class="theme-btn" data-theme="cyan" title="Switch to Cyan theme">Cyan</button>
-          <button class="theme-btn" data-theme="orange" title="Switch to Orange theme">Orange</button>
+          <button class="theme-btn active" data-theme="blue">Blue</button>
+          <button class="theme-btn" data-theme="purple">Purple</button>
+          <button class="theme-btn" data-theme="green">Green</button>
+          <button class="theme-btn" data-theme="red">Red</button>
+          <button class="theme-btn" data-theme="cyan">Cyan</button>
+          <button class="theme-btn" data-theme="orange">Orange</button>
         </div>
       </div>
 
@@ -57,6 +57,45 @@
           <input type="checkbox" id="valueFontMonospaceToggle">
           <span>Use monospace for values</span>
         </label>
+      </div>
+
+      <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-sliders settings-label-icon" aria-hidden="true"></i><span>Custom Colors</span></label>
+        <div class="color-custom-grid">
+          <label class="color-picker-row">
+            <span>Font Color</span>
+            <input type="color" id="customFontColor" class="color-picker-input" value="#e0e0e0">
+          </label>
+          <label class="color-picker-row">
+            <span>Sensor Name Color</span>
+            <input type="color" id="customSensorNameColor" class="color-picker-input" value="#b0b0b0">
+          </label>
+          <label class="color-picker-row">
+            <span>Sensor Value Color</span>
+            <input type="color" id="customSensorValueColor" class="color-picker-input" value="#4d9fff">
+          </label>
+          <label class="color-picker-row">
+            <span>Graph Color</span>
+            <input type="color" id="customGraphColor" class="color-picker-input" value="#4d9fff">
+          </label>
+          <label class="color-picker-row">
+            <span>Block Header Color</span>
+            <input type="color" id="customBlockHeaderColor" class="color-picker-input" value="#0066ff">
+          </label>
+          <label class="color-picker-row">
+            <span>Icon Color</span>
+            <input type="color" id="customIconColor" class="color-picker-input" value="#4d9fff">
+          </label>
+          <label class="color-picker-row">
+            <span>Outline Color</span>
+            <input type="color" id="customOutlineColor" class="color-picker-input" value="#444444">
+          </label>
+          <label class="color-picker-row">
+            <span>Background Color</span>
+            <input type="color" id="customBackgroundColor" class="color-picker-input" value="#1a1a1a">
+          </label>
+        </div>
+        <button id="resetThemeColorsBtn" class="test-btn color-reset-btn" type="button">Reset to Theme Defaults</button>
       </div>
     </div>
 
@@ -125,7 +164,7 @@
         </select>
         <div class="settings-note">Uses RTSS/AIDA/HWiNFO shared memory providers.</div>
         <div class="web-monitor-actions settings-inline-gap-sm">
-          <button id="openSetupGuideBtn" class="test-btn" type="button" title="Open setup instructions for shared-memory sensors">View Setup Guide</button>
+          <button id="openSetupGuideBtn" class="test-btn" type="button">View Setup Guide</button>
         </div>
       </div>
 
@@ -166,8 +205,8 @@
           <input id="webMonitorPort" class="detection-select" type="number" min="1024" max="65535" value="17381">
         </div>
         <div class="web-monitor-actions">
-          <button id="webMonitorApplyBtn" class="test-btn" title="Save and apply Web Monitor host and port settings">Apply Web Settings</button>
-          <button id="webMonitorOpenBtn" class="test-btn" disabled title="Open the live Web Monitor page in your browser">Open in Browser</button>
+          <button id="webMonitorApplyBtn" class="test-btn">Apply Web Settings</button>
+          <button id="webMonitorOpenBtn" class="test-btn" disabled>Open in Browser</button>
         </div>
         <div id="webMonitorStatus" class="settings-note">Stopped</div>
         <a id="webMonitorUrl" class="web-monitor-url" target="_blank" rel="noopener noreferrer">--</a>
@@ -200,6 +239,15 @@
         </div>
         <div class="settings-note">When close to tray is enabled, use the tray icon menu to quit the app.</div>
       </div>
+
+      <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-cloud-arrow-down-fill settings-label-icon" aria-hidden="true"></i><span>App Updates</span></label>
+        <div class="web-monitor-actions">
+          <button id="checkForUpdatesBtn" class="test-btn" type="button">Check for Updates</button>
+          <button id="openLatestReleaseBtn" class="test-btn" type="button" disabled>Open Latest Release</button>
+        </div>
+        <div id="updateCheckStatus" class="settings-note">Update check not run yet.</div>
+      </div>
     </div>
   </div>
 
@@ -208,9 +256,9 @@
     <div class="header">
       <h1>SiR System Monitor</h1>
       <div class="header-actions">
-        <button id="monitoringModeBtn" class="monitoring-mode-btn" title="Toggle monitoring-focused view for better readability">Monitoring Mode</button>
-        <button id="summaryModeBtn" class="monitoring-mode-btn" title="Toggle summary view (Min/Max values)">Summary Mode</button>
-        <button id="lowOverheadModeBtn" class="monitoring-mode-btn" title="Reduce overhead by disabling Summary updates and forcing Monitoring mode">Low Overhead Mode</button>
+        <button id="monitoringModeBtn" class="monitoring-mode-btn">Monitoring Mode</button>
+        <button id="summaryModeBtn" class="monitoring-mode-btn">Summary Mode</button>
+        <button id="lowOverheadModeBtn" class="monitoring-mode-btn">Low Overhead Mode</button>
         <div class="status-indicator" id="liveStatusIndicator">
           <span class="status-dot"></span>
           <span>Live</span>
@@ -273,7 +321,7 @@
     <div class="setup-guide-dialog" role="document">
       <div class="setup-guide-header">
         <h2 id="setupGuideTitle">Setup Guide</h2>
-        <button type="button" class="setup-guide-close" data-close-setup-guide aria-label="Close setup guide" title="Close setup guide">×</button>
+        <button type="button" class="setup-guide-close" data-close-setup-guide aria-label="Close setup guide">×</button>
       </div>
       <div class="setup-guide-body">
         <div class="setup-guide-highlight">
@@ -322,7 +370,25 @@
         </label>
       </div>
       <div class="setup-guide-footer">
-        <button type="button" class="test-btn" data-close-setup-guide title="Close setup guide and return to monitor">Got it</button>
+        <button type="button" class="test-btn" data-close-setup-guide>Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="updateAvailableModal" class="setup-guide-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="updateAvailableTitle">
+    <div class="setup-guide-dialog" role="document">
+      <div class="setup-guide-header">
+        <h2 id="updateAvailableTitle">Update Available</h2>
+        <button type="button" class="setup-guide-close" id="closeUpdateModalBtn" aria-label="Close update dialog">×</button>
+      </div>
+      <div class="setup-guide-body">
+        <div id="updateModalMessage" class="setup-guide-highlight">A new app update is available.</div>
+        <div id="updateModalProgress" class="settings-note update-modal-progress"></div>
+      </div>
+      <div class="setup-guide-footer update-modal-footer">
+        <button type="button" class="test-btn" id="updateModalLaterBtn">Later</button>
+        <button type="button" class="test-btn" id="updateModalDownloadBtn">Download Update</button>
+        <button type="button" class="test-btn" id="updateModalInstallBtn" disabled hidden>Restart to Install</button>
       </div>
     </div>
   </div>
