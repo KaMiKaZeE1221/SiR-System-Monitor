@@ -1,7 +1,4 @@
 # Changelog
-
-All notable changes to this project are documented in this file.
-
 ## [Released] - 2026-03-05
 
 ### Added
