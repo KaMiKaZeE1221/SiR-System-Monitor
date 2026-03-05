@@ -67,6 +67,14 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
 
 ![Web Monitor](docs/screenshots/05-web-monitor.png)
 
+6. Color Options
+
+![Color Options](docs/screenshots/06-color-options.png)
+
+7. Graphs
+
+![Graphs](docs/screenshots/07-Graphs.png)
+
 ## Requirements
 
 - OS: Windows
