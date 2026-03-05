@@ -75,6 +75,9 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
 
 ![Graphs](docs/screenshots/07-Graphs.png)
 
+8. Updater
+
+![Updater](docs/screenshots/08-Updater.png)
 ## Requirements
 
 - OS: Windows
@@ -129,6 +132,24 @@ When enabled:
 - UI endpoint: `http://<host>:<port>/`
 - JSON endpoint: `http://<host>:<port>/api/monitor`
 Useful for viewing selected sensors from another device on LAN or WAN, subject to local firewall/network rules.
+
+## Updater
+
+SiR System Monitor uses `electron-updater` with GitHub Releases as the update source.
+
+Current behavior is manual (user-driven):
+
+- In Settings → App Behavior → App Updates, click **Check for Updates**.
+- If no update exists, status shows: **No Updates Found**.
+- If an update exists, an in-app modal appears and lets the user choose **Download Update**.
+- After download completes, the app shows **Restart and Install**.
+- If updater metadata is missing on the release, the app falls back to **Open Latest Release**.
+
+### How it roughly works
+
+- Main process (`main.js`) performs update check/download/install and emits status events.
+- Renderer (`app.js`) listens to updater status events and updates the settings status + modal UI.
+- The release URL button opens the project’s latest GitHub releases page.
 
 ## Troubleshooting
 
