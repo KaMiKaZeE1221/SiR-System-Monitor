@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased] - 2026-03-05
+## [Released] - 2026-03-05
 
 ### Added
 - Added `Low Overhead Mode` toggle in the desktop header.
