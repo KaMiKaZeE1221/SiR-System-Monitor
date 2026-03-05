@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SiR System Monitor</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="theme-blue">
+  <!-- Settings Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-header">Settings</div>
+
+    <div class="settings-group">
+      <div class="settings-group-title">Appearance</div>
+
+      <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-palette-fill settings-label-icon" aria-hidden="true"></i><span>Color Theme</span></label>
+        <div class="theme-selector">
+          <button class="theme-btn active" data-theme="blue">Blue</button>
+          <button class="theme-btn" data-theme="purple">Purple</button>
+          <button class="theme-btn" data-theme="green">Green</button>
+          <button class="theme-btn" data-theme="red">Red</button>
+          <button class="theme-btn" data-theme="cyan">Cyan</button>
+          <button class="theme-btn" data-theme="orange">Orange</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-fonts settings-label-icon" aria-hidden="true"></i><span>Font Settings</span></label>
+        <select id="fontSizeSelect" class="detection-select">
+          <option value="small">Small</option>
+          <option value="medium">Medium</option>
+          <option value="large">Large</option>
+          <option value="xlarge">X-Large</option>
+          <option value="xxlarge">XX-Large</option>
+        </select>
+        <select id="fontFamilySelect" class="detection-select">
+          <option value="segoe">Segoe UI</option>
+          <option value="arial">Arial</option>
+          <option value="verdana">Verdana</option>
+          <option value="tahoma">Tahoma</option>
+          <option value="georgia">Georgia</option>
+          <option value="calibri">Calibri</option>
+          <option value="trebuchet">Trebuchet MS</option>
+          <option value="cambria">Cambria</option>
+          <option value="garamond">Garamond</option>
+          <option value="consolas">Consolas</option>
+          <option value="monospace">Monospace</option>
+        </select>
+        <label class="checkbox-label settings-inline-gap-sm">
+          <input type="checkbox" id="fontBoldToggle">
+          <span>Bold Text</span>
+        </label>
+        <label class="checkbox-label settings-inline-gap-xs">
+          <input type="checkbox" id="valueFontMonospaceToggle">
+          <span>Use monospace for values</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <div class="settings-group-title">Monitoring</div>
+
+      <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-arrow-repeat settings-label-icon" aria-hidden="true"></i><span>Refresh Rate</span></label>
+        <div class="refresh-rate">
+          <input type="range" id="refreshRate" class="refresh-slider" min="1000" max="5000" value="1000" step="100">
+          <div class="refresh-value"><span id="refreshValue">1000</span>ms</div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-eye-fill settings-label-icon" aria-hidden="true"></i><span>Visible Sensors</span></label>
+        <div class="visibility-options">
+          <label class="checkbox-label">
+            <input type="checkbox" id="showCpu" checked>
+            <span>CPU</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="showGpu" checked>
+            <span>GPU</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="showRam" checked>
+            <span>Memory</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="showPsu" checked>
+            <span>PSU</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="showFans" checked>
+            <span>Fans</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="showNetwork" checked>
+            <span>Network</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="showDrives" checked>
+            <span>Drives</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="showExternal" checked>
+            <span>Other</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-list-check settings-label-icon" aria-hidden="true"></i><span>Sensor Selection</span></label>
+        <div id="sensorOptions" class="visibility-options"></div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <div class="settings-group-title">Data Sources</div>
+
+      <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-cpu settings-label-icon" aria-hidden="true"></i><span>Detection Mode</span></label>
+        <select id="detectionMode" class="detection-select">
+          <option value="msi">Shared Memory Mode</option>
+        </select>
+        <div class="settings-note">Uses RTSS/AIDA/HWiNFO shared memory providers.</div>
+        <div class="web-monitor-actions settings-inline-gap-sm">
+          <button id="openSetupGuideBtn" class="test-btn" type="button">View Setup Guide</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-hdd-stack-fill settings-label-icon" aria-hidden="true"></i><span>Shared Memory Sources</span></label>
+        <div class="visibility-options">
+          <label class="checkbox-label">
+            <input type="checkbox" id="providerRTSS" checked>
+            <span>RTSS / MSI</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="providerAIDA64" checked>
+            <span>AIDA64</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="providerHWiNFO" checked>
+            <span>HWiNFO / LHM</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <div class="settings-group-title">Connectivity</div>
+
+      <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-globe settings-label-icon" aria-hidden="true"></i><span>Web Monitor</span></label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="webMonitorEnabled">
+          <span>Enable Browser View</span>
+        </label>
+        <label class="checkbox-label settings-inline-gap-sm">
+          <input type="checkbox" id="webMonitorAutoStart" checked>
+          <span>Auto-start on app launch</span>
+        </label>
+        <div class="web-monitor-grid">
+          <input id="webMonitorHost" class="detection-select" placeholder="Host (e.g. 127.0.0.1 or 0.0.0.0)" value="127.0.0.1">
+          <input id="webMonitorPort" class="detection-select" type="number" min="1024" max="65535" value="17381">
+        </div>
+        <div class="web-monitor-actions">
+          <button id="webMonitorApplyBtn" class="test-btn">Apply Web Settings</button>
+          <button id="webMonitorOpenBtn" class="test-btn" disabled>Open in Browser</button>
+        </div>
+        <div id="webMonitorStatus" class="settings-note">Stopped</div>
+        <a id="webMonitorUrl" class="web-monitor-url" target="_blank" rel="noopener noreferrer">--</a>
+        <div class="settings-note">Use host <strong>0.0.0.0</strong> to allow other devices on your network.</div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <div class="settings-group-title">App Behavior</div>
+
+      <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-window-stack settings-label-icon" aria-hidden="true"></i><span>Startup & Tray</span></label>
+        <div class="visibility-options">
+          <label class="checkbox-label">
+            <input type="checkbox" id="launchAtStartup">
+            <span>Start app with Windows</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="startMinimized">
+            <span>Start minimized</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="minimizeToTray">
+            <span>Minimize to system tray</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="closeToTray">
+            <span>Close to system tray</span>
+          </label>
+        </div>
+        <div class="settings-note">When close to tray is enabled, use the tray icon menu to quit the app.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="container">
+    <div class="header">
+      <h1>SiR System Monitor</h1>
+      <div class="header-actions">
+        <button id="monitoringModeBtn" class="monitoring-mode-btn">Monitoring Mode</button>
+        <button id="summaryModeBtn" class="monitoring-mode-btn">Summary Mode</button>
+        <div class="status-indicator" id="liveStatusIndicator">
+          <span class="status-dot"></span>
+          <span>Live</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-container" id="statsContainer">
+      <!-- CPU Group -->
+      <div class="sensor-group" id="cpuGroup">
+        <div class="sensor-group-title"><i class="bi bi-cpu-fill group-icon" aria-hidden="true"></i><span>CPU</span></div>
+        <div id="cpuSensorsDynamic" class="sensor-scroll"></div>
+      </div>
+
+      <!-- GPU Group -->
+      <div class="sensor-group" id="gpuGroup">
+        <div class="sensor-group-title"><i class="bi bi-gpu-card group-icon" aria-hidden="true"></i><span>GPU</span></div>
+        <div id="gpuSensorsDynamic" class="sensor-scroll"></div>
+      </div>
+
+      <!-- Memory Group -->
+      <div class="sensor-group" id="ramGroup">
+        <div class="sensor-group-title"><i class="bi bi-memory group-icon" aria-hidden="true"></i><span>Memory</span></div>
+        <div id="ramSensorsDynamic" class="sensor-scroll"></div>
+      </div>
+
+      <!-- PSU Group -->
+      <div class="sensor-group" id="psuGroup">
+        <div class="sensor-group-title"><i class="bi bi-plug-fill group-icon" aria-hidden="true"></i><span>PSU</span></div>
+        <div id="psuSensorsDynamic" class="sensor-scroll"></div>
+      </div>
+
+      <!-- Fans Group -->
+      <div class="sensor-group" id="fansGroup">
+        <div class="sensor-group-title"><i class="bi bi-fan group-icon" aria-hidden="true"></i><span>Fans</span></div>
+        <div id="fansSensorsDynamic" class="sensor-scroll"></div>
+      </div>
+
+      <!-- Network Group -->
+      <div class="sensor-group" id="networkGroup">
+        <div class="sensor-group-title"><i class="bi bi-globe group-icon" aria-hidden="true"></i><span>Network</span></div>
+        <div id="networkSensorsDynamic" class="sensor-scroll"></div>
+      </div>
+
+      <!-- Drives Group -->
+      <div class="sensor-group" id="drivesGroup">
+        <div class="sensor-group-title"><i class="bi bi-device-hdd-fill group-icon" aria-hidden="true"></i><span>Drives</span></div>
+        <div id="drivesSensorsDynamic" class="sensor-scroll"></div>
+      </div>
+
+      <!-- Other Group -->
+      <div class="sensor-group" id="externalGroup">
+        <div class="sensor-group-title"><i class="bi bi-tools group-icon" aria-hidden="true"></i><span>Other</span></div>
+        <div id="externalSensorsDynamic" class="sensor-scroll"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="setupGuideModal" class="setup-guide-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="setupGuideTitle">
+    <div class="setup-guide-dialog" role="document">
+      <div class="setup-guide-header">
+        <h2 id="setupGuideTitle">Setup Guide</h2>
+        <button type="button" class="setup-guide-close" data-close-setup-guide aria-label="Close setup guide">×</button>
+      </div>
+      <div class="setup-guide-body">
+        <div class="setup-guide-highlight">
+          <strong>Quick summary:</strong> RTSS is mainly used for <strong>FPS</strong> and <strong>Frame Time</strong>. Most hardware sensors should come from <strong>AIDA64 shared memory</strong>.
+        </div>
+
+        <section class="setup-guide-section">
+          <h3>1) AIDA64 setup (required)</h3>
+          <ul>
+            <li>Open AIDA64 and go to <strong>File → Preferences → External Applications</strong>.</li>
+            <li>Enable <strong>Shared Memory</strong>.</li>
+            <li>Select the sensor items you want exported/detected by this app.</li>
+            <li>Keep AIDA64 running while this monitor app is open.</li>
+          </ul>
+        </section>
+
+        <section class="setup-guide-section">
+          <h3>2) RTSS / MSI Afterburner (optional)</h3>
+          <ul>
+            <li>Use RTSS primarily for <strong>FPS</strong> and <strong>Frame Time</strong>.</li>
+            <li>If FPS/Frame Time are missing, confirm RTSS is running and shared memory/OSD is enabled.</li>
+          </ul>
+        </section>
+
+        <section class="setup-guide-section">
+          <h3>3) In this app</h3>
+          <ul>
+            <li>Leave Detection Mode on <strong>Shared Memory Mode</strong>.</li>
+            <li>In <strong>Shared Memory Sources</strong>, enable AIDA64 (and any other provider you use).</li>
+            <li>Use <strong>Sensor Selection</strong> to show/hide and reorder sensors.</li>
+          </ul>
+        </section>
+
+        <section class="setup-guide-section">
+          <h3>4) If sensors are missing</h3>
+          <ul>
+            <li>Re-check that AIDA64 Shared Memory is enabled.</li>
+            <li>Confirm the exact sensors are selected in AIDA64 for external export.</li>
+            <li>Verify the corresponding source toggle is enabled in this app.</li>
+          </ul>
+        </section>
+
+        <label class="checkbox-label setup-guide-checkbox">
+          <input type="checkbox" id="setupGuideDontShowAgain">
+          <span>Don't show this again on startup</span>
+        </label>
+      </div>
+      <div class="setup-guide-footer">
+        <button type="button" class="test-btn" data-close-setup-guide>Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

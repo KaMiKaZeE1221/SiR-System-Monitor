@@ -1,0 +1,10 @@
+node_modules/
+dist/
+recovered_source_from_setup_1_0_6/
+restored_from_setup_1_0_6/
+.vscode/
+*.log
+*.tmp
+*.cache
+_sensor_dump*.txt
+$null

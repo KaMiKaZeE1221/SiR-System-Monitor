@@ -1,0 +1,58 @@
+{
+  "name": "sir-system-monitor",
+  "version": "1.0.0",
+  "description": "Electron app for monitoring system statistics",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron-builder": "^24.13.3",
+    "electron": "^25.0.0"
+  },
+  "dependencies": {
+    "koffi": "^2.15.1",
+    "systeminformation": "^5.21.0"
+  },
+  "build": {
+    "appId": "com.sir.systemmonitor",
+    "productName": "SiR System Monitor",
+    "files": [
+      "**/*",
+      "!dist/**",
+      "!build/**",
+      "!recovered_source_from_setup_1_0_6/**",
+      "!restored_from_setup_1_0_6/**",
+      "!docs/**",
+      "!.git/**",
+      "!.vscode/**",
+      "!_sensor_dump*.txt",
+      "!GITHUB_UPLOAD_GUIDE.md",
+      "!$null",
+      "!*.log",
+      "!README.md",
+      "!test-*.js"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "icon": "SiR_SM.ico",
+    "win": {
+      "icon": "SiR_SM.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SiR System Monitor"
+    }
+  }
+}
