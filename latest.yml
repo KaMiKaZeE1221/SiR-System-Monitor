@@ -1,8 +1,8 @@
-version: 1.0.0
+version: 1.0.4
 files:
-  - url: SiR-System-Monitor-Setup-1.0.0.exe
+  - url: SiR-System-Monitor-Setup-1.0.4.exe
     sha512: WFFiWt6DuaSftSl83qf7rOQ6lMNxlyk7bqE6WL9YLeKn8Geg0+3x1+6ox+fjMHHQ7B3w7+Lv0hy0GLpUss2U3A==
     size: 107374958
-path: SiR-System-Monitor-Setup-1.0.0.exe
+path: SiR-System-Monitor-Setup-1.0.4.exe
 sha512: WFFiWt6DuaSftSl83qf7rOQ6lMNxlyk7bqE6WL9YLeKn8Geg0+3x1+6ox+fjMHHQ7B3w7+Lv0hy0GLpUss2U3A==
 releaseDate: '2026-03-05T23:03:16.475Z'
