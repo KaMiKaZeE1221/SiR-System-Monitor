@@ -9,15 +9,10 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
 - [What It Does](#what-it-does)
 - [Screenshots](#screenshots)
 - [Requirements](#requirements)
-- [Quick Start (Developer)](#quick-start-developer)
-- [Run from Installer / Portable](#run-from-installer--portable)
 - [Settings Overview](#settings-overview)
 - [Sensor Sources](#sensor-sources)
 - [Web Monitor](#web-monitor)
-- [Project Structure](#project-structure)
-- [Build & Packaging](#build--packaging)
 - [Troubleshooting](#troubleshooting)
-- [Release Checklist](#release-checklist)
 
 ## What It Does
 
@@ -38,6 +33,9 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
   - UI font color
   - Sensor name color
   - Sensor value color
+  - Icon color
+  - Graph color
+  - Sensor block header color
   - Outline color
   - Background color
 - Supports resetting colors back to defaults for the currently selected theme.
@@ -47,6 +45,7 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
   - Portable EXE
 
 ## Screenshots
+
 
 1. Main dashboard
 
@@ -80,6 +79,7 @@ Optional (for richer sensors):
 - AIDA64 with Shared Memory enabled
 - HWiNFO / LHM shared memory providers
 
+
 ## Settings Overview
 
 Settings are grouped in the sidebar:
@@ -87,7 +87,7 @@ Settings are grouped in the sidebar:
 - Appearance
   - Color theme
   - Font size/family and text options
-  - Custom colors (font, sensor names, sensor values, outline, background)
+  - Custom colors (font, sensor names, sensor values, icon, graph, sensor block headers, outline, background)
   - Reset to theme defaults
 - Monitoring
   - Monitoring Mode toggle
@@ -125,7 +125,28 @@ When enabled:
 - JSON endpoint: `http://<host>:<port>/api/monitor`
 
 Browser behavior highlights:
+
 - Header uses a friendly mode label (`Shared Memory`) with update time.
+- Zero-value external text (for example, `FPS: 0 | Frame Time: 0.00ms`) is suppressed.
 - Summary view is hidden/locked in browser while Low Overhead Mode is active on desktop.
+- Summary button outline in browser follows the configured outline color.
+- Sensor block headers and graph lines use their configured custom colors.
 
 Useful for viewing selected sensors from another device on LAN (use host `0.0.0.0`), subject to local firewall/network rules.
+
+## Troubleshooting
+
+1. Missing sensors
+
+- Ensure provider app is running (AIDA64/HWiNFO/RTSS as needed).
+- Check provider toggles in Settings → Data Sources.
+
+2. Browser monitor not reachable
+
+- Verify host/port in Settings → Connectivity.
+- If using other devices, use host `0.0.0.0` and allow firewall access.
+
+3. Performance / latency concerns
+
+- Keep refresh rate at 1000ms or higher.
+- Close unnecessary overlays/providers not in use.
