@@ -78,8 +78,6 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
 ## Requirements
 
 - OS: Windows
-- Node.js: LTS recommended
-- npm: bundled with Node.js
 
 Optional (for richer sensors):
 
@@ -128,19 +126,9 @@ Primary runtime path uses shared memory integration:
 ## Web Monitor
 
 When enabled:
-
 - UI endpoint: `http://<host>:<port>/`
 - JSON endpoint: `http://<host>:<port>/api/monitor`
-
-Browser behavior highlights:
-
-- Header uses a friendly mode label (`Shared Memory`) with update time.
-- Zero-value external text (for example, `FPS: 0 | Frame Time: 0.00ms`) is suppressed.
-- Summary view is hidden/locked in browser while Low Overhead Mode is active on desktop.
-- Summary button outline in browser follows the configured outline color.
-- Sensor block headers and graph lines use their configured custom colors.
-
-Useful for viewing selected sensors from another device on LAN (use host `0.0.0.0`), subject to local firewall/network rules.
+Useful for viewing selected sensors from another device on LAN or WAN, subject to local firewall/network rules.
 
 ## Troubleshooting
 
