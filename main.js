@@ -8,6 +8,7 @@ if (!enableGpuAcceleration) {
 }
 
 const APP_BEHAVIOR_SETTINGS_FILE = 'appBehaviorSettings.json';
+const AUTO_LAUNCH_ARG = '--sir-auto-launch';
 const DEFAULT_APP_BEHAVIOR_SETTINGS = {
   launchAtStartup: false,
   startMinimized: false,
@@ -19,6 +20,7 @@ let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 let appBehaviorSettings = { ...DEFAULT_APP_BEHAVIOR_SETTINGS };
+const launchedFromAutoStart = process.argv.includes(AUTO_LAUNCH_ARG);
 
 function getBehaviorSettingsPath() {
   return path.join(app.getPath('userData'), APP_BEHAVIOR_SETTINGS_FILE);
@@ -61,7 +63,8 @@ function applyLoginItemSettings() {
   try {
     app.setLoginItemSettings({
       openAtLogin: !!appBehaviorSettings.launchAtStartup,
-      path: process.execPath
+      path: process.execPath,
+      args: [AUTO_LAUNCH_ARG]
     });
   } catch (error) {
     console.error('Failed to apply startup login settings:', error);
@@ -115,12 +118,14 @@ function syncTrayState() {
 }
 
 function createWindow() {
+  const forceStartMinimized = launchedFromAutoStart && appBehaviorSettings.launchAtStartup;
+
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 700,
     icon: path.join(__dirname, 'SiR_SM.ico'),
     autoHideMenuBar: true,
-    show: !appBehaviorSettings.startMinimized,
+    show: !(appBehaviorSettings.startMinimized || forceStartMinimized),
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -147,7 +152,7 @@ function createWindow() {
     mainWindow = null;
   });
 
-  if (appBehaviorSettings.startMinimized) {
+  if (appBehaviorSettings.startMinimized || forceStartMinimized) {
     mainWindow.once('ready-to-show', () => {
       if (!mainWindow) return;
       mainWindow.show();

@@ -30,6 +30,9 @@ const WINDOW_ORDER_KEY = 'windowOrder';
 const WINDOW_SIZE_KEY = 'windowSize';
 const MONITORING_MODE_KEY = 'monitoringMode';
 const SUMMARY_MODE_KEY = 'summaryMode';
+const LOW_OVERHEAD_MODE_KEY = 'lowOverheadMode';
+const LOW_OVERHEAD_PREV_MONITORING_KEY = 'lowOverheadPrevMonitoring';
+const LOW_OVERHEAD_PREV_SUMMARY_KEY = 'lowOverheadPrevSummary';
 const GRAPH_EXPANDED_KEY = 'graphExpandedSensors';
 const WEB_MONITOR_SETTINGS_KEY = 'webMonitorSettings';
 const SETUP_GUIDE_SUPPRESS_KEY = 'setupGuideSuppress';
@@ -72,6 +75,7 @@ const sensorHistory = {};
 const sensorSessionStats = {};
 let expandedGraphSensors = new Set();
 let summaryModeEnabled = false;
+let lowOverheadModeEnabled = false;
 let latestSelectedGroupedSensors = createEmptyGroupedBuckets();
 let liveSensorCatalogSignature = '';
 let cachedOrderedSensorCatalog = createEmptyGroupedBuckets();
@@ -331,7 +335,7 @@ function buildWebMonitorHtml() {
         <div id="meta" class="meta">Waiting for data...</div>
       </div>
       <div class="header-right">
-        <button id="summaryModeToggle" class="summary-toggle" type="button">Summary Mode</button>
+        <button id="summaryModeToggle" class="summary-toggle" type="button" title="Toggle Summary mode (Min/Max values)">Summary Mode</button>
       </div>
     </div>
     <div id="grid" class="grid"></div>
@@ -359,7 +363,8 @@ function buildWebMonitorHtml() {
       structureKey: '',
       rowsByKey: new Map(),
       rowScrollByGroup: new Map(),
-      summaryMode: false
+      summaryMode: false,
+      lowOverheadMode: false
     };
 
     const SUMMARY_MODE_STORAGE_KEY = 'sirWebSummaryMode';
@@ -453,16 +458,42 @@ function buildWebMonitorHtml() {
       '</div>';
     }
 
-    function setSummaryMode(enabled) {
-      domState.summaryMode = !!enabled;
+    function setSummaryMode(enabled, options) {
+      const opts = options || {};
+      const persist = opts.persist !== false;
+      const requested = !!enabled;
+      const nextSummaryMode = domState.lowOverheadMode ? false : requested;
+      domState.summaryMode = nextSummaryMode;
       document.body.classList.toggle('summary-mode', domState.summaryMode);
       const button = document.getElementById('summaryModeToggle');
       if (button) {
         button.textContent = domState.summaryMode ? 'Exit Summary Mode' : 'Summary Mode';
+        button.title = domState.summaryMode
+          ? 'Return to graph/regular view'
+          : 'Toggle Summary mode (Min/Max values)';
       }
-      try {
-        localStorage.setItem(SUMMARY_MODE_STORAGE_KEY, domState.summaryMode ? 'true' : 'false');
-      } catch (e) {}
+      if (persist) {
+        try {
+          localStorage.setItem(SUMMARY_MODE_STORAGE_KEY, domState.summaryMode ? 'true' : 'false');
+        } catch (e) {}
+      }
+    }
+
+    function applyLowOverheadLock(settings) {
+      const nextLowOverheadMode = !!(settings && settings.lowOverheadMode);
+      if (domState.lowOverheadMode === nextLowOverheadMode) {
+        return;
+      }
+
+      domState.lowOverheadMode = nextLowOverheadMode;
+      const button = document.getElementById('summaryModeToggle');
+      if (button) {
+        button.style.display = domState.lowOverheadMode ? 'none' : '';
+      }
+
+      if (domState.lowOverheadMode && domState.summaryMode) {
+        setSummaryMode(false, { persist: false });
+      }
     }
 
     function buildPath(points, width, height, padding) {
@@ -668,7 +699,10 @@ function buildWebMonitorHtml() {
       }
 
       applySyncedSettings(payload.settings || {});
-      meta.textContent = 'Mode: ' + (payload.mode || 'n/a') + ' | Updated: ' + toLocalTime(payload.updatedAt) + ' | External: ' + (payload.external || 'N/A');
+        applyLowOverheadLock(payload.settings || {});
+        const rawMode = String(payload.mode || '').toLowerCase();
+        const modeLabel = rawMode === 'msi' ? 'Shared Memory' : (payload.mode || 'N/A');
+        meta.textContent = 'Mode: ' + modeLabel + ' | Updated: ' + toLocalTime(payload.updatedAt);
 
       if (!domState.initializedSummaryMode) {
         let initialSummaryMode = false;
@@ -687,6 +721,9 @@ function buildWebMonitorHtml() {
         const summaryToggle = document.getElementById('summaryModeToggle');
         if (summaryToggle) {
           summaryToggle.addEventListener('click', () => {
+            if (domState.lowOverheadMode) {
+              return;
+            }
             setSummaryMode(!domState.summaryMode);
             domState.structureKey = '';
             render(payload);
@@ -738,7 +775,7 @@ function isWebSummaryModeActive() {
 }
 
 function shouldCollectSummaryStats() {
-  return summaryModeEnabled || isWebSummaryModeActive();
+  return !lowOverheadModeEnabled;
 }
 
 function publishWebMonitorPayload(mode, externalText) {
@@ -818,6 +855,7 @@ function publishWebMonitorPayload(mode, externalText) {
       valueMonospace: selectedValueMonospace,
       fontBold: selectedBold,
       summaryMode: summaryModeEnabled,
+      lowOverheadMode: lowOverheadModeEnabled,
       groupOrder,
       groupLayout,
       palette
@@ -1333,6 +1371,8 @@ function initializeSetupGuideModal() {
 function setSettingsSectionExpanded(section, toggleButton, expanded) {
   section.classList.toggle('is-collapsed', !expanded);
   toggleButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  const sectionTitle = (toggleButton.dataset.sectionTitle || 'section').trim();
+  toggleButton.title = expanded ? `Collapse ${sectionTitle}` : `Expand ${sectionTitle}`;
 }
 
 function setupSettingsAccordion() {
@@ -1361,6 +1401,7 @@ function setupSettingsAccordion() {
     const toggleButton = document.createElement('button');
     toggleButton.type = 'button';
     toggleButton.className = 'settings-toggle-btn';
+    toggleButton.dataset.sectionTitle = sectionTitle;
     const titleIconHtml = sectionTitleIconClass
       ? `<i class="${escapeHtml(sectionTitleIconClass)}" aria-hidden="true"></i>`
       : '';
@@ -1655,6 +1696,9 @@ function applyMonitoringMode(enabled) {
   const button = document.getElementById('monitoringModeBtn');
   if (button) {
     button.textContent = enabled ? 'Exit Monitoring Mode' : 'Monitoring Mode';
+    button.title = enabled
+      ? 'Return to normal layout (disable Monitoring mode)'
+      : 'Toggle monitoring-focused view for better readability';
   }
 }
 
@@ -1695,6 +1739,9 @@ function applySummaryMode(enabled) {
   const button = document.getElementById('summaryModeBtn');
   if (button) {
     button.textContent = summaryModeEnabled ? 'Exit Summary Mode' : 'Summary Mode';
+    button.title = summaryModeEnabled
+      ? 'Return to graph/regular view (disable Summary mode)'
+      : 'Toggle summary view (Min/Max values)';
   }
 
   if (summaryModeEnabled) {
@@ -1708,6 +1755,55 @@ function applySummaryMode(enabled) {
 
   invalidateRenderGroupCache();
   renderAllDynamicGroups(latestSelectedGroupedSensors || createEmptyGroupedBuckets(), { force: true });
+}
+
+function updateLowOverheadModeButtonState(enabled) {
+  const lowOverheadButton = document.getElementById('lowOverheadModeBtn');
+  if (lowOverheadButton) {
+    lowOverheadButton.textContent = enabled ? 'Exit Low Overhead Mode' : 'Low Overhead Mode';
+    lowOverheadButton.classList.toggle('active', !!enabled);
+    lowOverheadButton.title = enabled
+      ? 'Return to normal updates and controls'
+      : 'Reduce overhead by disabling Summary updates and forcing Monitoring mode';
+  }
+
+  const summaryButton = document.getElementById('summaryModeBtn');
+  if (summaryButton) {
+    summaryButton.style.display = enabled ? 'none' : '';
+  }
+
+  const monitoringButton = document.getElementById('monitoringModeBtn');
+  if (monitoringButton) {
+    monitoringButton.disabled = !!enabled;
+    monitoringButton.title = enabled ? 'Monitoring Mode is locked while Low Overhead Mode is enabled' : '';
+  }
+}
+
+function applyLowOverheadMode(enabled) {
+  const isEnabled = !!enabled;
+
+  if (isEnabled && !lowOverheadModeEnabled) {
+    const wasMonitoringEnabled = document.body.classList.contains('monitoring-mode');
+    const wasSummaryEnabled = summaryModeEnabled;
+    localStorage.setItem(LOW_OVERHEAD_PREV_MONITORING_KEY, wasMonitoringEnabled ? 'true' : 'false');
+    localStorage.setItem(LOW_OVERHEAD_PREV_SUMMARY_KEY, wasSummaryEnabled ? 'true' : 'false');
+  }
+
+  lowOverheadModeEnabled = isEnabled;
+  localStorage.setItem(LOW_OVERHEAD_MODE_KEY, isEnabled ? 'true' : 'false');
+
+  if (isEnabled) {
+    applyMonitoringMode(true);
+    applySummaryMode(false);
+  } else {
+    const previousMonitoringMode = localStorage.getItem(LOW_OVERHEAD_PREV_MONITORING_KEY) === 'true';
+    const previousSummaryModeRaw = localStorage.getItem(LOW_OVERHEAD_PREV_SUMMARY_KEY);
+    const previousSummaryMode = previousSummaryModeRaw === null ? true : previousSummaryModeRaw === 'true';
+    applyMonitoringMode(previousMonitoringMode);
+    applySummaryMode(previousSummaryMode);
+  }
+
+  updateLowOverheadModeButtonState(isEnabled);
 }
 
 function sensorCatalogHash(groupedSensors) {
@@ -2225,8 +2321,8 @@ function renderSensorOptions(groupedSensors) {
               <span class="sensor-drag-handle" title="Drag to reorder" aria-hidden="true">⋮⋮</span>
               <label class="checkbox-label sensor-item-label"><input type="checkbox" data-sensor-id="${sensor.id}" ${checked} ${disabled}><span>${label}</span></label>
               <div class="sensor-order-controls">
-                <button type="button" class="sensor-order-btn" data-order-group="${group}" data-order-sensor-id="${sensor.id}" data-order-dir="up" ${disableUp} aria-label="Move ${label} up">↑</button>
-                <button type="button" class="sensor-order-btn" data-order-group="${group}" data-order-sensor-id="${sensor.id}" data-order-dir="down" ${disableDown} aria-label="Move ${label} down">↓</button>
+                <button type="button" class="sensor-order-btn" data-order-group="${group}" data-order-sensor-id="${sensor.id}" data-order-dir="up" ${disableUp} aria-label="Move ${label} up" title="Move ${label} up">↑</button>
+                <button type="button" class="sensor-order-btn" data-order-group="${group}" data-order-sensor-id="${sensor.id}" data-order-dir="down" ${disableDown} aria-label="Move ${label} down" title="Move ${label} down">↓</button>
               </div>
             </div>
           `;
@@ -2244,7 +2340,7 @@ function renderSensorOptions(groupedSensors) {
               <span class="sensor-category-title"><i class="bi ${iconClass} sensor-category-icon" aria-hidden="true"></i><strong>${escapeHtml(groupLabel)}</strong></span>
               <span class="sensor-category-count">${sensors.length}</span>
             </label>
-            <button type="button" class="sensor-category-toggle" data-toggle-sensor-group="${group}" aria-expanded="${isCollapsed ? 'false' : 'true'}" aria-label="Toggle ${escapeHtml(groupLabel)} sensors">▾</button>
+            <button type="button" class="sensor-category-toggle" data-toggle-sensor-group="${group}" aria-expanded="${isCollapsed ? 'false' : 'true'}" aria-label="Toggle ${escapeHtml(groupLabel)} sensors" title="Expand/collapse ${escapeHtml(groupLabel)} sensor list">▾</button>
           </div>
           <div class="sensor-category-items${isCollapsed ? ' is-collapsed' : ''}">
             ${items}
@@ -2743,6 +2839,9 @@ const SettingsManager = {
       applyMonitoringMode(savedMonitoringMode);
 
       monitoringButton.addEventListener('click', () => {
+        if (lowOverheadModeEnabled) {
+          return;
+        }
         const nextState = !document.body.classList.contains('monitoring-mode');
         applyMonitoringMode(nextState);
       });
@@ -2750,11 +2849,30 @@ const SettingsManager = {
 
     const summaryButton = document.getElementById('summaryModeBtn');
     if (summaryButton) {
-      const savedSummaryMode = localStorage.getItem(SUMMARY_MODE_KEY) === 'true';
+      const storedSummaryMode = localStorage.getItem(SUMMARY_MODE_KEY);
+      const savedSummaryMode = storedSummaryMode === null ? true : storedSummaryMode === 'true';
       applySummaryMode(savedSummaryMode);
 
       summaryButton.addEventListener('click', () => {
+        if (lowOverheadModeEnabled) {
+          return;
+        }
         applySummaryMode(!summaryModeEnabled);
+      });
+    }
+
+    const lowOverheadButton = document.getElementById('lowOverheadModeBtn');
+    const savedLowOverheadMode = localStorage.getItem(LOW_OVERHEAD_MODE_KEY) === 'true';
+
+    if (savedLowOverheadMode) {
+      applyLowOverheadMode(true);
+    } else {
+      updateLowOverheadModeButtonState(false);
+    }
+
+    if (lowOverheadButton) {
+      lowOverheadButton.addEventListener('click', () => {
+        applyLowOverheadMode(!lowOverheadModeEnabled);
       });
     }
 
@@ -3064,10 +3182,10 @@ async function updateStats() {
         : (Number.isFinite(externalFps) && externalFps > 0 ? (1000 / externalFps) : 0);
       
       // MSI Afterburner format (FPS info)
-      if (Number.isFinite(externalFps)) {
+      if (Number.isFinite(externalFps) && externalFps > 0) {
         externalInfo.push(`FPS: ${externalFps.toFixed(0)}`);
       }
-      if (Number.isFinite(normalizedFrameTime) && normalizedFrameTime >= 0) {
+      if (Number.isFinite(normalizedFrameTime) && normalizedFrameTime > 0) {
         externalInfo.push(`Frame Time: ${normalizedFrameTime.toFixed(2)}ms`);
       }
 
