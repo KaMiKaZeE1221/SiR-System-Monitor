@@ -41,12 +41,8 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
   - Background color
 - Supports resetting colors back to defaults for the currently selected theme.
 - Exposes a browser-accessible monitor page and JSON endpoint.
-- Builds as:
-  - NSIS installer
-  - Portable EXE
 
 ## Screenshots
-
 
 1. Main dashboard
 
@@ -83,6 +79,7 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
 ![Update Found](docs/screenshots/09-UpdateFound.png)
 
 ![Downloading Update](docs/screenshots/10-DownloadingUpdate.png)
+
 ## Requirements
 
 - OS: Windows
