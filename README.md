@@ -12,6 +12,7 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
 - [Settings Overview](#settings-overview)
 - [Sensor Sources](#sensor-sources)
 - [Web Monitor](#web-monitor)
+- [Updater](#Updater)
 - [Troubleshooting](#troubleshooting)
 
 ## What It Does
