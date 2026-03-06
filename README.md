@@ -134,7 +134,7 @@ When enabled:
 - UI endpoint: `http://<host>:<port>/`
 - JSON endpoint: `http://<host>:<port>/api/monitor`
 Useful for viewing selected sensors from another device on LAN or WAN, subject to local firewall/network rules.
-# As always use at YOUR OWN RISK if you open this up on WAN!
+# Use on WAN at your own risk!
 
 ## Updater
 
