@@ -12,6 +12,9 @@
 - Added resizable settings sidebar width via drag handle, with persisted width.
 - Added app version to desktop window title (`SiR System Monitor v<version>`).
 - Added app version to Web Monitor header metadata line.
+- Improved graph performance by updating graph history only when a sensor graph is actually expanded/visible.
+- Graph history data is now cleared for sensors whose graph is not expanded to reduce background memory/work.
+- Improved sensor updating cycle, previously it would skip a refresh of the sensors (Might need to adjust the update rate in AIDA/RTSS/HWINFO)
 
 ### Changed
 - Switched update behavior to user-driven/manual (no automatic download/install).
@@ -28,6 +31,8 @@
 - Fixed update download 404 caused by release asset filename mismatch.
 - Fixed package bloat regression by excluding `dist*` outputs from packaged app files.
 - Restored expected installer size range after output-folder inclusion issue.
+- Fixed unnecessary background graph-history accumulation when no graphs were open.
+- Fixed Memory Timings showing only as the first latency, it should now show the entire latency including the command rate.
 
 ## 1.0.5 - 2026-03-05
 
