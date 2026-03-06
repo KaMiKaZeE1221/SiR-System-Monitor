@@ -58,7 +58,9 @@ let sensorCategoryCollapse = {};
 let sensorOrderByGroup = {};
 let sensorCatalogSignature = '';
 let updateInProgress = false;
-let pendingUpdateTicks = 0;
+let rerunUpdateRequested = false;
+let updateLoopActive = false;
+let nextUpdateDueAt = 0;
 let lastSuccessfulSensorReadAt = 0;
 const SENSOR_READ_STALE_HOLD_MS = 8000;
 const renderGroupSignatureCache = {};
@@ -344,14 +346,14 @@ function buildWebMonitorHtml() {
       --accent-light: #4d9fff;
     }
     body { margin: 0; font-family: var(--font-family); background: var(--bg-primary); color: var(--text-primary); }
-    .wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
+    .wrap { max-width: 1400px; margin: 0 auto; padding: 16px; }
     .header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; }
     .header-right { display: inline-flex; align-items: center; gap: 8px; }
     .title { font-size: calc(22px * var(--font-scale)); font-weight: var(--font-weight-bold); color: var(--text-primary); }
     .meta { color: var(--text-secondary); font-size: calc(13px * var(--font-scale)); }
     .summary-toggle { border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); border-radius: 7px; padding: 6px 10px; cursor: pointer; font-size: calc(12px * var(--font-scale)); font-weight: var(--font-weight-bold); }
     .summary-toggle:hover { background: var(--border-color); color: var(--text-primary); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
     .card { border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); padding: 12px; overflow: hidden; display: flex; flex-direction: column; }
     .card h3 { margin: 0 0 10px; font-size: calc(13px * var(--font-scale)); letter-spacing: .08em; color: var(--block-header-color); text-transform: uppercase; font-weight: var(--font-weight-bold); display: flex; align-items: center; gap: 8px; }
     .group-icon { color: var(--icon-color); font-size: calc(14px * var(--font-scale)); line-height: 1; }
@@ -366,17 +368,18 @@ function buildWebMonitorHtml() {
     .graph { width: 100%; height: 58px; margin-top: 6px; display: block; }
     .graph-line { fill: none; stroke: var(--graph-color); stroke-width: 2; vector-effect: non-scaling-stroke; }
     .graph-meta { margin-top: 3px; display: flex; justify-content: space-between; gap: 6px; color: var(--text-secondary); font-size: calc(10px * var(--font-scale)); }
-    body.summary-mode .wrap { max-width: 1700px; }
+    body.summary-mode .wrap { max-width: 1900px; }
     body.summary-mode .grid { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
     body.summary-mode .value { display: none; }
-    body.summary-mode .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    body.summary-mode .row-main { justify-content: flex-start; flex: 1 1 auto; min-width: 0; }
-    body.summary-mode .summary-holder { flex: 0 0 auto; margin-left: auto; }
-    body.summary-mode .summary-line { margin-top: 0; white-space: nowrap; flex-wrap: nowrap; }
+    body.summary-mode .row { display: grid; grid-template-columns: minmax(130px, 38%) 1fr; align-items: center; gap: 10px; }
+    body.summary-mode .row-main { justify-content: flex-start; min-width: 0; }
+    body.summary-mode .label { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.25; }
+    body.summary-mode .summary-holder { margin-left: 0; min-width: 0; }
+    body.summary-mode .summary-line { margin-top: 0; white-space: normal; flex-wrap: wrap; gap: 6px; }
     .summary-line { margin-top: 5px; display: flex; align-items: center; justify-content: flex-end; gap: 10px; font-size: calc(11px * var(--font-scale)); color: var(--text-secondary); flex-wrap: wrap; white-space: normal; overflow: visible; text-overflow: unset; }
-    .summary-part { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: 4px; min-width: 165px; }
+    .summary-part { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: 4px; min-width: 0; }
     .summary-label { text-transform: uppercase; font-size: calc(10px * var(--font-scale)); letter-spacing: .4px; color: var(--text-secondary); }
-    .summary-value { color: var(--sensor-value-color); font-family: var(--value-font-family); font-weight: var(--font-weight-bold); min-width: 95px; text-align: right; font-variant-numeric: tabular-nums; }
+    .summary-value { color: var(--sensor-value-color); font-family: var(--value-font-family); font-weight: var(--font-weight-bold); min-width: 0; text-align: right; font-variant-numeric: tabular-nums; }
     .summary-sep { opacity: .65; }
   </style>
 </head>
@@ -452,6 +455,11 @@ function buildWebMonitorHtml() {
       const unitText = String(units || '').trim();
       const nameText = String(sensorName || '').toLowerCase();
       const isMemoryReading = nameText.includes('memory') || nameText.includes('vram') || nameText.includes('dedicated') || nameText.includes('dynamic');
+      const isNetworkTotal =
+        nameText.includes('total download') ||
+        nameText.includes('total upload') ||
+        nameText.includes('total dl') ||
+        nameText.includes('total up');
 
       let displayValue = numeric;
       let displayUnits = unitText;
@@ -480,6 +488,14 @@ function buildWebMonitorHtml() {
         }
       }
 
+      if (isNetworkTotal) {
+        const lowerUnits = displayUnits.toLowerCase();
+        if (lowerUnits === 'mb' && Math.abs(displayValue) >= 1024) {
+          displayValue = displayValue / 1024;
+          displayUnits = 'GB';
+        }
+      }
+
       const u = displayUnits.toLowerCase();
       let decimals = 2;
       if (!displayUnits) {
@@ -497,6 +513,17 @@ function buildWebMonitorHtml() {
     function renderSummaryHtml(sensor) {
       const summary = sensor && sensor.summary;
       if (!summary || !Number.isFinite(Number(summary.count)) || Number(summary.count) <= 0) {
+        const sensorName = String((sensor && sensor.name) || '').toLowerCase();
+        const isStaticSummaryValue =
+          sensorName.includes('lan ip') ||
+          sensorName.includes('wan ip') ||
+          sensorName.includes('memory timing');
+        const numericValue = Number(sensor && sensor.value);
+        const hasNumericValue = Number.isFinite(numericValue);
+        if (isStaticSummaryValue || !hasNumericValue) {
+          const staticText = String((sensor && sensor.formatted) || '--').trim() || '--';
+          return '<div class="summary-line"><span class="summary-part"><span class="summary-label">Value</span><span class="summary-value">' + escapeHtml(staticText) + '</span></span></div>';
+        }
         return '<div class="summary-line">Collecting summary...</div>';
       }
 
@@ -886,26 +913,32 @@ function publishWebMonitorPayload(mode, externalText) {
   const groups = {};
   const includeSummary = shouldCollectSummaryStats();
   SENSOR_GROUP_ORDER.forEach((group) => {
-    groups[group] = (latestSelectedGroupedSensors[group] || []).map((sensor) => ({
-      id: sensor.id,
-      name: sensor.name,
-      value: Number(sensor.value),
-      units: sensor.units || inferUnitsFromSensor(sensor),
-      formatted: formatSensorValue(sensor),
-      expanded: expandedGraphSensors.has(sensor.id),
-      history: expandedGraphSensors.has(sensor.id) ? (sensorHistory[sensor.id] || []).slice(-120).map((point) => ({ ts: point.ts, value: point.value })) : [],
-      summary: includeSummary ? (() => {
-        const stats = sensorSessionStats[sensor.id];
-        if (!stats || !Number.isFinite(stats.count) || stats.count <= 0) {
-          return { min: null, max: null, count: 0 };
-        }
-        return {
-          min: stats.min,
-          max: stats.max,
-          count: stats.count
-        };
-      })() : null
-    }));
+    groups[group] = (latestSelectedGroupedSensors[group] || []).map((sensor) => {
+      const resolvedUnits = resolveDisplayUnits(sensor) || sensor.units || inferUnitsFromSensor(sensor);
+      const numericValue = Number(sensor.value);
+      const hasNumericValue = Number.isFinite(numericValue);
+      const sensorForFormatting = { ...sensor, units: resolvedUnits };
+      return {
+        id: sensor.id,
+        name: sensor.name,
+        value: hasNumericValue ? numericValue : sensor.value,
+        units: resolvedUnits,
+        formatted: formatSensorValue(sensorForFormatting),
+        expanded: expandedGraphSensors.has(sensor.id),
+        history: expandedGraphSensors.has(sensor.id) ? (sensorHistory[sensor.id] || []).slice(-120).map((point) => ({ ts: point.ts, value: point.value })) : [],
+        summary: (includeSummary && hasNumericValue) ? (() => {
+          const stats = sensorSessionStats[sensor.id];
+          if (!stats || !Number.isFinite(stats.count) || stats.count <= 0) {
+            return { min: null, max: null, count: 0 };
+          }
+          return {
+            min: stats.min,
+            max: stats.max,
+            count: stats.count
+          };
+        })() : null
+      };
+    });
   });
 
   latestWebPayload = {
@@ -1977,6 +2010,9 @@ function getFinalDisplayLabel(sensor) {
   const group = String(sensor && sensor.group ? sensor.group : '').toLowerCase();
   const units = String(resolveDisplayUnits(sensor) || '').toLowerCase();
 
+  if (lower === 'external ip address') return 'WAN IP';
+  if (lower === 'primary ip address') return 'LAN IP';
+
   if (lower.includes('cpu sensor')) {
     if (units === 'w') return 'CPU Power';
     if (units === 'rpm' || group === 'fans') return 'CPU Fan';
@@ -2085,6 +2121,11 @@ function updateSensorSessionStats(selectedGroupedSensors) {
 function renderSensorSummary(sensor) {
   const stats = sensor && sensor.id ? sensorSessionStats[sensor.id] : null;
   if (!stats || !Number.isFinite(stats.min) || !Number.isFinite(stats.max) || !Number.isFinite(stats.count) || stats.count <= 0) {
+    const rawValue = sensor ? sensor.value : null;
+    if (typeof rawValue === 'string') {
+      const staticText = rawValue.trim() || '--';
+      return `<div class="stat-summary-line is-empty"><span class="summary-metric"><span class="summary-metric-label">Value</span><span class="summary-metric-value">${escapeHtml(staticText)}</span></span></div>`;
+    }
     return '<div class="stat-summary-line is-empty">Collecting summary...</div>';
   }
 
@@ -2422,7 +2463,7 @@ function renderAllDynamicGroups(selected, options = {}) {
   }
 
   const now = Date.now();
-  const effectiveMinRenderInterval = Math.max(UI_RENDER_MIN_INTERVAL_MS, Math.min(3000, Math.max(1000, updateInterval)));
+  const effectiveMinRenderInterval = Math.max(250, Math.min(3000, Math.round(updateInterval * 0.75)));
   if (!forceRender && !forceNextUiRender && (now - lastUiRenderAt) < effectiveMinRenderInterval) {
     pendingVisibilityRefresh = true;
     return;
@@ -3769,11 +3810,11 @@ const SettingsManager = {
   }
 };
 
-async function updateStats() {
+async function updateStats(forceRender = false) {
   const providerSelection = loadProviderSelection();
 
   if (updateInProgress) {
-    pendingUpdateTicks = Math.min(pendingUpdateTicks + 1, 4);
+    rerunUpdateRequested = true;
     return;
   }
   updateInProgress = true;
@@ -3847,13 +3888,13 @@ async function updateStats() {
           updateSensorSessionStats(selected);
         }
         lastSuccessfulSensorReadAt = Date.now();
-        renderAllDynamicGroups(selected);
+        renderAllDynamicGroups(selected, { force: forceRender });
       } else {
         const now = Date.now();
         if ((now - lastSuccessfulSensorReadAt) > SENSOR_READ_STALE_HOLD_MS) {
           latestSelectedGroupedSensors = createEmptyGroupedBuckets();
         }
-        renderAllDynamicGroups(latestSelectedGroupedSensors);
+        renderAllDynamicGroups(latestSelectedGroupedSensors, { force: forceRender });
       }
       
       const externalText = externalInfo.length > 0 ? externalInfo.join(' | ') : 'No data';
@@ -3863,25 +3904,46 @@ async function updateStats() {
       if ((now - lastSuccessfulSensorReadAt) > SENSOR_READ_STALE_HOLD_MS) {
         latestSelectedGroupedSensors = createEmptyGroupedBuckets();
       }
-      renderAllDynamicGroups(latestSelectedGroupedSensors);
+      renderAllDynamicGroups(latestSelectedGroupedSensors, { force: forceRender });
       publishWebMonitorPayload(mode, 'N/A');
     }
 
   } catch (error) {
   } finally {
     updateInProgress = false;
-    if (pendingUpdateTicks > 0) {
-      pendingUpdateTicks -= 1;
+    if (rerunUpdateRequested) {
+      rerunUpdateRequested = false;
       setTimeout(() => {
-        updateStats();
+        updateStats(true);
       }, 0);
     }
   }
 }
 
+function scheduleNextUpdateTick() {
+  if (!updateLoopActive) return;
+
+  const delay = Math.max(0, nextUpdateDueAt - Date.now());
+  clearTimeout(updateTimer);
+  updateTimer = setTimeout(async () => {
+    if (!updateLoopActive) return;
+
+    await updateStats(true);
+
+    if (!updateLoopActive) return;
+    const now = Date.now();
+    do {
+      nextUpdateDueAt += updateInterval;
+    } while (nextUpdateDueAt <= now);
+    scheduleNextUpdateTick();
+  }, delay);
+}
+
 function restartUpdateTimer() {
-  clearInterval(updateTimer);
-  updateTimer = setInterval(updateStats, updateInterval);
+  clearTimeout(updateTimer);
+  updateLoopActive = true;
+  nextUpdateDueAt = Date.now() + updateInterval;
+  scheduleNextUpdateTick();
 }
 
 // Initialize
@@ -3906,5 +3968,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 window.addEventListener('beforeunload', () => {
+  updateLoopActive = false;
+  clearTimeout(updateTimer);
   stopWebMonitorServer();
 });

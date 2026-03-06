@@ -527,6 +527,21 @@ class RTSSReader {
           continue;
         }
 
+        if (lowerFullName.includes('timing')) {
+          const groupForTiming = this.classifySensorGroup(`${sensorType} ${fullName}`, '', -1);
+          this.addProviderSensor(result, {
+            id: `aida_${sensorType}_${sensorId}`.replace(/[^a-zA-Z0-9_\-]/g, '_'),
+            name: fullName,
+            value: valueRaw,
+            units: '',
+            group: groupForTiming,
+            provider: 'aida',
+            sourceType: sensorType,
+            sourceId: sensorId
+          });
+          continue;
+        }
+
         const parsed = this.parseNumericValueAndUnits(valueRaw);
         if (!parsed) continue;
 
@@ -671,9 +686,27 @@ class RTSSReader {
           const id = ((sensorXml.match(/<id>([\s\S]*?)<\/id>/i) || [])[1] || '').trim();
           const name = ((sensorXml.match(/<name>([\s\S]*?)<\/name>/i) || [])[1] || '').trim();
           const type = ((sensorXml.match(/<type>([\s\S]*?)<\/type>/i) || [])[1] || '').trim();
-          const valueRaw = ((sensorXml.match(/<value>([\s\S]*?)<\/value>/i) || [])[1] || '').trim().replace(',', '.');
+          const valueRawText = ((sensorXml.match(/<value>([\s\S]*?)<\/value>/i) || [])[1] || '').trim();
+          const valueRaw = valueRawText.replace(',', '.');
 
           if (!id || !valueRaw) continue;
+
+          const fullName = `${owner} ${name}`.trim();
+          const lowerFullName = fullName.toLowerCase();
+          if (lowerFullName.includes('timing')) {
+            const groupForTiming = this.classifySensorGroup(fullName, '', -1);
+            const sensorIdForTiming = `lhm_${ownerId || 'owner'}_${id}`.replace(/[^a-zA-Z0-9_\-]/g, '_');
+            this.addProviderSensor(result, {
+              id: sensorIdForTiming,
+              name: fullName,
+              value: valueRawText,
+              units: '',
+              group: groupForTiming,
+              provider: 'lhm'
+            });
+            continue;
+          }
+
           const value = parseFloat(valueRaw);
           if (!Number.isFinite(value)) continue;
 
@@ -688,7 +721,6 @@ class RTSSReader {
             return '';
           })();
 
-          const fullName = `${owner} ${name}`.trim();
           const group = this.classifySensorGroup(fullName, inferredUnits, -1);
           const sensorId = `lhm_${ownerId || 'owner'}_${id}`.replace(/[^a-zA-Z0-9_\-]/g, '_');
           const normalizedValue = (group === 'ram' || (group === 'gpu' && fullName.toLowerCase().includes('memory')))
