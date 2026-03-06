@@ -11,7 +11,6 @@
 
 ### Fixed
 - Fixed unnecessary background graph-history accumulation when no graphs were open.
-- Updated README release asset naming to match updater-safe artifact names.
 - Fixed occasional apparent "every other second" UI skips by forcing scheduler-driven renders when due.
 - Fixed RAM timing display truncation (for example `18-22-22-42` no longer collapsing to `18.00`).
 
