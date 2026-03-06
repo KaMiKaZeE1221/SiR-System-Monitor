@@ -409,8 +409,8 @@ function syncTrayState() {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1000,
-    height: 700,
+    width: 1600,
+    height: 900,
     icon: path.join(__dirname, 'SiR_SM.ico'),
     autoHideMenuBar: true,
     show: !appBehaviorSettings.startMinimized,

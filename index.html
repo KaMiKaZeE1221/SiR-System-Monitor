@@ -251,6 +251,8 @@
     </div>
   </div>
 
+  <div id="sidebarResizeHandle" class="sidebar-resize-handle" role="separator" aria-label="Resize settings sidebar" aria-orientation="vertical"></div>
+
   <!-- Main Content -->
   <div class="container">
     <div class="header">
@@ -324,6 +326,11 @@
         <button type="button" class="setup-guide-close" data-close-setup-guide aria-label="Close setup guide">×</button>
       </div>
       <div class="setup-guide-body">
+        <label class="checkbox-label setup-guide-checkbox">
+          <input type="checkbox" id="setupGuideDontShowAgain">
+          <span>Don't show this again on startup</span>
+        </label>
+
         <div class="setup-guide-highlight">
           <strong>Quick summary:</strong> RTSS is mainly used for <strong>FPS</strong> and <strong>Frame Time</strong>. Most hardware sensors should come from <strong>AIDA64 shared memory</strong>.
         </div>
@@ -363,11 +370,6 @@
             <li>Verify the corresponding source toggle is enabled in this app.</li>
           </ul>
         </section>
-
-        <label class="checkbox-label setup-guide-checkbox">
-          <input type="checkbox" id="setupGuideDontShowAgain">
-          <span>Don't show this again on startup</span>
-        </label>
       </div>
       <div class="setup-guide-footer">
         <button type="button" class="test-btn" data-close-setup-guide>Got it</button>

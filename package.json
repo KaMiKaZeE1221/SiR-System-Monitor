@@ -1,6 +1,6 @@
 {
   "name": "sir-system-monitor",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Electron app for monitoring system statistics",
   "repository": {
     "type": "git",
@@ -52,6 +52,9 @@
         "portable"
       ]
     },
+    "portable": {
+      "artifactName": "SiR-System-Monitor-Portable-${version}.${ext}"
+    },
     "publish": [
       {
         "provider": "github",
@@ -60,6 +63,7 @@
       }
     ],
     "nsis": {
+      "artifactName": "SiR-System-Monitor-Setup-${version}.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,

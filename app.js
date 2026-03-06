@@ -83,6 +83,7 @@ const GRAPH_EXPANDED_KEY = 'graphExpandedSensors';
 const WEB_MONITOR_SETTINGS_KEY = 'webMonitorSettings';
 const SETUP_GUIDE_SUPPRESS_KEY = 'setupGuideSuppress';
 const APP_BEHAVIOR_SETTINGS_KEY = 'appBehaviorSettings';
+const SIDEBAR_WIDTH_KEY = 'sidebarWidth';
 const SENSOR_GROUP_ORDER = ['cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'drives', 'other'];
 const SENSOR_GROUP_LABELS = {
   cpu: 'CPU',
@@ -148,6 +149,7 @@ function clampRefreshInterval(value) {
 }
 let latestWebPayload = {
   app: 'SiR System Monitor',
+  version: APP_VERSION,
   updatedAt: Date.now(),
   mode: 'wmi',
   external: 'N/A',
@@ -760,7 +762,8 @@ function buildWebMonitorHtml() {
       applyLowOverheadLock(payload.settings || {});
       const rawMode = String(payload.mode || '').toLowerCase();
       const modeLabel = rawMode === 'msi' ? 'Shared Memory' : (payload.mode || 'N/A');
-      meta.textContent = 'Mode: ' + modeLabel + ' | Updated: ' + toLocalTime(payload.updatedAt);
+      const version = String(payload.version || APP_VERSION || 'N/A').trim() || 'N/A';
+      meta.textContent = 'Mode: ' + modeLabel + ' | Version: ' + version + ' | Updated: ' + toLocalTime(payload.updatedAt);
 
       if (!domState.initializedSummaryMode) {
         let initialSummaryMode = false;
@@ -907,6 +910,7 @@ function publishWebMonitorPayload(mode, externalText) {
 
   latestWebPayload = {
     app: 'SiR System Monitor',
+    version: APP_VERSION,
     updatedAt: Date.now(),
     mode,
     external: externalText || 'N/A',
@@ -1481,6 +1485,95 @@ function setupSettingsAccordion() {
     section.dataset.sectionKey = sectionKey;
     section.appendChild(toggleButton);
     section.appendChild(contentWrap);
+  });
+}
+
+function normalizeSidebarWidth(width) {
+  const numeric = Number(width);
+  if (!Number.isFinite(numeric)) return 300;
+  const dynamicMax = Math.max(380, Math.floor(window.innerWidth * 0.7));
+  return Math.max(300, Math.min(dynamicMax, Math.round(numeric)));
+}
+
+function loadSidebarWidth() {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (!raw) return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? normalizeSidebarWidth(parsed) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function saveSidebarWidth(width) {
+  const normalized = normalizeSidebarWidth(width);
+  localStorage.setItem(SIDEBAR_WIDTH_KEY, String(normalized));
+  return normalized;
+}
+
+function setupSidebarResize() {
+  const sidebar = document.querySelector('.sidebar');
+  const handle = document.getElementById('sidebarResizeHandle');
+  if (!sidebar || !handle) return;
+
+  const applyWidth = (width) => {
+    const normalized = normalizeSidebarWidth(width);
+    sidebar.style.width = `${normalized}px`;
+    sidebar.style.minWidth = `${normalized}px`;
+  };
+
+  const applySavedWidth = () => {
+    if (window.innerWidth <= 768) {
+      sidebar.style.removeProperty('width');
+      sidebar.style.removeProperty('min-width');
+      return;
+    }
+
+    const saved = loadSidebarWidth();
+    if (saved !== null) {
+      applyWidth(saved);
+    }
+  };
+
+  applySavedWidth();
+
+  handle.addEventListener('mousedown', (event) => {
+    if (window.innerWidth <= 768) return;
+    event.preventDefault();
+
+    const startX = event.clientX;
+    const startWidth = sidebar.getBoundingClientRect().width;
+    document.body.classList.add('sidebar-resizing');
+
+    const onMove = (moveEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      applyWidth(startWidth + deltaX);
+    };
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.classList.remove('sidebar-resizing');
+      saveSidebarWidth(sidebar.getBoundingClientRect().width);
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+
+  window.addEventListener('resize', () => {
+    if (window.innerWidth <= 768) {
+      sidebar.style.removeProperty('width');
+      sidebar.style.removeProperty('min-width');
+      return;
+    }
+
+    const saved = loadSidebarWidth();
+    if (saved === null) return;
+    const normalized = normalizeSidebarWidth(saved);
+    applyWidth(normalized);
+    saveSidebarWidth(normalized);
   });
 }
 
@@ -3789,6 +3882,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.title = APP_VERSION ? `SiR System Monitor v${APP_VERSION}` : 'SiR System Monitor';
   expandedGraphSensors = loadExpandedGraphSensors();
   SettingsManager.init();
+  setupSidebarResize();
   applyWindowOrder();
   applyWindowSizes();
   setupWindowResize();
