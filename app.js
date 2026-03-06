@@ -1086,7 +1086,7 @@ function escapeHtml(text) {
 function updateSensorHistory(selectedGroupedSensors) {
   const now = Date.now();
   const cutoff = now - SENSOR_HISTORY_WINDOW_MS;
-  const activeSensorIds = new Set();
+  const trackedSensorIds = new Set();
 
   const trimHistoryPoints = (points) => {
     if (!Array.isArray(points) || !points.length) return;
@@ -1107,7 +1107,9 @@ function updateSensorHistory(selectedGroupedSensors) {
   Object.values(selectedGroupedSensors || {}).forEach((list) => {
     (list || []).forEach((sensor) => {
       if (!sensor || !sensor.id) return;
-      activeSensorIds.add(sensor.id);
+      if (!expandedGraphSensors.has(sensor.id)) return;
+
+      trackedSensorIds.add(sensor.id);
 
       const value = Number(sensor.value);
       if (!Number.isFinite(value)) return;
@@ -1120,6 +1122,11 @@ function updateSensorHistory(selectedGroupedSensors) {
   });
 
   Object.keys(sensorHistory).forEach((sensorId) => {
+    if (!trackedSensorIds.has(sensorId)) {
+      delete sensorHistory[sensorId];
+      return;
+    }
+
     const points = sensorHistory[sensorId];
     if (!Array.isArray(points)) {
       delete sensorHistory[sensorId];
@@ -1127,7 +1134,7 @@ function updateSensorHistory(selectedGroupedSensors) {
     }
 
     trimHistoryPoints(points);
-    if (!activeSensorIds.has(sensorId) && points.length === 0) {
+    if (points.length === 0) {
       delete sensorHistory[sensorId];
     }
   });

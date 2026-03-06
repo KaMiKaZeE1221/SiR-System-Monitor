@@ -1,6 +1,6 @@
 {
   "name": "sir-system-monitor",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Electron app for monitoring system statistics",
   "repository": {
     "type": "git",
