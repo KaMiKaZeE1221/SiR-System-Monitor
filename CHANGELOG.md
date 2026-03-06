@@ -25,6 +25,11 @@
 - Standardized installer artifact names to updater-safe format:
   - `SiR-System-Monitor-Setup-<version>.exe`
   - `SiR-System-Monitor-Portable-<version>.exe`
+  - Reworked the sensor refresh scheduler to use drift-corrected timing for more consistent 1000ms update cadence.
+- Shortened network label text for long values:
+  - `External IP Address` → `WAN IP`
+  - `Primary IP Address` → `LAN IP`
+- Increased Web Monitor layout width to better match desktop panel sizing and reduce cramped card rendering in browser view.
 
 ### Fixed
 - Fixed `Open Latest Release` button behavior with reliable fallback URL handling.
