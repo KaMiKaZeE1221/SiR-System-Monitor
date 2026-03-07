@@ -6,7 +6,7 @@
   - Classic
   - Neon
   - Minimal
-  - Glass
+  - Glass (WIP)
   - Terminal
 - Added per-style group icon sets, synced between desktop and browser views.
 
