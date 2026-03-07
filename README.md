@@ -44,8 +44,7 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
 
 ## Requirements
 
-- OS: Windows
-- Node.js + npm (for local development)
+- OS: Windows 10+ (Might support earlier version but I have not personally tested.)
 
 Optional (for richer sensors):
 
