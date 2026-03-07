@@ -136,7 +136,7 @@ body.font-xxlarge {
 }
 
 .sidebar-resize-handle:hover {
-  background-color: rgba(77, 159, 255, 0.12);
+  background-color: color-mix(in srgb, var(--accent-light) 20%, transparent);
   border-right-color: var(--accent-light);
 }
 
@@ -309,7 +309,7 @@ body.sidebar-resizing * {
 .theme-btn.active {
   border-color: var(--accent);
   background-color: var(--accent);
-  color: #000;
+  color: var(--bg-primary);
 }
 
 .color-custom-grid {
@@ -767,7 +767,7 @@ body.sidebar-resizing * {
 .monitoring-mode-btn:hover {
   border-color: var(--accent);
   background-color: var(--accent);
-  color: #000;
+  color: var(--bg-primary);
 }
 
 body.monitoring-mode .sidebar {
@@ -831,6 +831,107 @@ body.summary-mode .sensor-group.drag-over-after {
   border-color: var(--border-color);
 }
 
+body.view-compact .stats-container {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+body.view-compact .sensor-group {
+  height: 340px;
+  padding: 12px;
+  border-radius: 18px;
+  border-color: color-mix(in srgb, var(--accent-light) 45%, var(--border-color));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-light) 30%, transparent), 0 10px 24px color-mix(in srgb, var(--accent) 20%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-secondary) 90%, var(--accent) 10%), var(--bg-secondary));
+}
+
+body.view-compact .monitoring-mode-btn {
+  border-radius: 999px;
+  border-color: color-mix(in srgb, var(--accent-light) 45%, var(--border-color));
+}
+
+body.view-wide .stats-container {
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 16px;
+}
+
+body.view-wide .sensor-group {
+  height: 390px;
+  border-radius: 2px;
+  border-width: 2px;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--bg-secondary) 88%, var(--bg-primary) 12%);
+}
+
+body.view-wide .sensor-group-title {
+  letter-spacing: 1.4px;
+}
+
+body.view-wide .monitoring-mode-btn {
+  border-radius: 2px;
+}
+
+body.summary-mode.view-compact .stats-container {
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+}
+
+body.summary-mode.view-wide .stats-container {
+  grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+}
+
+body.view-glass .stats-container {
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 14px;
+}
+
+body.view-glass .sensor-group {
+  border-radius: 22px;
+  border-color: color-mix(in srgb, var(--text-primary) 25%, transparent);
+  background: color-mix(in srgb, var(--bg-secondary) 72%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--bg-primary) 65%, transparent);
+}
+
+body.view-glass .monitoring-mode-btn {
+  border-radius: 14px;
+  border-color: color-mix(in srgb, var(--text-primary) 30%, var(--border-color));
+  background-color: color-mix(in srgb, var(--bg-tertiary) 78%, transparent);
+}
+
+body.view-terminal .stats-container {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 10px;
+}
+
+body.view-terminal .sensor-group {
+  border-radius: 0;
+  border-width: 1px;
+  border-color: color-mix(in srgb, var(--accent-light) 55%, var(--border-color));
+  box-shadow: none;
+  background: color-mix(in srgb, var(--bg-primary) 90%, var(--bg-secondary) 10%);
+}
+
+body.view-terminal .sensor-group-title {
+  letter-spacing: 1.5px;
+  font-size: calc(12px * var(--font-scale));
+}
+
+body.view-terminal .stat {
+  border-bottom-style: dashed;
+}
+
+body.view-terminal .monitoring-mode-btn {
+  border-radius: 0;
+}
+
+body.summary-mode.view-glass .stats-container {
+  grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+}
+
+body.summary-mode.view-terminal .stats-container {
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+}
+
 .stats-container {
   transition: padding 0.28s ease;
 }
@@ -862,7 +963,7 @@ body.summary-mode .sensor-group.drag-over-after {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background-color: #06a77d;
+  background-color: var(--accent-light);
   animation: pulse 2s infinite;
 }
 
@@ -925,7 +1026,7 @@ body.summary-mode .sensor-group.drag-over-after {
 
 .sensor-group.resizing {
   border-color: var(--accent-light);
-  box-shadow: 0 0 0 2px rgba(77, 159, 255, 0.25);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-light) 35%, transparent);
   transition: none;
 }
 
@@ -1192,7 +1293,7 @@ body.summary-mode .stat-label {
 #aidaPathInput:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 8px rgba(0, 102, 255, 0.2);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .test-btn {
@@ -1200,7 +1301,7 @@ body.summary-mode .stat-label {
   padding: 8px;
   margin-bottom: 8px;
   background-color: var(--accent);
-  color: #000;
+  color: var(--bg-primary);
   border: none;
   border-radius: 6px;
   font-size: calc(12px * var(--font-scale));

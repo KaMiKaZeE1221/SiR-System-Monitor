@@ -81,6 +81,7 @@ const SUMMARY_MODE_KEY = 'summaryMode';
 const LOW_OVERHEAD_MODE_KEY = 'lowOverheadMode';
 const LOW_OVERHEAD_PREV_MONITORING_KEY = 'lowOverheadPrevMonitoring';
 const LOW_OVERHEAD_PREV_SUMMARY_KEY = 'lowOverheadPrevSummary';
+const VIEW_MODE_KEY = 'viewMode';
 const GRAPH_EXPANDED_KEY = 'graphExpandedSensors';
 const WEB_MONITOR_SETTINGS_KEY = 'webMonitorSettings';
 const SETUP_GUIDE_SUPPRESS_KEY = 'setupGuideSuppress';
@@ -106,6 +107,66 @@ const SENSOR_GROUP_ICONS = {
   network: 'bi-globe',
   drives: 'bi-device-hdd-fill',
   other: 'bi-tools'
+};
+const VIEW_MODE_SEQUENCE = ['standard', 'compact', 'wide', 'glass', 'terminal'];
+const VIEW_MODE_LABELS = {
+  standard: 'Classic',
+  compact: 'Neon',
+  wide: 'Minimal',
+  glass: 'Glass',
+  terminal: 'Terminal'
+};
+const VIEW_MODE_GROUP_ICONS = {
+  standard: {
+    cpu: 'bi-cpu-fill',
+    gpu: 'bi-gpu-card',
+    ram: 'bi-memory',
+    psu: 'bi-plug-fill',
+    fans: 'bi-fan',
+    network: 'bi-globe',
+    drives: 'bi-device-hdd-fill',
+    other: 'bi-tools'
+  },
+  compact: {
+    cpu: 'bi-speedometer2',
+    gpu: 'bi-badge-8k',
+    ram: 'bi-diagram-3',
+    psu: 'bi-lightning-charge',
+    fans: 'bi-wind',
+    network: 'bi-wifi',
+    drives: 'bi-hdd-stack',
+    other: 'bi-stars'
+  },
+  wide: {
+    cpu: 'bi-cpu',
+    gpu: 'bi-gpu-card',
+    ram: 'bi-memory',
+    psu: 'bi-plug',
+    fans: 'bi-fan',
+    network: 'bi-ethernet',
+    drives: 'bi-device-hdd',
+    other: 'bi-sliders'
+  },
+  glass: {
+    cpu: 'bi-cpu-fill',
+    gpu: 'bi-badge-hd',
+    ram: 'bi-memory',
+    psu: 'bi-lightning-charge-fill',
+    fans: 'bi-fan',
+    network: 'bi-broadcast-pin',
+    drives: 'bi-hdd-network',
+    other: 'bi-gem'
+  },
+  terminal: {
+    cpu: 'bi-terminal-fill',
+    gpu: 'bi-pc-display-horizontal',
+    ram: 'bi-diagram-2-fill',
+    psu: 'bi-battery-half',
+    fans: 'bi-arrow-repeat',
+    network: 'bi-router-fill',
+    drives: 'bi-device-ssd-fill',
+    other: 'bi-braces-asterisk'
+  }
 };
 const GROUP_CARD_IDS = {
   cpu: 'cpuGroup',
@@ -381,6 +442,54 @@ function buildWebMonitorHtml() {
     .summary-label { text-transform: uppercase; font-size: calc(10px * var(--font-scale)); letter-spacing: .4px; color: var(--text-secondary); }
     .summary-value { color: var(--sensor-value-color); font-family: var(--value-font-family); font-weight: var(--font-weight-bold); min-width: 0; text-align: right; font-variant-numeric: tabular-nums; }
     .summary-sep { opacity: .65; }
+    body.view-compact .wrap { max-width: 1280px; }
+    body.view-compact .grid { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+    body.view-compact .card {
+      padding: 11px;
+      border-radius: 18px;
+      border-color: color-mix(in srgb, var(--accent-light) 40%, var(--border-color));
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-light) 25%, transparent), 0 10px 24px color-mix(in srgb, var(--accent) 18%, transparent);
+      background: linear-gradient(180deg, color-mix(in srgb, var(--bg-secondary) 90%, var(--accent) 10%), var(--bg-secondary));
+    }
+    body.view-compact .row { padding: 6px 0; }
+    body.view-wide .wrap { max-width: 1800px; }
+    body.view-wide .grid { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px; }
+    body.view-wide .card {
+      padding: 14px;
+      border-radius: 2px;
+      border-width: 2px;
+      box-shadow: none;
+      background: color-mix(in srgb, var(--bg-secondary) 88%, var(--bg-primary) 12%);
+    }
+    body.view-wide .card h3 { letter-spacing: 0.12em; }
+    body.view-glass .wrap { max-width: 1650px; }
+    body.view-glass .grid { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
+    body.view-glass .card {
+      border-radius: 22px;
+      border-color: color-mix(in srgb, var(--text-primary) 25%, transparent);
+      background: color-mix(in srgb, var(--bg-secondary) 72%, transparent);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 12px 30px color-mix(in srgb, var(--bg-primary) 65%, transparent);
+    }
+    body.view-glass .row { border-bottom-color: color-mix(in srgb, var(--text-secondary) 35%, transparent); }
+    body.view-terminal .wrap { max-width: 1500px; }
+    body.view-terminal .grid { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; }
+    body.view-terminal .card {
+      border-radius: 0;
+      border-width: 1px;
+      border-color: color-mix(in srgb, var(--accent-light) 55%, var(--border-color));
+      box-shadow: none;
+      background: color-mix(in srgb, var(--bg-primary) 90%, var(--bg-secondary) 10%);
+    }
+    body.view-terminal .card h3 {
+      letter-spacing: 0.16em;
+      font-size: calc(12px * var(--font-scale));
+    }
+    body.view-terminal .row { border-bottom-style: dashed; }
+    body.summary-mode.view-compact .grid { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+    body.summary-mode.view-wide .grid { grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); }
+    body.summary-mode.view-glass .grid { grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); }
+    body.summary-mode.view-terminal .grid { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
   </style>
 </head>
 <body>
@@ -400,7 +509,13 @@ function buildWebMonitorHtml() {
   <script>
     const groupOrder = ['cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'drives', 'other'];
     const groupLabels = { cpu: 'CPU', gpu: 'GPU', ram: 'RAM', psu: 'PSU', fans: 'Fans', network: 'Network', drives: 'Drives', other: 'Other' };
-    const groupIcons = { cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-globe', drives: 'bi-device-hdd-fill', other: 'bi-tools' };
+    const groupIconsByMode = {
+      standard: { cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-globe', drives: 'bi-device-hdd-fill', other: 'bi-tools' },
+      compact: { cpu: 'bi-speedometer2', gpu: 'bi-badge-8k', ram: 'bi-diagram-3', psu: 'bi-lightning-charge', fans: 'bi-wind', network: 'bi-wifi', drives: 'bi-hdd-stack', other: 'bi-stars' },
+      wide: { cpu: 'bi-cpu', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug', fans: 'bi-fan', network: 'bi-ethernet', drives: 'bi-device-hdd', other: 'bi-sliders' },
+      glass: { cpu: 'bi-cpu-fill', gpu: 'bi-badge-hd', ram: 'bi-memory', psu: 'bi-lightning-charge-fill', fans: 'bi-fan', network: 'bi-broadcast-pin', drives: 'bi-hdd-network', other: 'bi-gem' },
+      terminal: { cpu: 'bi-terminal-fill', gpu: 'bi-pc-display-horizontal', ram: 'bi-diagram-2-fill', psu: 'bi-battery-half', fans: 'bi-arrow-repeat', network: 'bi-router-fill', drives: 'bi-device-ssd-fill', other: 'bi-braces-asterisk' }
+    };
     const fontScaleMap = { small: 0.92, medium: 1, large: 1.28, xlarge: 1.38, xxlarge: 1.5 };
     const fontFamilyMap = {
       segoe: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
@@ -420,10 +535,32 @@ function buildWebMonitorHtml() {
       rowsByKey: new Map(),
       rowScrollByGroup: new Map(),
       summaryMode: false,
-      lowOverheadMode: false
+      lowOverheadMode: false,
+      viewMode: 'standard'
     };
 
     const SUMMARY_MODE_STORAGE_KEY = 'sirWebSummaryMode';
+
+    function normalizeViewMode(mode) {
+      const normalized = String(mode || '').trim().toLowerCase();
+      if (normalized === 'compact' || normalized === 'wide' || normalized === 'glass' || normalized === 'terminal') return normalized;
+      return 'standard';
+    }
+
+    function applyViewMode(mode) {
+      const nextMode = normalizeViewMode(mode);
+      if (domState.viewMode === nextMode) return;
+      domState.viewMode = nextMode;
+      document.body.classList.remove('view-compact', 'view-wide', 'view-glass', 'view-terminal');
+      if (nextMode !== 'standard') {
+        document.body.classList.add('view-' + nextMode);
+      }
+    }
+
+    function resolveGroupIconClass(group) {
+      const modeIcons = groupIconsByMode[domState.viewMode] || groupIconsByMode.standard;
+      return modeIcons[group] || groupIconsByMode.standard[group] || 'bi-circle-fill';
+    }
 
     function escapeHtml(text) {
       return String(text || '')
@@ -444,7 +581,7 @@ function buildWebMonitorHtml() {
           const sensors = Array.isArray(groups[group]) ? groups[group] : [];
           const rowKey = sensors.map((sensor) => String(sensor.id) + ':' + (sensor.expanded ? '1' : '0')).join(',');
           const groupLayout = layout[group] || {};
-          return group + '#h' + (groupLayout.height || 360) + '#s' + (groupLayout.span || 1) + '#' + rowKey + '#summary:' + (domState.summaryMode ? '1' : '0');
+          return group + '#h' + (groupLayout.height || 360) + '#s' + (groupLayout.span || 1) + '#' + rowKey + '#summary:' + (domState.summaryMode ? '1' : '0') + '#view:' + domState.viewMode;
         })
         .join('|');
     }
@@ -597,6 +734,8 @@ function buildWebMonitorHtml() {
       const root = document.documentElement;
       if (!settings || typeof settings !== 'object') return;
 
+      applyViewMode(settings.viewMode || 'standard');
+
       const palette = settings.palette || {};
       if (palette.bgPrimary) root.style.setProperty('--bg-primary', palette.bgPrimary);
       if (palette.bgSecondary) root.style.setProperty('--bg-secondary', palette.bgSecondary);
@@ -675,7 +814,7 @@ function buildWebMonitorHtml() {
         card.style.height = (groupLayout.height || 360) + 'px';
 
         const title = document.createElement('h3');
-        const iconClass = groupIcons[group] || 'bi-circle-fill';
+        const iconClass = resolveGroupIconClass(group);
         title.innerHTML = '<i class="bi ' + iconClass + ' group-icon" aria-hidden="true"></i><span>' + escapeHtml(groupLabels[group] || group) + '</span>';
         card.appendChild(title);
 
@@ -956,6 +1095,7 @@ function publishWebMonitorPayload(mode, externalText) {
       fontBold: selectedBold,
       summaryMode: summaryModeEnabled,
       lowOverheadMode: lowOverheadModeEnabled,
+      viewMode: normalizeViewMode(localStorage.getItem(VIEW_MODE_KEY) || 'standard'),
       groupOrder,
       groupLayout,
       palette
@@ -1875,6 +2015,66 @@ function applyFontBold(enabled) {
     document.body.classList.remove('font-bold');
   }
   localStorage.setItem(FONT_BOLD_KEY, enabled ? 'true' : 'false');
+}
+
+function normalizeViewMode(mode) {
+  const normalized = String(mode || '').trim().toLowerCase();
+  if (normalized === 'compact' || normalized === 'wide' || normalized === 'glass' || normalized === 'terminal') return normalized;
+  return 'standard';
+}
+
+function getNextViewMode(currentMode) {
+  const normalizedCurrent = normalizeViewMode(currentMode);
+  const currentIndex = VIEW_MODE_SEQUENCE.indexOf(normalizedCurrent);
+  const nextIndex = (currentIndex + 1) % VIEW_MODE_SEQUENCE.length;
+  return VIEW_MODE_SEQUENCE[nextIndex];
+}
+
+function applyDesktopGroupIconsForViewMode(mode) {
+  const normalized = normalizeViewMode(mode);
+  const modeIcons = VIEW_MODE_GROUP_ICONS[normalized] || VIEW_MODE_GROUP_ICONS.standard;
+
+  SENSOR_GROUP_ORDER.forEach((group) => {
+    const cardId = GROUP_CARD_IDS[group];
+    if (!cardId) return;
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    const icon = card.querySelector('.group-icon');
+    if (!icon) return;
+
+    const iconClass = modeIcons[group] || VIEW_MODE_GROUP_ICONS.standard[group] || 'bi-circle-fill';
+    icon.className = `bi ${iconClass} group-icon`;
+  });
+}
+
+function applyViewMode(mode, options = {}) {
+  const persist = options.persist !== false;
+  const normalized = normalizeViewMode(mode);
+
+  document.body.classList.remove('view-compact', 'view-wide', 'view-glass', 'view-terminal');
+  if (normalized !== 'standard') {
+    document.body.classList.add(`view-${normalized}`);
+  }
+
+  if (persist) {
+    localStorage.setItem(VIEW_MODE_KEY, normalized);
+  }
+
+  const button = document.getElementById('viewModeBtn');
+  if (button) {
+    button.textContent = `Style: ${VIEW_MODE_LABELS[normalized] || VIEW_MODE_LABELS.standard}`;
+  }
+
+  applyDesktopGroupIconsForViewMode(normalized);
+
+  if (!summaryModeEnabled) {
+    applyWindowSizes();
+  }
+
+  invalidateRenderGroupCache();
+  renderAllDynamicGroups(latestSelectedGroupedSensors || createEmptyGroupedBuckets(), { force: true });
+
+  return normalized;
 }
 
 function applyMonitoringMode(enabled) {
@@ -2893,14 +3093,25 @@ const THEME_ACCENT_LIGHT_MAP = {
   cyan: '#4dfdff',
   orange: '#ffb347'
 };
+const THEME_ACCENT_MAP = {
+  blue: '#0066ff',
+  purple: '#9d4edd',
+  green: '#06a77d',
+  red: '#e63946',
+  cyan: '#00d9ff',
+  orange: '#f77f00'
+};
 
 function getThemeDefaults(themeName) {
   const key = String(themeName || 'blue').toLowerCase();
+  const accentLight = THEME_ACCENT_LIGHT_MAP[key] || BASE_COLOR_DEFAULTS.sensorValue;
+  const accent = THEME_ACCENT_MAP[key] || BASE_COLOR_DEFAULTS.blockHeader;
   return {
     ...BASE_COLOR_DEFAULTS,
-    sensorValue: THEME_ACCENT_LIGHT_MAP[key] || BASE_COLOR_DEFAULTS.sensorValue,
-    icon: THEME_ACCENT_LIGHT_MAP[key] || BASE_COLOR_DEFAULTS.icon,
-    graph: THEME_ACCENT_LIGHT_MAP[key] || BASE_COLOR_DEFAULTS.graph
+    sensorValue: accentLight,
+    icon: accentLight,
+    graph: accentLight,
+    blockHeader: accent
   };
 }
 
@@ -2992,10 +3203,23 @@ const CustomColorManager = {
 
 const ThemeManager = {
   setTheme(theme) {
+    const previousTheme = this.getTheme();
+    const previousDefaults = getThemeDefaults(previousTheme);
+    const nextDefaults = getThemeDefaults(theme);
+    const currentColors = CustomColorManager.getColors(previousTheme);
+    const migratedColors = { ...currentColors };
+
+    ['sensorValue', 'icon', 'graph', 'blockHeader'].forEach((key) => {
+      if (normalizeHexColor(currentColors[key], previousDefaults[key]) === normalizeHexColor(previousDefaults[key], previousDefaults[key])) {
+        migratedColors[key] = nextDefaults[key];
+      }
+    });
+
     document.body.classList.remove('theme-blue', 'theme-purple', 'theme-green', 'theme-red', 'theme-cyan', 'theme-orange');
     document.body.classList.add(`theme-${theme}`);
     localStorage.setItem('theme', theme);
-    CustomColorManager.applyColors(CustomColorManager.getColors());
+    CustomColorManager.saveColors(migratedColors);
+    CustomColorManager.applyColors(migratedColors);
   },
   getTheme() {
     return localStorage.getItem('theme') || 'blue';
@@ -3005,15 +3229,6 @@ const ThemeManager = {
 const SettingsManager = {
   init() {
     setupSettingsAccordion();
-
-    // Theme buttons
-    document.querySelectorAll('.theme-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
-        ThemeManager.setTheme(e.target.dataset.theme);
-      });
-    });
 
     const customFontColorInput = document.getElementById('customFontColor');
     const customSensorNameColorInput = document.getElementById('customSensorNameColor');
@@ -3027,15 +3242,33 @@ const SettingsManager = {
     let customColors = CustomColorManager.getColors();
     CustomColorManager.applyColors(customColors);
 
+    const syncCustomInputsFromColors = (colors) => {
+      if (!customFontColorInput || !customSensorNameColorInput || !customSensorValueColorInput || !customIconColorInput || !customGraphColorInput || !customBlockHeaderColorInput || !customOutlineColorInput || !customBackgroundColorInput) {
+        return;
+      }
+      customFontColorInput.value = colors.font;
+      customSensorNameColorInput.value = colors.sensorLabel;
+      customSensorValueColorInput.value = colors.sensorValue;
+      customIconColorInput.value = colors.icon;
+      customGraphColorInput.value = colors.graph;
+      customBlockHeaderColorInput.value = colors.blockHeader;
+      customOutlineColorInput.value = colors.outline;
+      customBackgroundColorInput.value = colors.background;
+    };
+
+    const themeButtons = document.querySelectorAll('.theme-btn');
+    themeButtons.forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        themeButtons.forEach((b) => b.classList.remove('active'));
+        e.target.classList.add('active');
+        ThemeManager.setTheme(e.target.dataset.theme);
+        customColors = CustomColorManager.getColors();
+        syncCustomInputsFromColors(customColors);
+      });
+    });
+
     if (customFontColorInput && customSensorNameColorInput && customSensorValueColorInput && customIconColorInput && customGraphColorInput && customBlockHeaderColorInput && customOutlineColorInput && customBackgroundColorInput) {
-      customFontColorInput.value = customColors.font;
-      customSensorNameColorInput.value = customColors.sensorLabel;
-      customSensorValueColorInput.value = customColors.sensorValue;
-      customIconColorInput.value = customColors.icon;
-      customGraphColorInput.value = customColors.graph;
-      customBlockHeaderColorInput.value = customColors.blockHeader;
-      customOutlineColorInput.value = customColors.outline;
-      customBackgroundColorInput.value = customColors.background;
+      syncCustomInputsFromColors(customColors);
 
       const syncCustomColors = () => {
         customColors = {
@@ -3064,14 +3297,7 @@ const SettingsManager = {
       if (resetThemeColorsBtn) {
         resetThemeColorsBtn.addEventListener('click', () => {
           const defaults = CustomColorManager.resetToThemeDefaults(ThemeManager.getTheme());
-          customFontColorInput.value = defaults.font;
-          customSensorNameColorInput.value = defaults.sensorLabel;
-          customSensorValueColorInput.value = defaults.sensorValue;
-          customIconColorInput.value = defaults.icon;
-          customGraphColorInput.value = defaults.graph;
-          customBlockHeaderColorInput.value = defaults.blockHeader;
-          customOutlineColorInput.value = defaults.outline;
-          customBackgroundColorInput.value = defaults.background;
+          syncCustomInputsFromColors(defaults);
         });
       }
     }
@@ -3228,6 +3454,18 @@ const SettingsManager = {
           return;
         }
         applySummaryMode(!summaryModeEnabled);
+      });
+    }
+
+    const viewModeButton = document.getElementById('viewModeBtn');
+    const savedViewMode = normalizeViewMode(localStorage.getItem(VIEW_MODE_KEY) || 'standard');
+    applyViewMode(savedViewMode, { persist: false });
+
+    if (viewModeButton) {
+      viewModeButton.addEventListener('click', () => {
+        const currentMode = normalizeViewMode(localStorage.getItem(VIEW_MODE_KEY) || 'standard');
+        const nextMode = getNextViewMode(currentMode);
+        applyViewMode(nextMode);
       });
     }
 
@@ -3446,11 +3684,12 @@ const SettingsManager = {
         if (state === 'downloaded') {
           const latestVersion = String(payload?.latestVersion || '').trim();
           const downloadedText = latestVersion
-            ? `Update ${latestVersion} downloaded. Restart to install now.`
-            : 'Update downloaded. Restart to install now.';
-          setUpdateStatus(downloadedText);
-          setUpdateModalMessage(downloadedText);
-          setUpdateModalProgress('Ready to install.');
+            ? `Update ${latestVersion} downloaded.`
+            : 'Update downloaded.';
+          const installPromptText = 'Download complete. Press "Restart to Install" to install the new version.';
+          setUpdateStatus(`${downloadedText} ${installPromptText}`);
+          setUpdateModalMessage(`${downloadedText} ${installPromptText}`);
+          setUpdateModalProgress(installPromptText);
           if (updateModalDownloadBtn) {
             updateModalDownloadBtn.disabled = true;
             updateModalDownloadBtn.textContent = 'Downloaded';

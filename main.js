@@ -417,7 +417,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      backgroundThrottling: true
+      backgroundThrottling: false
     }
   });
 
