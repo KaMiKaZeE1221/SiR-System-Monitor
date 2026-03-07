@@ -2,7 +2,7 @@
 
 SiR System Monitor is a Windows Electron desktop app for real-time hardware telemetry with optional browser viewing.
 
-It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provides grouped live cards, sensor selection, summary and low-overhead modes, web monitor output, color customization, and packaged installer/portable builds.
+It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provides grouped live cards, sensor selection controls, summary and low-overhead modes, web monitor output, appearance customization, and packaged installer/portable builds.
 
 ## Table of Contents
 
@@ -11,8 +11,9 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
 - [Requirements](#requirements)
 - [Settings Overview](#settings-overview)
 - [Sensor Sources](#sensor-sources)
+- [Sensor Naming & Grouping Notes](#sensor-naming--grouping-notes)
 - [Web Monitor](#web-monitor)
-- [Updater](#Updater)
+- [Updater](#updater)
 - [Troubleshooting](#troubleshooting)
 
 ## What It Does
@@ -27,18 +28,17 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
   - Drives
   - Other
 - Supports configurable refresh rate and sensor visibility.
-- Supports per-sensor selection and ordering.
+- Supports per-sensor selection and drag-and-drop ordering.
+- Supports custom sensor names in Sensor Selection with inline rename editing (`✎`).
+- Supports resetting all custom sensor names.
 - Supports Monitoring Mode, Summary Mode, and Low Overhead Mode.
-- Supports summary mode (min/max session view) with browser summary lockout while Low Overhead Mode is enabled.
-- Supports live color customization for:
-  - UI font color
-  - Sensor name color
-  - Sensor value color
-  - Icon color
-  - Graph color
-  - Sensor block header color
-  - Outline color
-  - Background color
+- Supports summary mode (session min/max view) with browser summary lockout while Low Overhead Mode is enabled.
+- Supports appearance customization:
+  - Theme presets
+  - Style presets (Classic, Neon, Minimal, Glass, Terminal)
+  - Font size/family, bold text, monospace values
+  - Temperature unit toggle (Celsius/Fahrenheit)
+  - Custom colors for UI channels (font, sensor label/value, icon, graph, block header, outline, background)
 - Supports resetting colors back to defaults for the currently selected theme.
 - Exposes a browser-accessible monitor page and JSON endpoint.
 
@@ -64,7 +64,7 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
 
 ![Web Monitor](docs/screenshots/05-web-monitor.png)
 
-6. Color Options
+6. Color options
 
 ![Color Options](docs/screenshots/06-color-options.png)
 
@@ -83,6 +83,7 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
 ## Requirements
 
 - OS: Windows
+- Node.js + npm (for local development)
 
 Optional (for richer sensors):
 
@@ -90,14 +91,15 @@ Optional (for richer sensors):
 - AIDA64 with Shared Memory enabled
 - HWiNFO / LHM shared memory providers
 
-
 ## Settings Overview
 
 Settings are grouped in the sidebar:
 
 - Appearance
   - Color theme
+  - Style preset
   - Font size/family and text options
+  - Temperature unit selector (°C / °F)
   - Custom colors (font, sensor names, sensor values, icon, graph, sensor block headers, outline, background)
   - Reset to theme defaults
 - Monitoring
@@ -107,6 +109,10 @@ Settings are grouped in the sidebar:
   - Refresh rate (1000–5000 ms)
   - Visible sensor groups
   - Sensor Selection panel
+    - per-sensor enabled state
+    - drag-and-drop ordering
+    - inline rename button per sensor row
+    - reset custom sensor names button
 - Data Sources
   - Detection mode
   - Shared memory provider toggles
@@ -116,25 +122,38 @@ Settings are grouped in the sidebar:
   - Launch at startup
   - Start minimized
   - Minimize/close to tray
+  - App update controls
 
 All settings are persisted locally.
 
 ## Sensor Sources
 
-Primary runtime path uses shared memory integration:
+Primary runtime path uses shared-memory integration:
 
 - RTSS
 - AIDA64
 - HWiNFO
 - LHM
 
+## Sensor Naming & Grouping Notes
+
+- The app applies display-label normalization for common provider naming quirks.
+- Network labels are shortened where useful (for example WAN/LAN IP naming).
+- HWiNFO DRAM bandwidth sensors are normalized into Memory:
+  - `DRAM Read Bandwidth` → `Memory Read`
+  - `DRAM Write Bandwidth` → `Memory Write`
+- Custom names (from Sensor Selection rename) override normalized labels.
+
 ## Web Monitor
 
 When enabled:
+
 - UI endpoint: `http://<host>:<port>/`
 - JSON endpoint: `http://<host>:<port>/api/monitor`
+
 Useful for viewing selected sensors from another device on LAN or WAN, subject to local firewall/network rules.
-# Use on WAN at your own risk!
+
+> Use on WAN at your own risk.
 
 ## Updater
 
@@ -147,12 +166,6 @@ Current behavior is manual (user-driven):
 - If an update exists, an in-app modal appears and lets the user choose **Download Update**.
 - After download completes, the app shows **Restart and Install**.
 - If updater metadata is missing on the release, the app falls back to **Open Latest Release**.
-
-### How it roughly works
-
-- Main process (`main.js`) performs update check/download/install and emits status events.
-- Renderer (`app.js`) listens to updater status events and updates the settings status + modal UI.
-- The release URL button opens the project’s latest GitHub releases page.
 
 ## Troubleshooting
 
