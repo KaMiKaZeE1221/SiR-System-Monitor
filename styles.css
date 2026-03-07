@@ -114,12 +114,12 @@ body.font-xxlarge {
   min-width: 300px;
   background-color: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
-  padding: 18px;
+  padding: 14px;
   overflow-y: auto;
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 10px;
   opacity: 1;
   transform: translateX(0);
   transition: width 0.28s ease, min-width 0.28s ease, padding 0.28s ease, border-color 0.28s ease, opacity 0.22s ease, transform 0.28s ease;
@@ -150,7 +150,7 @@ body.sidebar-resizing * {
   font-size: calc(17px * var(--font-scale));
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
-  margin-bottom: 12px;
+  margin-bottom: 4px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -162,13 +162,13 @@ body.sidebar-resizing * {
 }
 
 .settings-section {
-  margin-bottom: 16px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 12px;
+  padding-bottom: 0;
+  border-bottom: none;
 }
 
 .settings-section.is-collapsed {
-  padding-bottom: 10px;
+  padding-bottom: 0;
 }
 
 .settings-section:last-child {
@@ -177,30 +177,31 @@ body.sidebar-resizing * {
 
 .settings-group {
   border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.02);
-  padding: 10px 10px 2px;
-  margin-bottom: 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-tertiary) 62%, transparent);
+  padding: 12px;
+  margin-bottom: 0;
 }
 
 .settings-group-title {
-  font-size: calc(11px * var(--font-scale));
+  font-size: calc(10px * var(--font-scale));
   color: var(--accent-light);
   text-transform: uppercase;
-  letter-spacing: 0.9px;
+  letter-spacing: 1px;
   font-weight: var(--font-weight-bold);
-  margin-bottom: 8px;
-  padding: 0 2px;
+  margin-bottom: 10px;
+  padding: 0 2px 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
 }
 
 .settings-group .settings-section {
   margin-bottom: 10px;
-  padding-bottom: 10px;
+  padding-bottom: 0;
 }
 
 .settings-group .settings-section:last-child {
   margin-bottom: 0;
-  padding-bottom: 2px;
+  padding-bottom: 0;
 }
 
 .settings-inline-gap-sm {
@@ -217,16 +218,16 @@ body.sidebar-resizing * {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 9px 10px;
+  padding: 10px 10px;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background-color: var(--bg-tertiary);
+  border-radius: 10px;
+  background-color: color-mix(in srgb, var(--bg-tertiary) 82%, transparent);
   color: var(--text-primary);
   cursor: pointer;
   font-size: calc(12px * var(--font-scale));
   font-weight: var(--font-weight-bold);
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
+  letter-spacing: 0.2px;
+  text-transform: none;
 }
 
 .settings-toggle-btn:hover {
@@ -256,9 +257,9 @@ body.sidebar-resizing * {
 }
 
 .settings-section-content {
-  margin-top: 10px;
+  margin-top: 8px;
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .settings-section.is-collapsed .settings-section-content {
@@ -269,9 +270,9 @@ body.sidebar-resizing * {
   font-size: calc(12px * var(--font-scale));
   font-weight: var(--font-weight-bold);
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  margin-bottom: 8px;
+  text-transform: none;
+  letter-spacing: 0.2px;
+  margin-bottom: 6px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -286,15 +287,15 @@ body.sidebar-resizing * {
 .theme-selector {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 6px;
 }
 
 .theme-btn {
-  padding: 8px;
+  padding: 7px 8px;
   border: 1px solid var(--border-color);
-  background-color: var(--bg-tertiary);
+  background-color: color-mix(in srgb, var(--bg-tertiary) 88%, transparent);
   color: var(--text-primary);
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.3s ease;
   font-size: calc(12px * var(--font-scale));
@@ -314,14 +315,18 @@ body.sidebar-resizing * {
 
 .color-custom-grid {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .color-picker-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 65%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-secondary) 72%, transparent);
   font-size: calc(12px * var(--font-scale));
   color: var(--text-secondary);
 }
@@ -362,7 +367,7 @@ body.sidebar-resizing * {
 .refresh-rate {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .refresh-slider {
@@ -403,7 +408,7 @@ body.sidebar-resizing * {
 .visibility-options {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 #sensorOptions {
@@ -413,8 +418,8 @@ body.sidebar-resizing * {
 
 .sensor-category-block {
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-tertiary);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-tertiary) 75%, transparent);
   padding: 8px;
 }
 
@@ -582,7 +587,7 @@ body.sidebar-resizing * {
 }
 
 .sensor-item-label {
-  margin-left: 10px;
+  margin-left: 8px;
   padding: 4px 6px;
   border-radius: 6px;
   min-height: 24px;
@@ -595,10 +600,16 @@ body.sidebar-resizing * {
 .checkbox-label {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
+  padding: 5px 6px;
+  border-radius: 8px;
   cursor: pointer;
-  font-size: calc(13px * var(--font-scale));
+  font-size: calc(12px * var(--font-scale));
   min-height: 22px;
+}
+
+.checkbox-label:hover {
+  background: color-mix(in srgb, var(--bg-tertiary) 60%, transparent);
 }
 
 .checkbox-label input {
@@ -1281,12 +1292,16 @@ body.summary-mode .stat-label {
 #aidaPathInput {
   width: 100%;
   padding: 9px;
-  margin-bottom: 8px;
+  margin-bottom: 0;
   background-color: var(--bg-tertiary);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text-primary);
   font-size: calc(12px * var(--font-scale));
+}
+
+.settings-section .detection-select + .detection-select {
+  margin-top: 8px;
 }
 
 .detection-select:focus,
@@ -1298,12 +1313,12 @@ body.summary-mode .stat-label {
 
 .test-btn {
   width: 100%;
-  padding: 8px;
-  margin-bottom: 8px;
+  padding: 8px 10px;
+  margin-bottom: 0;
   background-color: var(--accent);
   color: var(--bg-primary);
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: calc(12px * var(--font-scale));
   font-weight: var(--font-weight-medium);
   cursor: pointer;
@@ -1322,13 +1337,14 @@ body.summary-mode .stat-label {
 .settings-note {
   font-size: calc(11px * var(--font-scale));
   color: var(--text-secondary);
-  margin-top: 6px;
+  margin-top: 8px;
+  line-height: 1.4;
 }
 
 .web-monitor-grid {
   display: grid;
   grid-template-columns: 1fr 110px;
-  gap: 8px;
+  gap: 6px;
 }
 
 .web-monitor-actions {

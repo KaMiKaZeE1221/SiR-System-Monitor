@@ -72,6 +72,7 @@ const FONT_SIZE_KEY = 'fontSize';
 const FONT_FAMILY_KEY = 'fontFamily';
 const VALUE_FONT_MONOSPACE_KEY = 'valueFontMonospace';
 const FONT_BOLD_KEY = 'fontBold';
+const TEMPERATURE_UNIT_KEY = 'temperatureUnit';
 const PROVIDER_SELECTION_KEY = 'providerSelection';
 const SETTINGS_ACCORDION_STATE_KEY = 'settingsAccordionState';
 const WINDOW_ORDER_KEY = 'windowOrder';
@@ -1032,6 +1033,7 @@ function publishWebMonitorPayload(mode, externalText) {
   const selectedFontFamily = localStorage.getItem(FONT_FAMILY_KEY) || 'segoe';
   const selectedValueMonospace = localStorage.getItem(VALUE_FONT_MONOSPACE_KEY) === 'true';
   const selectedBold = localStorage.getItem(FONT_BOLD_KEY) === 'true';
+  const selectedTempUnit = normalizeTemperatureUnit(localStorage.getItem(TEMPERATURE_UNIT_KEY));
   const computed = getComputedStyle(document.body);
   const palette = {
     bgPrimary: computed.getPropertyValue('--bg-primary').trim() || '#1a1a1a',
@@ -1057,22 +1059,35 @@ function publishWebMonitorPayload(mode, externalText) {
       const numericValue = Number(sensor.value);
       const hasNumericValue = Number.isFinite(numericValue);
       const sensorForFormatting = { ...sensor, units: resolvedUnits };
+      const normalizedCurrent = hasNumericValue ? normalizeValueForDisplay(sensorForFormatting, numericValue) : null;
+      const history = expandedGraphSensors.has(sensor.id)
+        ? (sensorHistory[sensor.id] || []).slice(-120).map((point) => {
+          const rawPointValue = Number(point.value);
+          if (!Number.isFinite(rawPointValue)) {
+            return { ts: point.ts, value: point.value };
+          }
+          const normalizedPoint = normalizeValueForDisplay(sensorForFormatting, rawPointValue);
+          return { ts: point.ts, value: normalizedPoint.value };
+        })
+        : [];
       return {
         id: sensor.id,
         name: sensor.name,
-        value: hasNumericValue ? numericValue : sensor.value,
-        units: resolvedUnits,
+        value: hasNumericValue && normalizedCurrent ? normalizedCurrent.value : sensor.value,
+        units: hasNumericValue && normalizedCurrent ? normalizedCurrent.units : resolvedUnits,
         formatted: formatSensorValue(sensorForFormatting),
         expanded: expandedGraphSensors.has(sensor.id),
-        history: expandedGraphSensors.has(sensor.id) ? (sensorHistory[sensor.id] || []).slice(-120).map((point) => ({ ts: point.ts, value: point.value })) : [],
+        history,
         summary: (includeSummary && hasNumericValue) ? (() => {
           const stats = sensorSessionStats[sensor.id];
           if (!stats || !Number.isFinite(stats.count) || stats.count <= 0) {
             return { min: null, max: null, count: 0 };
           }
+          const normalizedMin = normalizeValueForDisplay(sensorForFormatting, stats.min);
+          const normalizedMax = normalizeValueForDisplay(sensorForFormatting, stats.max);
           return {
-            min: stats.min,
-            max: stats.max,
+            min: normalizedMin.value,
+            max: normalizedMax.value,
             count: stats.count
           };
         })() : null
@@ -1093,6 +1108,7 @@ function publishWebMonitorPayload(mode, externalText) {
       fontFamily: selectedFontFamily,
       valueMonospace: selectedValueMonospace,
       fontBold: selectedBold,
+      temperatureUnit: selectedTempUnit,
       summaryMode: summaryModeEnabled,
       lowOverheadMode: lowOverheadModeEnabled,
       viewMode: normalizeViewMode(localStorage.getItem(VIEW_MODE_KEY) || 'standard'),
@@ -1338,15 +1354,28 @@ function renderSensorGraph(sensor) {
     return '<div class="stat-graph-empty">Collecting data...</div>';
   }
 
+  const normalizedPoints = points
+    .map((point) => {
+      const rawPointValue = Number(point.value);
+      if (!Number.isFinite(rawPointValue)) return null;
+      return normalizeValueForDisplay(sensor, rawPointValue);
+    })
+    .filter((point) => point && Number.isFinite(point.value));
+
+  if (!normalizedPoints.length) {
+    return '<div class="stat-graph-empty">Collecting data...</div>';
+  }
+
   const width = 280;
   const height = 70;
   const padding = 6;
-  const path = buildSparklinePath(points, width, height, padding);
-  const values = points.map((point) => point.value);
+  const graphPoints = normalizedPoints.map((point) => ({ value: point.value }));
+  const path = buildSparklinePath(graphPoints, width, height, padding);
+  const values = normalizedPoints.map((point) => point.value);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const latest = values[values.length - 1];
-  const units = sensor.units || inferUnitsFromSensor(sensor);
+  const units = normalizedPoints[normalizedPoints.length - 1].units || sensor.units || inferUnitsFromSensor(sensor);
 
   return `
     <div class="stat-graph-wrap">
@@ -2017,6 +2046,37 @@ function applyFontBold(enabled) {
   localStorage.setItem(FONT_BOLD_KEY, enabled ? 'true' : 'false');
 }
 
+function normalizeTemperatureUnit(unit) {
+  return String(unit || '').trim().toLowerCase() === 'f' ? 'f' : 'c';
+}
+
+function celsiusToFahrenheit(value) {
+  return (value * 9 / 5) + 32;
+}
+
+function fahrenheitToCelsius(value) {
+  return (value - 32) * 5 / 9;
+}
+
+function applyTemperatureUnit(unit, options = {}) {
+  const persist = options.persist !== false;
+  const normalized = normalizeTemperatureUnit(unit);
+
+  if (persist) {
+    localStorage.setItem(TEMPERATURE_UNIT_KEY, normalized);
+  }
+
+  const unitSelect = document.getElementById('temperatureUnitSelect');
+  if (unitSelect && unitSelect.value !== normalized) {
+    unitSelect.value = normalized;
+  }
+
+  invalidateRenderGroupCache();
+  updateStats(true);
+
+  return normalized;
+}
+
 function normalizeViewMode(mode) {
   const normalized = String(mode || '').trim().toLowerCase();
   if (normalized === 'compact' || normalized === 'wide' || normalized === 'glass' || normalized === 'terminal') return normalized;
@@ -2280,7 +2340,7 @@ function formatSensorNumericValue(sensor, numericValue) {
     decimals = 0;
   } else if (u === 'ms') {
     decimals = 2;
-  } else if (u === 'v' || u === 'a' || u === 'w' || u === '°c' || u === 'c' || u === 'f' || u === 'ghz') {
+  } else if (u === 'v' || u === 'a' || u === 'w' || u === '°c' || u === 'c' || u === '°f' || u === 'f' || u === 'ghz') {
     decimals = 2;
   } else if (u === 'gb' || u === 'mb' || u === 'kb' || u === 'tb') {
     decimals = 2;
@@ -2348,6 +2408,16 @@ function normalizeValueForDisplay(sensor, numericValue) {
 
   let value = numericValue;
   let displayUnits = units;
+
+  const preferredTempUnit = normalizeTemperatureUnit(localStorage.getItem(TEMPERATURE_UNIT_KEY));
+  const lowerInitialUnits = String(displayUnits || '').toLowerCase().replace(/°/g, '');
+  if (lowerInitialUnits === 'c' && preferredTempUnit === 'f') {
+    value = celsiusToFahrenheit(value);
+    displayUnits = '°F';
+  } else if (lowerInitialUnits === 'f' && preferredTempUnit === 'c') {
+    value = fahrenheitToCelsius(value);
+    displayUnits = '°C';
+  }
 
   if (group === 'network') {
     if ((name.includes('download rate') || name.includes('upload rate')) && (!sensor.units || !String(sensor.units).trim())) {
@@ -2586,6 +2656,7 @@ function resolveDisplayUnits(sensor) {
 
   if (normalized) {
     if (normalized === 'C') return '°C';
+    if (normalized === 'F') return '°F';
     return normalized;
   }
 
@@ -3390,6 +3461,16 @@ const SettingsManager = {
       applyValueFontMonospace(isMonospace);
       valueFontMonospaceToggle.addEventListener('change', (e) => {
         applyValueFontMonospace(!!e.target.checked);
+      });
+    }
+
+    const temperatureUnitSelect = document.getElementById('temperatureUnitSelect');
+    if (temperatureUnitSelect) {
+      const savedTemperatureUnit = normalizeTemperatureUnit(localStorage.getItem(TEMPERATURE_UNIT_KEY));
+      temperatureUnitSelect.value = savedTemperatureUnit;
+      applyTemperatureUnit(savedTemperatureUnit, { persist: false });
+      temperatureUnitSelect.addEventListener('change', (e) => {
+        applyTemperatureUnit(e.target.value);
       });
     }
 
