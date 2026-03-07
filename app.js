@@ -74,6 +74,7 @@ const VALUE_FONT_MONOSPACE_KEY = 'valueFontMonospace';
 const FONT_BOLD_KEY = 'fontBold';
 const TEMPERATURE_UNIT_KEY = 'temperatureUnit';
 const PROVIDER_SELECTION_KEY = 'providerSelection';
+const SENSOR_CUSTOM_NAMES_KEY = 'sensorCustomNames';
 const SETTINGS_ACCORDION_STATE_KEY = 'settingsAccordionState';
 const WINDOW_ORDER_KEY = 'windowOrder';
 const WINDOW_SIZE_KEY = 'windowSize';
@@ -190,6 +191,7 @@ let lowOverheadModeEnabled = false;
 let latestSelectedGroupedSensors = createEmptyGroupedBuckets();
 let liveSensorCatalogSignature = '';
 let cachedOrderedSensorCatalog = createEmptyGroupedBuckets();
+let sensorCustomNames = {};
 let pendingVisibilityRefresh = false;
 let lastUiRenderAt = 0;
 let forceNextUiRender = true;
@@ -1434,6 +1436,32 @@ function saveSensorCategoryCollapse() {
   localStorage.setItem(SENSOR_CATEGORY_COLLAPSE_KEY, JSON.stringify(sensorCategoryCollapse));
 }
 
+function normalizeSensorCustomNames(input) {
+  if (!input || typeof input !== 'object') return {};
+  const output = {};
+  Object.entries(input).forEach(([sensorId, name]) => {
+    const key = String(sensorId || '').trim();
+    const value = String(name || '').trim();
+    if (!key || !value) return;
+    output[key] = value.slice(0, 80);
+  });
+  return output;
+}
+
+function loadSensorCustomNames() {
+  try {
+    const raw = localStorage.getItem(SENSOR_CUSTOM_NAMES_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return normalizeSensorCustomNames(parsed);
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveSensorCustomNames() {
+  localStorage.setItem(SENSOR_CUSTOM_NAMES_KEY, JSON.stringify(normalizeSensorCustomNames(sensorCustomNames)));
+}
+
 function loadSensorOrder() {
   try {
     const raw = localStorage.getItem(SENSOR_ORDER_KEY);
@@ -2266,6 +2294,10 @@ function getFinalDisplayLabel(sensor) {
   const raw = String(sensor && sensor.name ? sensor.name : '').trim();
   if (!raw) return 'Sensor';
 
+  const sensorId = String(sensor && sensor.id ? sensor.id : '').trim();
+  const customName = sensorId ? String(sensorCustomNames[sensorId] || '').trim() : '';
+  if (customName) return customName;
+
   const lower = raw.toLowerCase();
   const group = String(sensor && sensor.group ? sensor.group : '').toLowerCase();
   const units = String(resolveDisplayUnits(sensor) || '').toLowerCase();
@@ -2776,16 +2808,13 @@ function renderSensorOptions(groupedSensors) {
         .map((sensor, index) => {
           const checked = sensorSelection[sensor.id] ? 'checked' : '';
           const disabled = groupEnabled ? '' : 'disabled';
-          const disableUp = index === 0 ? 'disabled' : '';
-          const disableDown = index === sensors.length - 1 ? 'disabled' : '';
           const label = escapeHtml(getFinalDisplayLabel(sensor));
           return `
             <div class="sensor-item-row" draggable="true" data-order-group="${group}" data-order-sensor-id="${sensor.id}">
               <span class="sensor-drag-handle" title="Drag to reorder" aria-hidden="true">⋮⋮</span>
-              <label class="checkbox-label sensor-item-label"><input type="checkbox" data-sensor-id="${sensor.id}" ${checked} ${disabled}><span>${label}</span></label>
-              <div class="sensor-order-controls">
-                <button type="button" class="sensor-order-btn" data-order-group="${group}" data-order-sensor-id="${sensor.id}" data-order-dir="up" ${disableUp} aria-label="Move ${label} up">↑</button>
-                <button type="button" class="sensor-order-btn" data-order-group="${group}" data-order-sensor-id="${sensor.id}" data-order-dir="down" ${disableDown} aria-label="Move ${label} down">↓</button>
+              <label class="checkbox-label sensor-item-label"><input type="checkbox" data-sensor-id="${sensor.id}" ${checked} ${disabled}><span class="sensor-name">${label}</span></label>
+              <div class="sensor-item-actions">
+                <button type="button" class="sensor-order-btn sensor-rename-btn" data-rename-sensor-id="${sensor.id}" aria-label="Rename ${label}" title="Rename sensor">✎</button>
               </div>
             </div>
           `;
@@ -3004,6 +3033,36 @@ function enrichGroupedSensorsWithRealtime(groupedSensors, externalData) {
     base[group] = Array.isArray(groupedSensors[group]) ? [...groupedSensors[group]] : [];
   });
 
+  if (!Array.isArray(base.ram)) base.ram = [];
+  if (Array.isArray(base.cpu) && base.cpu.length) {
+    const remainingCpuSensors = [];
+    const movedMemorySensors = [];
+
+    base.cpu.forEach((sensor) => {
+      const name = String(sensor && sensor.name ? sensor.name : '').toLowerCase();
+      if (name.includes('dram read bandwidth')) {
+        movedMemorySensors.push({ ...sensor, group: 'ram', name: 'Memory Read' });
+        return;
+      }
+      if (name.includes('dram write bandwidth')) {
+        movedMemorySensors.push({ ...sensor, group: 'ram', name: 'Memory Write' });
+        return;
+      }
+      remainingCpuSensors.push(sensor);
+    });
+
+    if (movedMemorySensors.length) {
+      const existingIds = new Set(base.ram.map((sensor) => String(sensor && sensor.id ? sensor.id : '')));
+      movedMemorySensors.forEach((sensor) => {
+        const sensorId = String(sensor && sensor.id ? sensor.id : '');
+        if (sensorId && existingIds.has(sensorId)) return;
+        if (sensorId) existingIds.add(sensorId);
+        base.ram.push(sensor);
+      });
+      base.cpu = remainingCpuSensors;
+    }
+  }
+
   if (!base.other) base.other = [];
 
   const allSensors = Object.values(base).flat();
@@ -3104,6 +3163,111 @@ function renderDynamicGroup(containerId, sensors) {
     .join('');
 }
 
+function findSelectedSensorById(sensorId) {
+  if (!sensorId) return null;
+  const buckets = latestSelectedGroupedSensors || {};
+  for (const group of SENSOR_GROUP_ORDER) {
+    const list = Array.isArray(buckets[group]) ? buckets[group] : [];
+    const found = list.find((sensor) => String(sensor && sensor.id ? sensor.id : '') === sensorId);
+    if (found) return found;
+  }
+  return null;
+}
+
+function findCatalogSensorById(sensorId) {
+  if (!sensorId) return null;
+  const buckets = cachedOrderedSensorCatalog || {};
+  for (const group of SENSOR_GROUP_ORDER) {
+    const list = Array.isArray(buckets[group]) ? buckets[group] : [];
+    const found = list.find((sensor) => String(sensor && sensor.id ? sensor.id : '') === sensorId);
+    if (found) return found;
+  }
+  return null;
+}
+
+function applyCustomSensorNamesRefresh() {
+  saveSensorCustomNames();
+  invalidateRenderGroupCache();
+  renderSensorOptions(cachedOrderedSensorCatalog);
+  renderAllDynamicGroups(latestSelectedGroupedSensors || createEmptyGroupedBuckets(), { force: true });
+}
+
+function setCustomSensorName(sensorId, name) {
+  const id = String(sensorId || '').trim();
+  if (!id) return;
+  const nextName = String(name || '').trim();
+  if (!nextName) {
+    delete sensorCustomNames[id];
+  } else {
+    sensorCustomNames[id] = nextName.slice(0, 80);
+  }
+  applyCustomSensorNamesRefresh();
+}
+
+function startInlineSensorRename(row, sensorId, fallbackName = '') {
+  if (!row || !sensorId) return;
+  if (row.classList.contains('is-renaming')) return;
+
+  const nameEl = row.querySelector('.sensor-name');
+  if (!nameEl) return;
+
+  const id = String(sensorId).trim();
+  const sensor = findSelectedSensorById(id) || findCatalogSensorById(id);
+  const existingCustomName = String(sensorCustomNames[id] || '').trim();
+  const currentDisplayName = sensor ? getFinalDisplayLabel(sensor) : (String(fallbackName || '').trim() || String(nameEl.textContent || '').trim() || 'Sensor');
+
+  row.classList.add('is-renaming');
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'sensor-rename-input';
+  input.maxLength = 80;
+  input.value = existingCustomName || currentDisplayName;
+  input.setAttribute('aria-label', `Rename ${currentDisplayName}`);
+
+  nameEl.style.display = 'none';
+  nameEl.parentNode.insertBefore(input, nameEl.nextSibling);
+
+  let finished = false;
+  const cleanup = () => {
+    if (finished) return;
+    finished = true;
+    input.remove();
+    nameEl.style.display = '';
+    row.classList.remove('is-renaming');
+  };
+
+  const commit = () => {
+    const nextName = String(input.value || '').trim();
+    cleanup();
+    setCustomSensorName(id, nextName);
+  };
+
+  const cancel = () => {
+    cleanup();
+  };
+
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      event.stopPropagation();
+      commit();
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      cancel();
+    }
+  });
+
+  input.addEventListener('blur', () => {
+    commit();
+  });
+
+  input.focus();
+  input.select();
+}
+
 function setupSensorGraphInteractions() {
   const container = document.getElementById('statsContainer');
   if (!container) return;
@@ -3142,6 +3306,8 @@ function setupSensorGraphInteractions() {
     event.stopPropagation();
     toggleGraph(statElement);
   });
+
+  // Renaming is handled in Sensor Selection rows for reliability across runtimes.
 }
 
 // Theme and Settings
@@ -3299,6 +3465,7 @@ const ThemeManager = {
 
 const SettingsManager = {
   init() {
+    sensorCustomNames = loadSensorCustomNames();
     setupSettingsAccordion();
 
     const customFontColorInput = document.getElementById('customFontColor');
@@ -3419,6 +3586,14 @@ const SettingsManager = {
     if (openSetupGuideBtn) {
       openSetupGuideBtn.addEventListener('click', () => {
         openSetupGuideModal();
+      });
+    }
+
+    const resetSensorNamesBtn = document.getElementById('resetSensorNamesBtn');
+    if (resetSensorNamesBtn) {
+      resetSensorNamesBtn.addEventListener('click', () => {
+        sensorCustomNames = {};
+        applyCustomSensorNamesRefresh();
       });
     }
 
@@ -3983,15 +4158,16 @@ const SettingsManager = {
       };
 
       sensorOptions.addEventListener('click', (e) => {
-        const reorderButton = e.target.closest('[data-order-group][data-order-sensor-id][data-order-dir]');
-        if (reorderButton) {
+        const renameButton = e.target.closest('[data-rename-sensor-id]');
+        if (renameButton) {
           e.preventDefault();
           e.stopPropagation();
-          moveSensorOrder(
-            reorderButton.dataset.orderGroup,
-            reorderButton.dataset.orderSensorId,
-            reorderButton.dataset.orderDir
-          );
+          const sensorId = String(renameButton.dataset.renameSensorId || '').trim();
+          if (!sensorId) return;
+          const row = renameButton.closest('.sensor-item-row[data-order-sensor-id]');
+          const nameEl = row ? row.querySelector('.sensor-name') : null;
+          const fallbackName = nameEl ? String(nameEl.textContent || '').trim() : '';
+          startInlineSensorRename(row, sensorId, fallbackName);
           return;
         }
 
@@ -4037,9 +4213,29 @@ const SettingsManager = {
         }
       });
 
+      sensorOptions.addEventListener('contextmenu', (e) => {
+        const row = e.target.closest('.sensor-item-row[data-order-sensor-id]');
+        if (!row) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const sensorId = String(row.dataset.orderSensorId || '').trim();
+        if (!sensorId) return;
+
+        const nameEl = row.querySelector('.sensor-name');
+        const fallbackName = nameEl ? String(nameEl.textContent || '').trim() : '';
+        startInlineSensorRename(row, sensorId, fallbackName);
+      });
+
       sensorOptions.addEventListener('dragstart', (e) => {
         const row = e.target.closest('.sensor-item-row[data-order-group][data-order-sensor-id]');
         if (!row) return;
+
+        if (row.classList.contains('is-renaming')) {
+          e.preventDefault();
+          return;
+        }
 
         if (e.target.closest('input,button')) {
           e.preventDefault();
