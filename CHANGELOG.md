@@ -1,4 +1,18 @@
 # Changelog
+## 1.1.1 - 2026-03-07
+
+### Added
+- Added temperature unit selector under Appearance settings:
+  - Celsius (°C)
+  - Fahrenheit (°F)
+- Added persistent temperature unit preference so selected unit is remembered across app restarts.
+
+### Changed
+- Updated temperature rendering pipeline so converted units are applied consistently across desktop cards, summary values, graph labels, and web monitor payload data.
+
+### Fixed
+- Fixed a renderer initialization regression introduced during temperature-unit integration that could prevent sensor updates and disable top-right header button actions.
+
 ## 1.1.0 - 2026-03-07
 
 ### Added
