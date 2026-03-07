@@ -1,4 +1,20 @@
 # Changelog
+
+## 1.1.2 - 2026-03-07
+
+### Added
+- Added per-sensor custom naming in Sensor Selection with inline rename editing.
+- Added `Reset Custom Sensor Names` control to clear all custom sensor name overrides.
+
+### Changed
+- Changed sensor reordering in Sensor Selection to drag-and-drop only by removing up/down arrow controls.
+- Improved inline rename field sizing and spacing so text is fully visible while editing.
+
+### Fixed
+- Fixed HWiNFO DRAM bandwidth sensors to appear in the Memory section instead of CPU.
+- Renamed HWiNFO DRAM bandwidth labels to `Memory Read` and `Memory Write`.
+- Fixed sensor rename interaction reliability by replacing dialog-dependent behavior with inline editor flow in Sensor Selection.
+
 ## 1.1.1 - 2026-03-07
 
 ### Added
