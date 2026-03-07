@@ -1,3 +1,49 @@
+# Changelog
+## 1.1.0 - 2026-03-07
+
+### Added
+- Added expanded style preset system for desktop and web monitor views with multiple visual variants:
+  - Classic
+  - Neon
+  - Minimal
+  - Glass
+  - Terminal
+- Added per-style group icon sets, synced between desktop and browser views.
+
+### Changed
+- Updated the header toggle label from `View` to `Style` to better reflect full visual preset switching.
+- Updated style mode switching to sync through the web payload so browser and desktop stay visually aligned.
+
+### Fixed
+- Fixed theme switching so accent-driven colors (sensor value, icon, graph, and block header) correctly update when changing color themes.
+- Fixed color picker synchronization after theme switches/resets so controls always reflect active applied colors.
+- Fixed remaining hard-coded color paths in style presets so custom color settings and themes affect all style variants more consistently.
+
+## 1.0.9 - 2026-03-07
+
+### Changed
+- Updated post-download updater messaging to clearly instruct users to press `Restart to Install` after download completes.
+
+### Fixed
+- Fixed Web Monitor updates pausing while the desktop app window is minimized by disabling renderer background throttling.
+- Fixed Web Summary layout spacing to better match desktop Summary Mode and reduce sensor-name truncation.
+- Fixed Web Summary fallback for static sensors (for example `LAN IP`, `WAN IP`, and `Memory Timings`) so they show current values instead of `Collecting summary...`.
+- Fixed Web Summary unit handling for network sensors so fan values reliably show `RPM` and total upload/download are treated as totals.
+- Fixed Web Summary conversion for total upload/download values to switch from `MB` to `GB` when totals exceed `1024 MB`.
+
+## 1.0.8 - 2026-03-06
+
+### Changed
+- Refined browser Summary Mode layout and spacing to better align with the desktop Summary Mode presentation.
+- Updated network display labels for readability with long values:
+  - `External IP Address` → `WAN IP`
+  - `Primary IP Address` → `LAN IP`
+
+### Fixed
+- Fixed browser Summary Mode fallback text for static sensors so values are shown instead of `Collecting summary...` when appropriate.
+- Fixed browser Summary Mode unit behavior for network sensors, including total upload/download handling and fan unit consistency.
+- Fixed browser Summary Mode total upload/download display conversion from `MB` to `GB` once values exceed `1024 MB`.
+
 ## 1.0.7 - 2026-03-06
 
 ### Changed
@@ -11,6 +57,7 @@
 
 ### Fixed
 - Fixed unnecessary background graph-history accumulation when no graphs were open.
+- Updated README release asset naming to match updater-safe artifact names.
 - Fixed occasional apparent "every other second" UI skips by forcing scheduler-driven renders when due.
 - Fixed RAM timing display truncation (for example `18-22-22-42` no longer collapsing to `18.00`).
 
