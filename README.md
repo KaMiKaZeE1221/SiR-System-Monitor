@@ -179,8 +179,4 @@ Current behavior is manual (user-driven):
 
 8. Updater
 
-![Updater](docs/screenshots/08-Updater.png)
-
-![Update Found](docs/screenshots/09-UpdateFound.png)
-
-![Downloading Update](docs/screenshots/10-DownloadingUpdate.png)
+![Updater](docs/screenshots/08-Updater.png)![Update Found](docs/screenshots/09-UpdateFound.png)![Downloading Update](docs/screenshots/10-DownloadingUpdate.png)
