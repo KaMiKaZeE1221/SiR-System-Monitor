@@ -79,13 +79,18 @@ Settings are grouped in the sidebar:
   - Shared memory provider toggles
 - Connectivity
   - Web monitor enable, host/port, open URL
+  - Discord Rich Presence (enable / disable)
 - App Behavior
   - Launch at startup
   - Start minimized
   - Minimize/close to tray
   - App update controls
+  All settings are persisted locally.
 
-All settings are persisted locally.
+### Discord Rich Presence
+
+- Presence is enabled by default.
+- To disable Rich Presence: open Settings → Connectivity → Discord Rich Presence → select **Disabled**. The app will stop sending presence updates immediately.
 
 ## Sensor Sources
 
