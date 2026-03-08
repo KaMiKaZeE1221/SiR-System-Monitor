@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.4 - 2026-03-08
+
+### Added
+- Discord Rich Presence!
+- Settings → Connectivity: Discord Rich Presence dropdown allowing users to enable or disable Rich Presence.
+
+## 1.1.3 - 2026-03-07
+
+### Fixed
+- Prevented new installs from auto-launching in Summary Mode (defaults to Monitoring).
+- Removed unintended bar/graph icon next to the header app icon.
+
 ## 1.1.2 - 2026-03-07
 
 ### Added
