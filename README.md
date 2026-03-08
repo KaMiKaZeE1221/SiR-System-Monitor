@@ -7,7 +7,7 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
 ## Table of Contents
 
 - [What It Does](#what-it-does)
-- [Screenshots](#screenshots)
+- [Screenshots](#screenshots) - May be a little outdated.
 - [Requirements](#requirements)
 - [Settings Overview](#settings-overview)
 - [Sensor Sources](#sensor-sources)
