@@ -46,7 +46,7 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
 
 - OS: Windows 10+ (Might work on earlier versions but I have not personally tested.)
 
-At least one of these is required to show ANY sensors...:
+## At least one of these is required to show ANY sensors:
 
 - RTSS / MSI Afterburner (Only for FPS/Frame Times)
 - AIDA64 with Shared Memory enabled
