@@ -186,7 +186,15 @@ const SENSOR_HISTORY_MAX_POINTS = 600;
 const sensorHistory = {};
 const sensorSessionStats = {};
 let expandedGraphSensors = new Set();
-let summaryModeEnabled = false;
+let summaryModeEnabled = (function() {
+  try {
+    const raw = localStorage.getItem(SUMMARY_MODE_KEY);
+    if (raw === null) return false; // If not set, default to false
+    return JSON.parse(raw) === true;
+  } catch (e) {
+    return false;
+  }
+})();
 let lowOverheadModeEnabled = false;
 let latestSelectedGroupedSensors = createEmptyGroupedBuckets();
 let liveSensorCatalogSignature = '';
@@ -234,7 +242,8 @@ const DEFAULT_APP_BEHAVIOR_SETTINGS = {
   launchAtStartup: false,
   startMinimized: false,
   minimizeToTray: false,
-  closeToTray: false
+  closeToTray: false,
+  enableDiscordRichPresence: true
 };
 
 const FONT_FAMILY_MAP = {
@@ -304,7 +313,10 @@ function normalizeAppBehaviorSettings(input) {
     launchAtStartup: !!input?.launchAtStartup,
     startMinimized: !!input?.startMinimized,
     minimizeToTray: !!input?.minimizeToTray,
-    closeToTray: !!input?.closeToTray
+    closeToTray: !!input?.closeToTray,
+    enableDiscordRichPresence: typeof input?.enableDiscordRichPresence === 'boolean'
+      ? input.enableDiscordRichPresence
+      : true
   };
 }
 
@@ -498,7 +510,8 @@ function buildWebMonitorHtml() {
 <body>
   <div class="wrap">
     <div class="header">
-      <div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <img src="SiR_SM_Circle.ico" alt="SiR System Monitor" style="width: 38px; height: 38px; border-radius: 50%; box-shadow: 0 1px 4px #0002;" />
         <div class="title">SiR System Monitor</div>
         <div id="meta" class="meta">Waiting for data...</div>
       </div>
@@ -543,6 +556,17 @@ function buildWebMonitorHtml() {
     };
 
     const SUMMARY_MODE_STORAGE_KEY = 'sirWebSummaryMode';
+
+    // Force web-summary mode OFF for browser view and ensure desktop summary default is unset
+    try {
+      localStorage.removeItem(SUMMARY_MODE_STORAGE_KEY);
+    } catch (e) {}
+    try {
+      // Clear desktop summary key only if not explicitly set (helps new-user default)
+      // Do not force-clear if users have an explicit preference stored as 'true' or 'false'.
+      const existing = localStorage.getItem(SUMMARY_MODE_KEY);
+      if (existing === null) localStorage.removeItem(SUMMARY_MODE_KEY);
+    } catch (e) {}
 
     function normalizeViewMode(mode) {
       const normalized = String(mode || '').trim().toLowerCase();
@@ -938,13 +962,13 @@ function buildWebMonitorHtml() {
         let initialSummaryMode = false;
         try {
           const stored = localStorage.getItem(SUMMARY_MODE_STORAGE_KEY);
-          if (stored === 'true' || stored === 'false') {
-            initialSummaryMode = stored === 'true';
+          if (stored === 'true') {
+            initialSummaryMode = true;
           } else {
-            initialSummaryMode = !!(payload.settings && payload.settings.summaryMode);
+            initialSummaryMode = false;
           }
         } catch (e) {
-          initialSummaryMode = !!(payload.settings && payload.settings.summaryMode);
+          initialSummaryMode = false;
         }
 
         setSummaryMode(initialSummaryMode);
@@ -3702,7 +3726,8 @@ const SettingsManager = {
     const summaryButton = document.getElementById('summaryModeBtn');
     if (summaryButton) {
       const storedSummaryMode = localStorage.getItem(SUMMARY_MODE_KEY);
-      const savedSummaryMode = storedSummaryMode === null ? true : storedSummaryMode === 'true';
+      // Default to OFF for new users (stored === null) to avoid starting in summary mode
+      const savedSummaryMode = storedSummaryMode === null ? false : storedSummaryMode === 'true';
       applySummaryMode(savedSummaryMode);
 
       summaryButton.addEventListener('click', () => {
@@ -3798,12 +3823,17 @@ const SettingsManager = {
       closeToTray: document.getElementById('closeToTray')
     };
 
+    const discordPresenceSelect = document.getElementById('discordPresenceSelect');
+
     const applyAppBehaviorToUi = (settings) => {
       const normalized = normalizeAppBehaviorSettings(settings);
       Object.entries(appBehaviorControls).forEach(([key, element]) => {
         if (!element) return;
         element.checked = !!normalized[key];
       });
+      if (discordPresenceSelect) {
+        discordPresenceSelect.value = normalized.enableDiscordRichPresence ? 'enabled' : 'disabled';
+      }
     };
 
     const readAppBehaviorFromUi = () => {
@@ -3812,6 +3842,8 @@ const SettingsManager = {
         startMinimized: !!appBehaviorControls.startMinimized?.checked,
         minimizeToTray: !!appBehaviorControls.minimizeToTray?.checked,
         closeToTray: !!appBehaviorControls.closeToTray?.checked
+      ,
+        enableDiscordRichPresence: discordPresenceSelect ? (discordPresenceSelect.value === 'enabled') : true
       });
     };
 
@@ -3824,6 +3856,13 @@ const SettingsManager = {
         applyAppBehaviorToUi(saved);
       });
     });
+
+    if (discordPresenceSelect) {
+      discordPresenceSelect.addEventListener('change', async () => {
+        const saved = await setAppBehaviorSettings(readAppBehaviorFromUi());
+        applyAppBehaviorToUi(saved);
+      });
+    }
 
     getAppBehaviorSettings().then((settings) => {
       applyAppBehaviorToUi(settings);

@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SiR System Monitor</title>
+  <link rel="icon" type="image/x-icon" href="SiR_SM_Circle.ico">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -223,6 +224,15 @@
         <a id="webMonitorUrl" class="web-monitor-url" target="_blank" rel="noopener noreferrer">--</a>
         <div class="settings-note">Use host <strong>0.0.0.0</strong> to allow other devices on your network.</div>
       </div>
+
+      <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-chat-dots settings-label-icon" aria-hidden="true"></i><span>Discord Rich Presence</span></label>
+        <select id="discordPresenceSelect" class="detection-select">
+          <option value="enabled">Enabled</option>
+          <option value="disabled">Disabled</option>
+        </select>
+        <div class="settings-note">Toggle Discord Rich Presence for the app.</div>
+      </div>
     </div>
 
     <div class="settings-group">
@@ -267,7 +277,10 @@
   <!-- Main Content -->
   <div class="container">
     <div class="header">
-      <h1>SiR System Monitor</h1>
+      <h1 style="display: flex; align-items: center; gap: 16px;">
+        <img src="SiR_SM_Circle.ico" alt="App Icon" style="width:48px;height:48px;vertical-align:middle;">
+        SiR System Monitor
+      </h1>
       <div class="header-actions">
         <button id="monitoringModeBtn" class="monitoring-mode-btn">Monitoring Mode</button>
         <button id="summaryModeBtn" class="monitoring-mode-btn">Summary Mode</button>

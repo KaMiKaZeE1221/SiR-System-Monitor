@@ -3,6 +3,14 @@ const path = require('path');
 const fs = require('fs');
 const https = require('https');
 const { autoUpdater } = require('electron-updater');
+// Discord Rich Presence (in-repo IPC helper)
+const DISCORD_CLIENT_ID = '1479994487215227094';
+let discordIpc = null;
+try {
+  discordIpc = require('./lib/discord-ipc');
+} catch (err) {
+  console.warn('discord-ipc helper not available — Discord Rich Presence disabled.');
+}
 
 const enableGpuAcceleration = process.env.SIR_ENABLE_GPU_ACCELERATION === '1';
 if (!enableGpuAcceleration) {
@@ -14,7 +22,8 @@ const DEFAULT_APP_BEHAVIOR_SETTINGS = {
   launchAtStartup: false,
   startMinimized: false,
   minimizeToTray: false,
-  closeToTray: false
+  closeToTray: false,
+  enableDiscordRichPresence: true
 };
 
 let mainWindow = null;
@@ -322,7 +331,10 @@ function normalizeBehaviorSettings(settings) {
     launchAtStartup: !!settings?.launchAtStartup,
     startMinimized: !!settings?.startMinimized,
     minimizeToTray: !!settings?.minimizeToTray,
-    closeToTray: !!settings?.closeToTray
+    closeToTray: !!settings?.closeToTray,
+    enableDiscordRichPresence: typeof settings?.enableDiscordRichPresence === 'boolean'
+      ? settings.enableDiscordRichPresence
+      : true
   };
 }
 
@@ -372,7 +384,7 @@ function showMainWindow() {
 
 function createTray() {
   if (tray) return;
-  tray = new Tray(path.join(__dirname, 'SiR_SM.ico'));
+  tray = new Tray(path.join(__dirname, 'SiR_SM_Circle.ico'));
   tray.setToolTip('SiR System Monitor');
   tray.setContextMenu(Menu.buildFromTemplate([
     {
@@ -399,6 +411,44 @@ function destroyTrayIfUnused() {
   tray = null;
 }
 
+// Initialize Discord Rich Presence (called after app is ready)
+function initDiscordRPC() {
+  if (!discordIpc || typeof discordIpc.connect !== 'function') return;
+  if (!appBehaviorSettings.enableDiscordRichPresence) return;
+  try {
+    discordIpc.connect(DISCORD_CLIENT_ID).then(() => {
+      setDiscordActivity();
+      setInterval(setDiscordActivity, 15_000);
+    }).catch(() => {});
+  } catch (error) {
+    // ignore
+  }
+}
+
+function setDiscordActivity() {
+  if (!discordIpc || typeof discordIpc.setActivity !== 'function') return;
+  if (!appBehaviorSettings.enableDiscordRichPresence) return;
+  try {
+    // Updated presence payload per provided example
+    discordIpc.setActivity({
+      details: 'Monitoring System Stats',
+      state: 'Active',
+      startTimestamp: Math.floor(Date.now() / 1000),
+      largeImageKey: 'sir_sm_circle',
+      largeImageText: 'Numbani',
+      smallImageKey: 'sir_sm_circle',
+      smallImageText: `v${app.getVersion()}`,
+      partyMax: 5,
+      joinSecret: 'MTI4NzM0OjFpMmhuZToxMjMxMjM=',
+      buttons: [
+        { label: 'Project', url: 'https://github.com/KaMiKaZeE1221/SiR-System-Monitor' }
+      ]
+    });
+  } catch (error) {
+    // ignore
+  }
+}
+
 function syncTrayState() {
   if (appBehaviorSettings.minimizeToTray || appBehaviorSettings.closeToTray) {
     createTray();
@@ -411,7 +461,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 900,
-    icon: path.join(__dirname, 'SiR_SM.ico'),
+    icon: path.join(__dirname, 'SiR_SM_Circle.ico'),
     autoHideMenuBar: true,
     show: !appBehaviorSettings.startMinimized,
     webPreferences: {
@@ -456,6 +506,8 @@ app.whenReady().then(() => {
   syncTrayState();
   createWindow();
   setupAutoUpdater();
+  // Start Discord Rich Presence if available
+  try { initDiscordRPC(); } catch (e) { /* ignore */ }
 });
 
 app.on('before-quit', () => {
@@ -479,6 +531,13 @@ app.on('activate', () => {
   }
 });
 
+app.on('will-quit', () => {
+  if (discordIpc) {
+    try { discordIpc.clearActivity(); } catch (e) { /* ignore */ }
+    try { discordIpc.disconnect(); } catch (e) { /* ignore */ }
+  }
+});
+
 ipcMain.handle('app-behavior:get', () => {
   return appBehaviorSettings;
 });
@@ -491,6 +550,20 @@ ipcMain.handle('app-behavior:set', (_event, nextSettings) => {
   const saved = saveBehaviorSettings(merged);
   applyLoginItemSettings();
   syncTrayState();
+  // Start/stop Discord Rich Presence based on the saved setting
+  try {
+    if (saved.enableDiscordRichPresence) {
+      try { initDiscordRPC(); } catch (e) { /* ignore */ }
+    } else {
+      if (discordIpc) {
+        try { discordIpc.clearActivity(); } catch (e) { /* ignore */ }
+        try { discordIpc.disconnect(); } catch (e) { /* ignore */ }
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
   return saved;
 });
 

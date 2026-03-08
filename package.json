@@ -1,6 +1,6 @@
 {
   "name": "sir-system-monitor",
-  "version": "1.1.2",
+  "version": "1.1.4",
   "description": "Electron app for monitoring system statistics",
   "repository": {
     "type": "git",
@@ -42,11 +42,11 @@
       "!test-*.js"
     ],
     "directories": {
-      "output": "dist"
+      "output": "dist_release_114"
     },
-    "icon": "SiR_SM.ico",
+    "icon": "SiR_SM_Circle.ico",
     "win": {
-      "icon": "SiR_SM.ico",
+      "icon": "SiR_SM_Circle.ico",
       "target": [
         "nsis",
         "portable"
