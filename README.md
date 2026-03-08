@@ -104,10 +104,6 @@ Primary runtime path uses shared-memory integration:
 ## Sensor Naming & Grouping Notes
 
 - The app applies display-label normalization for common provider naming quirks.
-- Network labels are shortened where useful (for example WAN/LAN IP naming).
-- HWiNFO DRAM bandwidth sensors are normalized into Memory:
-  - `DRAM Read Bandwidth` → `Memory Read`
-  - `DRAM Write Bandwidth` → `Memory Write`
 - Custom names (from Sensor Selection rename) override normalized labels.
 
 ## Web Monitor
