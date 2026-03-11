@@ -10,6 +10,7 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
 - [Screenshots](#screenshots) - May be a little outdated.
 - [Requirements](#requirements)
 - [Settings Overview](#settings-overview)
+- [Backup & Restore](#backup--restore---export--import)
 - [Sensor Sources](#sensor-sources)
 - [Sensor Naming & Grouping Notes](#sensor-naming--grouping-notes)
 - [Web Monitor](#web-monitor)
@@ -86,6 +87,26 @@ Settings are grouped in the sidebar:
   - Minimize/close to tray
   - App update controls
   All settings are persisted locally.
+
+## Backup & Restore / Export & Import
+
+SiR System Monitor provides an in-app Export and Import flow to back up your current settings or restore them from a JSON file.
+
+- Export: produces a JSON file containing your active settings including theme, style preset, temperature unit, custom colors, appearance options, sensor selection and ordering, connectivity settings (web monitor host/port), and updater preferences.
+- Import: opens a preview modal showing which settings will change (theme and color previews are applied in the preview). You can choose **Apply Now** to apply settings immediately without a full reload, or **Apply & Reload** to apply settings and restart the renderer to ensure all subsystems pick up the new state.
+
+Usage:
+
+1. Open Settings → Backup & Restore.
+2. Click **Export** to save a JSON snapshot of the current settings.
+3. Click **Import** and select a previously exported JSON file to preview its values.
+4. Use **Apply Now** to apply the visible changes instantly, or **Apply & Reload** to apply and restart the UI for a fuller effect.
+
+Notes:
+
+- Exported files are portable between installs of the same app version family; major version upgrades may change settings semantics.
+- The preview step lets you inspect color/theme changes before committing them.
+
 
 ### Discord Rich Presence
 
