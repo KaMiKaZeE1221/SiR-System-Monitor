@@ -11,6 +11,8 @@
 
 ### Fixed
 - Improved sensor-selection persistence and drag-and-drop ordering reliability when importing settings.
+- Fixed weird alignment issues with sensor blocks.
+- Fixed the last sensors text/graph being cut off.
 
 ### UI
 - Replaced the textual `Monitoring Mode` header button with a compact settings gear icon that opens/closes the Settings sidebar.
