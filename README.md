@@ -57,6 +57,10 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
 
 Settings are grouped in the sidebar:
 
+## Settings Overview
+
+Settings are grouped in the sidebar:
+
 - Appearance
   - Color theme
   - Style preset
@@ -65,8 +69,8 @@ Settings are grouped in the sidebar:
   - Custom colors (font, sensor names, sensor values, icon, graph, sensor block headers, outline, background)
   - Reset to theme defaults
 - Monitoring
-  - Monitoring Mode toggle
   - Summary Mode toggle
+  - Settings gear button (opens the Settings sidebar)
   - Refresh rate (1000–5000 ms)
   - Visible sensor groups
   - Sensor Selection panel
@@ -85,7 +89,8 @@ Settings are grouped in the sidebar:
   - Start minimized
   - Minimize/close to tray
   - App update controls
-  All settings are persisted locally.
+
+All settings are persisted locally.
 
 ### Backup & Restore / Export & Import
 
