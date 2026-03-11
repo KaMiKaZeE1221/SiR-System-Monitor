@@ -136,6 +136,7 @@ When enabled:
 
 - UI endpoint: `http://<host>:<port>/`
 - JSON endpoint: `http://<host>:<port>/api/monitor`
+- When the web monitor is active the header shows a small status indicator marked **Sharing** to indicate the app is publishing the browser-accessible view.
 
 Useful for viewing selected sensors from another device on LAN or WAN, subject to local firewall/network rules.
 
