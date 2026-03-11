@@ -105,7 +105,6 @@ Usage:
 Notes:
 
 - Exported files are portable between installs of the same app version family; major version upgrades may change settings semantics.
-- The preview step lets you inspect color/theme changes before committing them.
 
 
 ### Discord Rich Presence
