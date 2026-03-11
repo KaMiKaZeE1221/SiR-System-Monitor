@@ -7,7 +7,7 @@
 - Import preview modal: users can preview incoming settings (including theme and custom colors) before applying.
 - Backup & Restore section in Settings: simplified access for exporting current settings and restoring from a file.
 - Scrollable release notes area in the in-app updater dialog.
-<img width="300" height="200" alt="image" src="https://github.com/user-attachments/assets/f88f0c5d-b180-4c08-a421-dd5657e8c3c1" />
+<img width="300" height="400" alt="image" src="https://github.com/user-attachments/assets/f88f0c5d-b180-4c08-a421-dd5657e8c3c1" />
 
 ### Fixed
 - Improved sensor-selection persistence and drag-and-drop ordering reliability when importing settings.
