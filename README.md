@@ -28,20 +28,20 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
   - Network
   - Drives
   - Other
-- Theme presets
+- Supports configurable refresh rate and sensor visibility.
+- Supports per-sensor selection and drag-and-drop ordering.
+- Supports custom sensor names in Sensor Selection with inline rename editing (`✎`).
+- Supports resetting all custom sensor names.
+- Supports Monitoring Mode and Summary Mode.
+- Supports summary mode (session min/max view).
+- Supports appearance customization:
+  - Theme presets
   - Style presets (Classic, Neon, Minimal, Glass, Terminal)
   - Font size/family, bold text, monospace values
   - Temperature unit toggle (Celsius/Fahrenheit)
   - Custom colors for UI channels (font, sensor label/value, icon, graph, block header, outline, background)
 - Supports resetting colors back to defaults for the currently selected theme.
 - Exposes a browser-accessible monitor page and JSON endpoint.
-- Supports configurable refresh rate and sensor visibility.
-- Supports per-sensor selection and drag-and-drop ordering.
-- Supports custom sensor names in Sensor Selection with inline rename editing (`✎`).
-- Supports resetting all custom sensor names.
-- Supports Monitoring Mode, Summary Mode, and Low Overhead Mode.
-- Supports summary mode (session min/max view) with browser summary lockout while Low Overhead Mode is enabled.
-- Supports appearance customization:
 
 ## Requirements
 
