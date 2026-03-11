@@ -67,7 +67,6 @@ Settings are grouped in the sidebar:
 - Monitoring
   - Monitoring Mode toggle
   - Summary Mode toggle
-  - Low Overhead Mode toggle
   - Refresh rate (1000–5000 ms)
   - Visible sensor groups
   - Sensor Selection panel
