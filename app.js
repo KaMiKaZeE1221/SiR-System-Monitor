@@ -1,6 +1,8 @@
 const SensorReader = require('./sensorReader');
 const http = require('http');
 const os = require('os');
+const fs = require('fs');
+const path = require('path');
 const { shell, ipcRenderer } = require('electron');
 
 const APP_PACKAGE = (() => {
@@ -80,9 +82,6 @@ const WINDOW_ORDER_KEY = 'windowOrder';
 const WINDOW_SIZE_KEY = 'windowSize';
 const MONITORING_MODE_KEY = 'monitoringMode';
 const SUMMARY_MODE_KEY = 'summaryMode';
-const LOW_OVERHEAD_MODE_KEY = 'lowOverheadMode';
-const LOW_OVERHEAD_PREV_MONITORING_KEY = 'lowOverheadPrevMonitoring';
-const LOW_OVERHEAD_PREV_SUMMARY_KEY = 'lowOverheadPrevSummary';
 const VIEW_MODE_KEY = 'viewMode';
 const GRAPH_EXPANDED_KEY = 'graphExpandedSensors';
 const WEB_MONITOR_SETTINGS_KEY = 'webMonitorSettings';
@@ -195,7 +194,7 @@ let summaryModeEnabled = (function() {
     return false;
   }
 })();
-let lowOverheadModeEnabled = false;
+// Low Overhead mode removed
 let latestSelectedGroupedSensors = createEmptyGroupedBuckets();
 let liveSensorCatalogSignature = '';
 let cachedOrderedSensorCatalog = createEmptyGroupedBuckets();
@@ -392,12 +391,24 @@ function getWebMonitorUrls(host, port) {
 }
 
 function buildWebMonitorHtml() {
+  let iconSrc = 'SiR_SM_Circle.ico';
+  try {
+    const icoPath = path.join(__dirname, 'SiR_SM_Circle.ico');
+    if (fs.existsSync(icoPath)) {
+      const buf = fs.readFileSync(icoPath);
+      iconSrc = `data:image/x-icon;base64,${buf.toString('base64')}`;
+    }
+  } catch (e) {
+    // fallback to relative path
+  }
+
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>SiR Monitor Web View</title>
+  <link rel="icon" type="image/x-icon" href="${iconSrc}" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
   <style>
     :root {
@@ -511,7 +522,7 @@ function buildWebMonitorHtml() {
   <div class="wrap">
     <div class="header">
       <div style="display: flex; align-items: center; gap: 12px;">
-        <img src="SiR_SM_Circle.ico" alt="SiR System Monitor" style="width: 38px; height: 38px; border-radius: 50%; box-shadow: 0 1px 4px #0002;" />
+        <img src="${iconSrc}" alt="SiR System Monitor" style="width: 38px; height: 38px; border-radius: 50%; box-shadow: 0 1px 4px #0002;" />
         <div class="title">SiR System Monitor</div>
         <div id="meta" class="meta">Waiting for data...</div>
       </div>
@@ -551,7 +562,6 @@ function buildWebMonitorHtml() {
       rowsByKey: new Map(),
       rowScrollByGroup: new Map(),
       summaryMode: false,
-      lowOverheadMode: false,
       viewMode: 'standard'
     };
 
@@ -706,8 +716,7 @@ function buildWebMonitorHtml() {
       const opts = options || {};
       const persist = opts.persist !== false;
       const requested = !!enabled;
-      const nextSummaryMode = domState.lowOverheadMode ? false : requested;
-      domState.summaryMode = nextSummaryMode;
+      domState.summaryMode = requested;
       document.body.classList.toggle('summary-mode', domState.summaryMode);
       const button = document.getElementById('summaryModeToggle');
       if (button) {
@@ -720,22 +729,7 @@ function buildWebMonitorHtml() {
       }
     }
 
-    function applyLowOverheadLock(settings) {
-      const nextLowOverheadMode = !!(settings && settings.lowOverheadMode);
-      if (domState.lowOverheadMode === nextLowOverheadMode) {
-        return;
-      }
-
-      domState.lowOverheadMode = nextLowOverheadMode;
-      const button = document.getElementById('summaryModeToggle');
-      if (button) {
-        button.style.display = domState.lowOverheadMode ? 'none' : '';
-      }
-
-      if (domState.lowOverheadMode && domState.summaryMode) {
-        setSummaryMode(false, { persist: false });
-      }
-    }
+    // Low Overhead feature removed; no-op placeholder removed.
 
     function buildPath(points, width, height, padding) {
       if (!Array.isArray(points) || points.length < 2) return '';
@@ -952,7 +946,6 @@ function buildWebMonitorHtml() {
       }
 
       applySyncedSettings(payload.settings || {});
-      applyLowOverheadLock(payload.settings || {});
       const rawMode = String(payload.mode || '').toLowerCase();
       const modeLabel = rawMode === 'msi' ? 'Shared Memory' : (payload.mode || 'N/A');
       const version = String(payload.version || APP_VERSION || 'N/A').trim() || 'N/A';
@@ -975,9 +968,6 @@ function buildWebMonitorHtml() {
         const summaryToggle = document.getElementById('summaryModeToggle');
         if (summaryToggle) {
           summaryToggle.addEventListener('click', () => {
-            if (domState.lowOverheadMode) {
-              return;
-            }
             setSummaryMode(!domState.summaryMode);
             domState.structureKey = '';
             render(payload);
@@ -1029,7 +1019,7 @@ function isWebSummaryModeActive() {
 }
 
 function shouldCollectSummaryStats() {
-  return !lowOverheadModeEnabled;
+  return true;
 }
 
 function publishWebMonitorPayload(mode, externalText) {
@@ -1121,7 +1111,7 @@ function publishWebMonitorPayload(mode, externalText) {
     });
   });
 
-  latestWebPayload = {
+    latestWebPayload = {
     app: 'SiR System Monitor',
     version: APP_VERSION,
     updatedAt: Date.now(),
@@ -1136,7 +1126,6 @@ function publishWebMonitorPayload(mode, externalText) {
       fontBold: selectedBold,
       temperatureUnit: selectedTempUnit,
       summaryMode: summaryModeEnabled,
-      lowOverheadMode: lowOverheadModeEnabled,
       viewMode: normalizeViewMode(localStorage.getItem(VIEW_MODE_KEY) || 'standard'),
       groupOrder,
       groupLayout,
@@ -1696,6 +1685,159 @@ function initializeSetupGuideModal() {
   }
 }
 
+function setImportSettingsModalVisible(visible) {
+  const modal = document.getElementById('importSettingsModal');
+  if (!modal) return;
+  modal.classList.toggle('is-hidden', !visible);
+}
+
+function closeImportSettingsModal() {
+  setImportSettingsModalVisible(false);
+}
+
+function applyImportedSettingsNow() {
+  const modal = document.getElementById('importSettingsModal');
+  if (!modal) return;
+  let parsed = {};
+  try { parsed = JSON.parse(modal.dataset.parsed || '{}'); } catch (e) { parsed = {}; }
+
+  Object.keys(parsed || {}).forEach((k) => {
+    try {
+      const v = parsed[k];
+      if (v === null || v === undefined) {
+        localStorage.removeItem(k);
+      } else {
+        localStorage.setItem(k, String(v));
+      }
+    } catch (e) {}
+  });
+
+  // Apply immediate visual settings where possible
+  try {
+    if (parsed.theme) ThemeManager.setTheme(String(parsed.theme).replace(/^"|"$/g, ''));
+    // update theme button active state
+    try {
+      const themeButtons = document.querySelectorAll('.theme-btn');
+      if (themeButtons && themeButtons.length && parsed.theme) {
+        themeButtons.forEach((b) => b.classList.remove('active'));
+        const btn = document.querySelector(`.theme-btn[data-theme="${String(parsed.theme).replace(/^"|"$/g, '')}"]`);
+        if (btn) btn.classList.add('active');
+      }
+    } catch (e) {}
+  } catch (e) {}
+  try {
+    if (parsed[ CUSTOM_COLORS_KEY ]) {
+      const raw = parsed[ CUSTOM_COLORS_KEY ];
+      let colors = null;
+      try { colors = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (e) { colors = null; }
+      if (colors) CustomColorManager.applyColors(colors);
+    }
+  } catch (e) {}
+
+  try { if (parsed[VIEW_MODE_KEY]) applyViewMode(String(parsed[VIEW_MODE_KEY]).replace(/^"|"$/g, ''), { persist: true }); } catch (e) {}
+  try { if (parsed[FONT_SIZE_KEY]) applyFontSize(String(parsed[FONT_SIZE_KEY]).replace(/^"|"$/g, '')); } catch (e) {}
+  try { const fontSizeSelect = document.getElementById('fontSizeSelect'); if (fontSizeSelect && parsed[FONT_SIZE_KEY]) fontSizeSelect.value = String(parsed[FONT_SIZE_KEY]).replace(/^"|"$/g, ''); } catch (e) {}
+  try { if (parsed[FONT_FAMILY_KEY]) applyFontFamily(String(parsed[FONT_FAMILY_KEY]).replace(/^"|"$/g, '')); } catch (e) {}
+  try { const fontFamilySelect = document.getElementById('fontFamilySelect'); if (fontFamilySelect && parsed[FONT_FAMILY_KEY]) fontFamilySelect.value = String(parsed[FONT_FAMILY_KEY]).replace(/^"|"$/g, ''); } catch (e) {}
+  try { if (parsed[VALUE_FONT_MONOSPACE_KEY]) applyValueFontMonospace(String(parsed[VALUE_FONT_MONOSPACE_KEY]).replace(/^"|"$/g, '') === 'true'); } catch (e) {}
+  try { const valueFontMonospaceToggle = document.getElementById('valueFontMonospaceToggle'); if (valueFontMonospaceToggle && parsed[VALUE_FONT_MONOSPACE_KEY]) valueFontMonospaceToggle.checked = String(parsed[VALUE_FONT_MONOSPACE_KEY]).replace(/^"|"$/g, '') === 'true'; } catch (e) {}
+  try { if (parsed[FONT_BOLD_KEY]) applyFontBold(String(parsed[FONT_BOLD_KEY]).replace(/^"|"$/g, '') === 'true'); } catch (e) {}
+  try { const fontBoldToggle = document.getElementById('fontBoldToggle'); if (fontBoldToggle && parsed[FONT_BOLD_KEY]) fontBoldToggle.checked = String(parsed[FONT_BOLD_KEY]).replace(/^"|"$/g, '') === 'true'; } catch (e) {}
+  try { if (parsed[TEMPERATURE_UNIT_KEY]) applyTemperatureUnit(String(parsed[TEMPERATURE_UNIT_KEY]).replace(/^"|"$/g, '')); } catch (e) {}
+  try { const tempSelect = document.getElementById('temperatureUnitSelect'); if (tempSelect && parsed[TEMPERATURE_UNIT_KEY]) tempSelect.value = String(parsed[TEMPERATURE_UNIT_KEY]).replace(/^"|"$/g, ''); } catch (e) {}
+
+  // Apply sensor selections / categories / order immediately if present
+  try {
+    if (parsed[SENSOR_SELECTION_KEY]) {
+      let sel = parsed[SENSOR_SELECTION_KEY];
+      let selObj = {};
+      try { selObj = typeof sel === 'string' ? JSON.parse(sel) : (sel || {}); } catch (e) { selObj = {}; }
+      sensorSelection = selObj || {};
+      saveSensorSelection();
+      try { renderSensorOptions(cachedOrderedSensorCatalog); } catch (e) {}
+      try {
+        latestSelectedGroupedSensors = filterSelectedSensors(cachedOrderedSensorCatalog || createEmptyGroupedBuckets());
+        renderAllDynamicGroups(latestSelectedGroupedSensors, { force: true });
+      } catch (e) {}
+    }
+  } catch (e) {}
+
+  try {
+    if (parsed[SENSOR_CATEGORY_SELECTION_KEY]) {
+      let cat = parsed[SENSOR_CATEGORY_SELECTION_KEY];
+      let catObj = {};
+      try { catObj = typeof cat === 'string' ? JSON.parse(cat) : (cat || {}); } catch (e) { catObj = {}; }
+      sensorCategorySelection = catObj || {};
+      saveSensorCategorySelection();
+      try { renderSensorOptions(cachedOrderedSensorCatalog); } catch (e) {}
+      try {
+        latestSelectedGroupedSensors = filterSelectedSensors(cachedOrderedSensorCatalog || createEmptyGroupedBuckets());
+        renderAllDynamicGroups(latestSelectedGroupedSensors, { force: true });
+      } catch (e) {}
+    }
+  } catch (e) {}
+
+  try {
+    if (parsed[SENSOR_ORDER_KEY]) {
+      let ord = parsed[SENSOR_ORDER_KEY];
+      let ordObj = {};
+      try { ordObj = typeof ord === 'string' ? JSON.parse(ord) : (ord || {}); } catch (e) { ordObj = {}; }
+      sensorOrderByGroup = ordObj || {};
+      saveSensorOrder();
+      try { renderSensorOptions(cachedOrderedSensorCatalog); } catch (e) {}
+    }
+  } catch (e) {}
+
+  closeImportSettingsModal();
+}
+
+function applyImportedSettingsAndReload() {
+  const modal = document.getElementById('importSettingsModal');
+  if (!modal) return;
+  let parsed = {};
+  try { parsed = JSON.parse(modal.dataset.parsed || '{}'); } catch (e) { parsed = {}; }
+
+  Object.keys(parsed || {}).forEach((k) => {
+    try {
+      const v = parsed[k];
+      if (v === null || v === undefined) {
+        localStorage.removeItem(k);
+      } else {
+        localStorage.setItem(k, String(v));
+      }
+    } catch (e) {}
+  });
+  location.reload();
+}
+
+function initializeImportSettingsModal() {
+  const modal = document.getElementById('importSettingsModal');
+  if (!modal || modal.dataset.initialized === 'true') return;
+  modal.dataset.initialized = 'true';
+
+  const applyBtn = modal.querySelector('#applyImportedNowBtn');
+  const applyReloadBtn = modal.querySelector('#applyImportedReloadBtn');
+  const cancelBtn = modal.querySelector('#cancelImportedBtn');
+  const headerCloseBtns = modal.querySelectorAll('.setup-guide-close');
+
+  if (applyBtn) applyBtn.addEventListener('click', applyImportedSettingsNow);
+  if (applyReloadBtn) applyReloadBtn.addEventListener('click', applyImportedSettingsAndReload);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeImportSettingsModal);
+  if (headerCloseBtns && headerCloseBtns.length) {
+    headerCloseBtns.forEach((b) => b.addEventListener('click', closeImportSettingsModal));
+  }
+
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) closeImportSettingsModal();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (modal.classList.contains('is-hidden')) return;
+    closeImportSettingsModal();
+  });
+}
+
 function setSettingsSectionExpanded(section, toggleButton, expanded) {
   section.classList.toggle('is-collapsed', !expanded);
   toggleButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
@@ -2200,7 +2342,10 @@ function applyMonitoringMode(enabled) {
 
   const button = document.getElementById('monitoringModeBtn');
   if (button) {
-    button.textContent = enabled ? 'Exit Monitoring Mode' : 'Monitoring Mode';
+    // Use a settings gear icon for the button; toggle tooltip and active state
+    button.innerHTML = '<i class="bi bi-gear" aria-hidden="true"></i>';
+    button.title = enabled ? 'Close Settings' : 'Open Settings';
+    button.classList.toggle('active', !!enabled);
   }
 }
 
@@ -2256,51 +2401,7 @@ function applySummaryMode(enabled) {
   renderAllDynamicGroups(latestSelectedGroupedSensors || createEmptyGroupedBuckets(), { force: true });
 }
 
-function updateLowOverheadModeButtonState(enabled) {
-  const lowOverheadButton = document.getElementById('lowOverheadModeBtn');
-  if (lowOverheadButton) {
-    lowOverheadButton.textContent = enabled ? 'Exit Low Overhead Mode' : 'Low Overhead Mode';
-    lowOverheadButton.classList.toggle('active', !!enabled);
-  }
-
-  const summaryButton = document.getElementById('summaryModeBtn');
-  if (summaryButton) {
-    summaryButton.style.display = enabled ? 'none' : '';
-  }
-
-  const monitoringButton = document.getElementById('monitoringModeBtn');
-  if (monitoringButton) {
-    monitoringButton.disabled = !!enabled;
-    monitoringButton.title = enabled ? 'Monitoring Mode is locked while Low Overhead Mode is enabled' : '';
-  }
-}
-
-function applyLowOverheadMode(enabled) {
-  const isEnabled = !!enabled;
-
-  if (isEnabled && !lowOverheadModeEnabled) {
-    const wasMonitoringEnabled = document.body.classList.contains('monitoring-mode');
-    const wasSummaryEnabled = summaryModeEnabled;
-    localStorage.setItem(LOW_OVERHEAD_PREV_MONITORING_KEY, wasMonitoringEnabled ? 'true' : 'false');
-    localStorage.setItem(LOW_OVERHEAD_PREV_SUMMARY_KEY, wasSummaryEnabled ? 'true' : 'false');
-  }
-
-  lowOverheadModeEnabled = isEnabled;
-  localStorage.setItem(LOW_OVERHEAD_MODE_KEY, isEnabled ? 'true' : 'false');
-
-  if (isEnabled) {
-    applyMonitoringMode(true);
-    applySummaryMode(false);
-  } else {
-    const previousMonitoringMode = localStorage.getItem(LOW_OVERHEAD_PREV_MONITORING_KEY) === 'true';
-    const previousSummaryModeRaw = localStorage.getItem(LOW_OVERHEAD_PREV_SUMMARY_KEY);
-    const previousSummaryMode = previousSummaryModeRaw === null ? true : previousSummaryModeRaw === 'true';
-    applyMonitoringMode(previousMonitoringMode);
-    applySummaryMode(previousSummaryMode);
-  }
-
-  updateLowOverheadModeButtonState(isEnabled);
-}
+// Low Overhead Mode internals removed to clean up unused feature.
 
 function sensorCatalogHash(groupedSensors) {
   const keys = Object.keys(groupedSensors || {}).sort();
@@ -3621,6 +3722,115 @@ const SettingsManager = {
       });
     }
 
+    const exportSettingsBtn = document.getElementById('exportSettingsBtn');
+    const importSettingsBtn = document.getElementById('importSettingsBtn');
+
+    const SETTINGS_EXPORT_KEYS = [
+      SENSOR_ORDER_KEY,
+      SENSOR_SELECTION_KEY,
+      SENSOR_CATEGORY_SELECTION_KEY,
+      SENSOR_CUSTOM_NAMES_KEY,
+      CUSTOM_COLORS_KEY,
+      VIEW_MODE_KEY,
+      'theme',
+      FONT_SIZE_KEY,
+      FONT_FAMILY_KEY,
+      VALUE_FONT_MONOSPACE_KEY,
+      SUMMARY_MODE_KEY,
+      'refreshRate'
+    ];
+
+    if (exportSettingsBtn) {
+      exportSettingsBtn.addEventListener('click', () => {
+        try {
+          const payload = {};
+          SETTINGS_EXPORT_KEYS.forEach((k) => {
+            try {
+              payload[k] = localStorage.getItem(k);
+            } catch (e) {
+              payload[k] = null;
+            }
+          });
+          // include any in-memory state fallback
+          try {
+            payload[SENSOR_ORDER_KEY] = JSON.stringify(sensorOrderByGroup || {});
+          } catch (e) {}
+
+          const blob = new Blob([JSON.stringify({ exportedAt: Date.now(), data: payload }, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `SiR_Settings_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        } catch (error) {
+          console.error('Export failed', error);
+          alert('Failed to export settings: ' + (error && error.message ? error.message : String(error)));
+        }
+      });
+    }
+
+    if (importSettingsBtn) {
+      importSettingsBtn.addEventListener('click', () => {
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.json,application/json';
+        fileInput.addEventListener('change', (ev) => {
+          const file = ev.target.files && ev.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            try {
+              const parsed = JSON.parse(String(reader.result || '{}'));
+              const data = parsed && parsed.data ? parsed.data : parsed;
+
+              // prepare a summary for the modal
+              const summary = {};
+              try {
+                if (data.theme) summary.theme = String(data.theme).replace(/^\"|\"$/g, '');
+                if (data[VIEW_MODE_KEY]) summary.viewMode = String(data[VIEW_MODE_KEY]).replace(/^\"|\"$/g, '');
+                if (data[FONT_SIZE_KEY]) summary.fontSize = String(data[FONT_SIZE_KEY]).replace(/^\"|\"$/g, '');
+              } catch (e) {}
+
+              // store parsed into a temporary location on the modal element
+              const modal = document.getElementById('importSettingsModal');
+              if (modal) {
+                modal.dataset.parsed = JSON.stringify(data || {});
+                const body = modal.querySelector('.import-body');
+                if (body) {
+                  // No preview required — show a concise confirmation message
+                  body.innerHTML = `<div class="setup-guide-highlight">Settings file loaded. Choose an action below to apply the imported settings.</div>`;
+                }
+                setImportSettingsModalVisible(true);
+              } else {
+                // fallback: apply immediately and prompt reload
+                Object.keys(data || {}).forEach((k) => {
+                  try {
+                    const v = data[k];
+                    if (v === null || v === undefined) {
+                      localStorage.removeItem(k);
+                    } else {
+                      localStorage.setItem(k, String(v));
+                    }
+                  } catch (e) {}
+                });
+                if (confirm('Settings imported. Reload the app now to apply them?')) {
+                  location.reload();
+                }
+              }
+            } catch (err) {
+              console.error('Import failed', err);
+              alert('Failed to import settings: ' + (err && err.message ? err.message : String(err)));
+            }
+          };
+          reader.readAsText(file);
+        });
+        fileInput.click();
+      });
+    }
+
     // Font size selector
     const fontSizeSelect = document.getElementById('fontSizeSelect');
     if (fontSizeSelect) {
@@ -3715,9 +3925,6 @@ const SettingsManager = {
       applyMonitoringMode(savedMonitoringMode);
 
       monitoringButton.addEventListener('click', () => {
-        if (lowOverheadModeEnabled) {
-          return;
-        }
         const nextState = !document.body.classList.contains('monitoring-mode');
         applyMonitoringMode(nextState);
       });
@@ -3731,9 +3938,6 @@ const SettingsManager = {
       applySummaryMode(savedSummaryMode);
 
       summaryButton.addEventListener('click', () => {
-        if (lowOverheadModeEnabled) {
-          return;
-        }
         applySummaryMode(!summaryModeEnabled);
       });
     }
@@ -3750,20 +3954,7 @@ const SettingsManager = {
       });
     }
 
-    const lowOverheadButton = document.getElementById('lowOverheadModeBtn');
-    const savedLowOverheadMode = localStorage.getItem(LOW_OVERHEAD_MODE_KEY) === 'true';
-
-    if (savedLowOverheadMode) {
-      applyLowOverheadMode(true);
-    } else {
-      updateLowOverheadModeButtonState(false);
-    }
-
-    if (lowOverheadButton) {
-      lowOverheadButton.addEventListener('click', () => {
-        applyLowOverheadMode(!lowOverheadModeEnabled);
-      });
-    }
+    // Low Overhead Mode UI removed; no bindings required here.
 
     const webEnabled = document.getElementById('webMonitorEnabled');
     const webAutoStart = document.getElementById('webMonitorAutoStart');
@@ -3940,13 +4131,36 @@ const SettingsManager = {
 
         if (state === 'available') {
           const latestVersion = String(payload?.latestVersion || '').trim();
+          const releaseTitle = String(payload?.releaseTitle || '').trim();
           latestReleaseUrl = String(payload?.releaseUrl || latestReleaseUrl || '').trim();
-          const availableMessage = latestVersion
-            ? `Update available: ${latestVersion}.`
+          // Use the provided release title when available, otherwise fall back to the
+          // version/tag. Remove a trailing "_Release" suffix if present.
+          let displayTitle = String(releaseTitle || latestVersion || '').trim();
+          displayTitle = displayTitle.replace(/_Release$/i, '');
+          const availableMessage = displayTitle
+            ? `Update available: ${displayTitle}.`
             : 'Update available.';
           setUpdateStatus(`${availableMessage} Open the prompt to download inside the app.`);
           setUpdateModalMessage(`${availableMessage} Do you want to download it now?`);
           setUpdateModalProgress('');
+          // Show release notes if provided
+          try {
+            const notesEl = document.getElementById('updateModalNotes');
+            const notesHtml = String(payload?.releaseNotes || '').trim();
+            if (notesEl) {
+              if (notesHtml) {
+                notesEl.hidden = false;
+                notesEl.setAttribute('aria-hidden', 'false');
+                notesEl.innerHTML = notesHtml;
+              } else {
+                notesEl.hidden = true;
+                notesEl.setAttribute('aria-hidden', 'true');
+                notesEl.innerHTML = '';
+              }
+            }
+          } catch (e) {
+            // ignore errors rendering notes
+          }
           if (updateModalDownloadBtn) {
             updateModalDownloadBtn.disabled = !inAppDownloadAvailable;
             updateModalDownloadBtn.textContent = inAppDownloadAvailable ? 'Download Update' : 'In-App Download Unavailable';
@@ -3973,6 +4187,7 @@ const SettingsManager = {
             updateModalDownloadBtn.textContent = 'Downloading...';
           }
           toggleInstallNowButton(false);
+          try { const notesEl = document.getElementById('updateModalNotes'); if (notesEl) { notesEl.hidden = true; notesEl.setAttribute('aria-hidden','true'); notesEl.innerHTML = ''; } } catch (e) {}
           return;
         }
 
@@ -3991,12 +4206,14 @@ const SettingsManager = {
           }
           toggleInstallNowButton(true);
           setUpdateModalVisible(true);
+          try { const notesEl = document.getElementById('updateModalNotes'); if (notesEl) { notesEl.hidden = true; notesEl.setAttribute('aria-hidden','true'); notesEl.innerHTML = ''; } } catch (e) {}
           return;
         }
 
         if (state === 'not-available') {
           setUpdateStatus('No Updates Found');
           toggleInstallNowButton(false);
+          try { const notesEl = document.getElementById('updateModalNotes'); if (notesEl) { notesEl.hidden = true; notesEl.setAttribute('aria-hidden','true'); notesEl.innerHTML = ''; } } catch (e) {}
           return;
         }
 
@@ -4011,6 +4228,7 @@ const SettingsManager = {
             updateModalDownloadBtn.textContent = 'Download Update';
           }
           toggleInstallNowButton(false);
+          try { const notesEl = document.getElementById('updateModalNotes'); if (notesEl) { notesEl.hidden = true; notesEl.setAttribute('aria-hidden','true'); notesEl.innerHTML = ''; } } catch (e) {}
         }
       });
     }
@@ -4066,6 +4284,22 @@ const SettingsManager = {
               updateModalDownloadBtn.disabled = !inAppDownloadAvailable;
               updateModalDownloadBtn.textContent = inAppDownloadAvailable ? 'Download Update' : 'In-App Download Unavailable';
             }
+            // Render release notes from manual check if provided
+            try {
+              const notesEl = document.getElementById('updateModalNotes');
+              const notesHtml = String(result?.releaseNotes || '').trim();
+              if (notesEl) {
+                if (notesHtml) {
+                  notesEl.hidden = false;
+                  notesEl.setAttribute('aria-hidden', 'false');
+                  notesEl.innerHTML = notesHtml;
+                } else {
+                  notesEl.hidden = true;
+                  notesEl.setAttribute('aria-hidden', 'true');
+                  notesEl.innerHTML = '';
+                }
+              }
+            } catch (e) {}
             setUpdateModalVisible(true);
             return;
           }
@@ -4362,6 +4596,7 @@ const SettingsManager = {
     }
 
     initializeSetupGuideModal();
+    initializeImportSettingsModal();
   }
 };
 

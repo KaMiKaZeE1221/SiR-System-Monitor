@@ -69,11 +69,17 @@ function setupAutoUpdater() {
     const releaseUrl = typeof info?.releaseNotes === 'string' && /^https?:\/\//i.test(info.releaseNotes)
       ? info.releaseNotes
       : '';
+    const releaseNotes = typeof info?.releaseNotes === 'string' && !/^https?:\/\//i.test(info.releaseNotes)
+      ? info.releaseNotes
+      : '';
+    const releaseTitle = String(info?.releaseName || info?.releaseTitle || info?.name || info?.tag || '').trim();
 
     sendUpdateStatus({
       state: 'available',
       currentVersion: app.getVersion(),
       latestVersion,
+      releaseTitle,
+      releaseNotes,
       releaseUrl,
       message: latestVersion
         ? `Update ${latestVersion} found. Choose Download to continue.`
@@ -272,7 +278,9 @@ async function checkForAppUpdates() {
         latestVersion,
         updateAvailable: compareVersions(currentVersion, latestVersion) < 0,
         releaseUrl: typeof release.html_url === 'string' ? release.html_url : '',
-        publishedAt: release.published_at || release.created_at || ''
+        publishedAt: release.published_at || release.created_at || '',
+        releaseNotes: typeof release.body === 'string' ? release.body : '',
+        releaseTitle: typeof release.name === 'string' ? release.name : ''
       };
     } catch (error) {
       return {
@@ -589,6 +597,8 @@ ipcMain.handle('app-update:check', async () => {
         latestVersion,
         updateAvailable,
         releaseUrl: fallbackReleaseUrl,
+        releaseTitle: String(checkResult?.updateInfo?.releaseName || checkResult?.updateInfo?.releaseTitle || checkResult?.updateInfo?.name || '').trim(),
+        releaseNotes: String(checkResult?.updateInfo?.releaseNotes || '').trim(),
         message: updateAvailable
           ? (latestVersion
             ? `Update available: ${latestVersion}.`

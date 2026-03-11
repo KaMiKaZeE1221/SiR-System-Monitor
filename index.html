@@ -106,6 +106,12 @@
         </div>
         <button id="resetThemeColorsBtn" class="test-btn color-reset-btn" type="button">Reset to Theme Defaults</button>
       </div>
+
+      <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-brush settings-label-icon" aria-hidden="true"></i><span>Style</span></label>
+        <button id="viewModeBtn" class="monitoring-mode-btn">Style: Classic</button>
+        <div class="settings-note">Cycle visual style presets for the desktop and web monitor.</div>
+      </div>
     </div>
 
     <div class="settings-group">
@@ -164,6 +170,20 @@
           <button id="resetSensorNamesBtn" class="test-btn" type="button">Reset Custom Sensor Names</button>
         </div>
       </div>
+    </div>
+
+    <div class="settings-group">
+      <div class="settings-group-title">Backup / Restore</div>
+
+      <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-cloud-arrow-up-fill settings-label-icon" aria-hidden="true"></i><span>Backup / Restore</span></label>
+        <div class="web-monitor-actions settings-inline-gap-sm">
+          <button id="exportSettingsBtn" class="test-btn" type="button">Export Settings</button>
+          <button id="importSettingsBtn" class="test-btn" type="button">Import Settings</button>
+        </div>
+        <div class="settings-note">Export your settings to a file or import a previously exported settings file.</div>
+      </div>
+
     </div>
 
     <div class="settings-group">
@@ -282,13 +302,12 @@
         SiR System Monitor
       </h1>
       <div class="header-actions">
-        <button id="monitoringModeBtn" class="monitoring-mode-btn">Monitoring Mode</button>
         <button id="summaryModeBtn" class="monitoring-mode-btn">Summary Mode</button>
-        <button id="viewModeBtn" class="monitoring-mode-btn">Style: Classic</button>
-        <button id="lowOverheadModeBtn" class="monitoring-mode-btn">Low Overhead Mode</button>
+        <button id="monitoringModeBtn" class="monitoring-mode-btn" title="Open Settings"><i class="bi bi-gear" aria-hidden="true"></i></button>
+        <!-- Low Overhead Mode removed -->
         <div class="status-indicator" id="liveStatusIndicator">
           <span class="status-dot"></span>
-          <span>Live</span>
+          <span>Sharing</span>
         </div>
       </div>
     </div>
@@ -411,11 +430,29 @@
       <div class="setup-guide-body">
         <div id="updateModalMessage" class="setup-guide-highlight">A new app update is available.</div>
         <div id="updateModalProgress" class="settings-note update-modal-progress"></div>
+        <div id="updateModalNotes" class="update-modal-notes" hidden aria-hidden="true"></div>
       </div>
       <div class="setup-guide-footer update-modal-footer">
         <button type="button" class="test-btn" id="updateModalLaterBtn">Later</button>
         <button type="button" class="test-btn" id="updateModalDownloadBtn">Download Update</button>
         <button type="button" class="test-btn" id="updateModalInstallBtn" disabled hidden>Restart to Install</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="importSettingsModal" class="setup-guide-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="importSettingsTitle">
+    <div class="setup-guide-dialog" role="document">
+      <div class="setup-guide-header">
+        <h2 id="importSettingsTitle">Import Settings</h2>
+        <button type="button" class="setup-guide-close" aria-label="Close import dialog">×</button>
+      </div>
+      <div class="setup-guide-body import-body">
+        <!-- populated dynamically -->
+      </div>
+      <div class="setup-guide-footer">
+        <button type="button" class="test-btn" id="applyImportedNowBtn">Apply Now</button>
+        <button type="button" class="test-btn" id="applyImportedReloadBtn">Apply & Reload</button>
+        <button type="button" class="test-btn" id="cancelImportedBtn">Cancel</button>
       </div>
     </div>
   </div>

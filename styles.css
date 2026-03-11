@@ -704,11 +704,16 @@ body.sidebar-resizing * {
   flex: 1 1 auto;
 }
 
+/* Add spacing between modal action buttons */
+.setup-guide-footer .test-btn + .test-btn {
+  margin-left: 10px;
+}
+
 .setup-guide-highlight {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--bg-tertiary);
-  padding: 10px;
+  padding: 8px;
   font-size: calc(15px * var(--font-scale));
   line-height: 1.5;
 }
@@ -763,6 +768,19 @@ body.sidebar-resizing * {
 .update-modal-progress {
   margin-top: 4px;
   min-height: 16px;
+}
+
+.update-modal-notes {
+  margin-top: 6px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: calc(12px * var(--font-scale));
+  white-space: pre-wrap;
+  border-radius: 6px;
 }
 
 /* Main Content */
