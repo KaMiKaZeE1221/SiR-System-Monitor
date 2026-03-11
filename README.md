@@ -88,7 +88,7 @@ Settings are grouped in the sidebar:
   - App update controls
   All settings are persisted locally.
 
-## Backup & Restore / Export & Import
+### Backup & Restore / Export & Import
 
 SiR System Monitor provides an in-app Export and Import flow to back up your current settings or restore them from a JSON file.
 
