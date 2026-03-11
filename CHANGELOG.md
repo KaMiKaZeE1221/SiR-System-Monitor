@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.5 - 2026-03-11
+
+### Added
+- Export / Import settings: added an in-app JSON export and import flow for user settings and customizations.
+- Import preview modal: users can preview incoming settings (including theme and custom colors) before applying.
+- Backup & Restore section in Settings: simplified access for exporting current settings and restoring from a file.
+
+### Fixed
+- Improved sensor-selection persistence and drag-and-drop ordering reliability when importing settings.
+
+### UI
+- Replaced the textual `Monitoring Mode` header button with a compact settings gear icon that opens/closes the Settings sidebar.
+- Swapped the header action order so `Summary Mode` appears before the Settings icon.
+
+
 ## 1.1.4 - 2026-03-08
 
 ### Added
