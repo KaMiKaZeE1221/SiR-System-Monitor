@@ -4,8 +4,6 @@ SiR System Monitor is a Windows Electron desktop app for real-time hardware tele
 
 It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provides grouped live cards, sensor selection controls, summary and low-overhead modes, web monitor output, appearance customization, and packaged installer/portable builds.
 
-This app only uses about 120MB to 180MB of system memory and very little CPU (Depending on number of sensors showing.)
-
 ## Table of Contents
 
 - [What It Does](#what-it-does)
