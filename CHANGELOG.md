@@ -13,6 +13,7 @@
 ### UI
 - Replaced the textual `Monitoring Mode` header button with a compact settings gear icon that opens/closes the Settings sidebar.
 - Swapped the header action order so `Summary Mode` appears before the Settings icon.
+- Renamed the small web monitor indicator from `Live` to `Sharing` to better reflect that the app is publishing the web view.
 
 
 ## 1.1.4 - 2026-03-08
