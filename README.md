@@ -7,7 +7,7 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
 ## Table of Contents
 
 - [What It Does](#what-it-does)
-- [Screenshots](#screenshots) - May be a little outdated.
+- [Screenshots](#screenshots)
 - [Requirements](#requirements)
 - [Settings Overview](#settings-overview)
 - [Backup & Restore](#backup--restore---export--import)
@@ -171,37 +171,8 @@ Current behavior is manual (user-driven):
 - Keep refresh rate at 1000ms or higher.
 - Close unnecessary overlays/providers not in use.
 
-
 ## Screenshots
+More screenshots on Imgur
+https://imgur.com/a/wwcv4Fk
 
-1. Main dashboard
-
-![Main Dashboard](docs/screenshots/01-main-dashboard.png)
-
-2. Grouped settings sidebar
-
-![Settings Sidebar](docs/screenshots/02-settings-sidebar.png)
-
-3. Sensor selection and ordering
-
-![Sensor Selection](docs/screenshots/03-sensor-selection.png)
-
-4. Summary mode
-
-![Summary Mode](docs/screenshots/04-summary-mode.png)
-
-5. Web monitor page
-
-![Web Monitor](docs/screenshots/05-web-monitor.png)
-
-6. Color options
-
-![Color Options](docs/screenshots/06-color-options.png)
-
-7. Graphs
-
-![Graphs](docs/screenshots/07-Graphs.png)
-
-8. Updater
-
-![Updater](docs/screenshots/08-Updater.png)![Update Found](docs/screenshots/09-UpdateFound.png)![Downloading Update](docs/screenshots/10-DownloadingUpdate.png)
+<img width="1920" height="1032" alt="Standard_View" src="https://github.com/user-attachments/assets/8c2c2aba-5081-433f-8f86-dd68de212bc1" />
