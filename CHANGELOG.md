@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.8 - 2026-04-04
+
+### Added
+- **Header Toggle Buttons**: Added clickable toggle buttons to the app header for quick access to Web Monitor and Discord Rich Presence features.
+  - Web Monitor button shows "Web: Off" when disabled, and "Web: {host}:{port}" when running (green).
+  - Discord button shows "Discord: Off" when disabled, "Discord: On" when enabled but disconnected, and "Discord: On" (green) when connected.
+- **Web Monitor Toggle in Header**: Clicking the Web Monitor button in the header toggles the Web Monitor on/off by switching the "Enable Browser View" checkbox and applying settings.
+
+### Changed
+- **Cleaner Settings UI**: Removed the Discord presence status indicator pill from the Settings sidebar under Connectivity. Status is now displayed via the header toggle button instead.
+- **Streamlined Web Monitor Toggle**: The Web Monitor toggle button in the header provides quick on/off access to the Web Monitor feature.
+- **Hidden "Sharing" Indicator**: The "Sharing" indicator with the flashing dot that appeared when Web Monitor was running has been removed. The Web Monitor toggle button in the header now serves as the primary status indicator.
+
+
 ## 1.1.5 - 2026-03-11
 
 ### Added
