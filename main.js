@@ -8,6 +8,11 @@ const DISCORD_CLIENT_ID = '1479994487215227094';
 let discordIpc = null;
 try {
   discordIpc = require('./lib/discord-ipc');
+  if (discordIpc) {
+    discordIpc.onClose = () => {
+      sendDiscordPresenceStatus({ enabled: appBehaviorSettings.enableDiscordRichPresence, connected: false });
+    };
+  }
 } catch (err) {
   console.warn('discord-ipc helper not available — Discord Rich Presence disabled.');
 }
@@ -32,6 +37,10 @@ let isQuitting = false;
 let appBehaviorSettings = { ...DEFAULT_APP_BEHAVIOR_SETTINGS };
 let autoUpdaterInitialized = false;
 let updateDownloadedInfo = null;
+let discordActivityInterval = null;
+let discordReconnectInterval = null;
+const DISCORD_ACTIVITY_INTERVAL_MS = 15_000;
+const DISCORD_RECONNECT_INTERVAL_MS = 15_000;
 
 function isMissingLatestYmlError(error) {
   const message = String(error?.message || error || '').toLowerCase();
@@ -48,6 +57,15 @@ function sendUpdateStatus(payload) {
     mainWindow.webContents.send('app-update:status', payload);
   } catch (error) {
     console.error('Failed to send update status to renderer:', error);
+  }
+}
+
+function sendDiscordPresenceStatus(payload) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    mainWindow.webContents.send('discord-presence:status', payload);
+  } catch (error) {
+    console.error('Failed to send Discord status to renderer:', error);
   }
 }
 
@@ -420,22 +438,69 @@ function destroyTrayIfUnused() {
 }
 
 // Initialize Discord Rich Presence (called after app is ready)
+function clearDiscordIntervals() {
+  if (discordActivityInterval) {
+    clearInterval(discordActivityInterval);
+    discordActivityInterval = null;
+  }
+  if (discordReconnectInterval) {
+    clearInterval(discordReconnectInterval);
+    discordReconnectInterval = null;
+  }
+}
+
+function scheduleDiscordReconnect() {
+  if (!appBehaviorSettings.enableDiscordRichPresence) return;
+  if (discordReconnectInterval) return;
+
+  discordReconnectInterval = setInterval(() => {
+    if (discordIpc?.connected) {
+      clearDiscordIntervals();
+      return;
+    }
+    initDiscordRPC();
+  }, DISCORD_RECONNECT_INTERVAL_MS);
+}
+
 function initDiscordRPC() {
   if (!discordIpc || typeof discordIpc.connect !== 'function') return;
   if (!appBehaviorSettings.enableDiscordRichPresence) return;
+  if (discordIpc.connected) {
+    setDiscordActivity();
+    if (!discordActivityInterval) {
+      discordActivityInterval = setInterval(setDiscordActivity, DISCORD_ACTIVITY_INTERVAL_MS);
+    }
+    return;
+  }
+
   try {
     discordIpc.connect(DISCORD_CLIENT_ID).then(() => {
+      if (!appBehaviorSettings.enableDiscordRichPresence) return;
+      sendDiscordPresenceStatus({ enabled: true, connected: true });
       setDiscordActivity();
-      setInterval(setDiscordActivity, 15_000);
-    }).catch(() => {});
+      if (!discordActivityInterval) {
+        discordActivityInterval = setInterval(setDiscordActivity, DISCORD_ACTIVITY_INTERVAL_MS);
+      }
+      if (discordReconnectInterval) {
+        clearInterval(discordReconnectInterval);
+        discordReconnectInterval = null;
+      }
+    }).catch(() => {
+      sendDiscordPresenceStatus({ enabled: appBehaviorSettings.enableDiscordRichPresence, connected: false });
+      scheduleDiscordReconnect();
+    });
   } catch (error) {
-    // ignore
+    scheduleDiscordReconnect();
   }
 }
 
 function setDiscordActivity() {
   if (!discordIpc || typeof discordIpc.setActivity !== 'function') return;
   if (!appBehaviorSettings.enableDiscordRichPresence) return;
+  if (!discordIpc.connected) {
+    initDiscordRPC();
+    return;
+  }
   try {
     // Updated presence payload per provided example
     discordIpc.setActivity({
@@ -481,6 +546,17 @@ function createWindow() {
 
   mainWindow.loadFile('index.html');
   mainWindow.setMenuBarVisibility(false);
+
+  // Send initial Discord presence status once the window has loaded
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (appBehaviorSettings.enableDiscordRichPresence && discordIpc?.connected) {
+      sendDiscordPresenceStatus({ enabled: true, connected: true });
+    } else if (appBehaviorSettings.enableDiscordRichPresence) {
+      sendDiscordPresenceStatus({ enabled: true, connected: false });
+    } else {
+      sendDiscordPresenceStatus({ enabled: false, connected: false });
+    }
+  });
 
   mainWindow.on('minimize', (event) => {
     if (!appBehaviorSettings.minimizeToTray) return;
@@ -540,6 +616,7 @@ app.on('activate', () => {
 });
 
 app.on('will-quit', () => {
+  clearDiscordIntervals();
   if (discordIpc) {
     try { discordIpc.clearActivity(); } catch (e) { /* ignore */ }
     try { discordIpc.disconnect(); } catch (e) { /* ignore */ }
@@ -561,8 +638,10 @@ ipcMain.handle('app-behavior:set', (_event, nextSettings) => {
   // Start/stop Discord Rich Presence based on the saved setting
   try {
     if (saved.enableDiscordRichPresence) {
-      try { initDiscordRPC(); } catch (e) { /* ignore */ }
+      initDiscordRPC();
     } else {
+      clearDiscordIntervals();
+      sendDiscordPresenceStatus({ enabled: false, connected: false });
       if (discordIpc) {
         try { discordIpc.clearActivity(); } catch (e) { /* ignore */ }
         try { discordIpc.disconnect(); } catch (e) { /* ignore */ }

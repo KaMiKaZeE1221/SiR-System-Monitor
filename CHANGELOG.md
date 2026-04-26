@@ -1,50 +1,56 @@
 # Changelog
 
+> Note: Entries for older builds are estimated from development history and may not map 1:1 to exact historic commit dates.
+
+
+
 ## 1.1.8 - 2026-04-04
 
 ### Added
 - **Header Toggle Buttons**: Added clickable toggle buttons to the app header for quick access to Web Monitor and Discord Rich Presence features.
   - Web Monitor button shows "Web: Off" when disabled, and "Web: {host}:{port}" when running (green).
   - Discord button shows "Discord: Off" when disabled, "Discord: On" when enabled but disconnected, and "Discord: On" (green) when connected.
-- **Web Monitor Toggle in Header**: Clicking the Web Monitor button in the header toggles the Web Monitor on/off by switching the "Enable Browser View" checkbox and applying settings.
 
 ### Changed
 - **Cleaner Settings UI**: Removed the Discord presence status indicator pill from the Settings sidebar under Connectivity. Status is now displayed via the header toggle button instead.
 - **Streamlined Web Monitor Toggle**: The Web Monitor toggle button in the header provides quick on/off access to the Web Monitor feature.
-- **Hidden "Sharing" Indicator**: The "Sharing" indicator with the flashing dot that appeared when Web Monitor was running has been removed. The Web Monitor toggle button in the header now serves as the primary status indicator.
+
+### Packaging
+- Release packaging for v1.1.8: artifacts produced under `dist_release_118` (NSIS installer, portable executable, and blockmap).
+
 
 
 ## 1.1.5 - 2026-03-11
-
 ### Added
-- Export / Import settings: added an in-app JSON export and import flow for user settings and customizations.
-- Import preview modal: users can preview incoming settings (including theme and custom colors) before applying.
-- Backup & Restore section in Settings: simplified access for exporting current settings and restoring from a file.
+- Export / Import settings with a simplified import flow and a Backup & Restore option.
+- Embedded the SiR icon as the Web Monitor favicon and improved web monitor metadata.
 - Scrollable release notes area in the in-app updater dialog.
-<img width="300" height="400" alt="image" src="https://github.com/user-attachments/assets/f88f0c5d-b180-4c08-a421-dd5657e8c3c1" />
 
-### Fixed
-- Improved sensor-selection persistence and drag-and-drop ordering reliability when importing settings.
-- Fixed weird alignment issues with sensor blocks.
-- Fixed the last sensors text/graph being cut off.
+### Changed
+- Replaced the textual `Monitoring Mode` header button with a compact settings gear icon that opens/closes the Settings sidebar and swapped the header action order so `Summary Mode` appears before Settings.
+- Removed `Low Overhead Mode` and cleaned up related code paths (summary population now runs continuously in normal mode).
+- Renamed the Web Monitor small indicator from `Live` to `Sharing` for clarity when publishing the web view.
 
 ### UI
-- Replaced the textual `Monitoring Mode` header button with a compact settings gear icon that opens/closes the Settings sidebar.
-- Swapped the header action order so `Summary Mode` appears before the Settings icon.
-- Renamed the small web monitor indicator from `Live` to `Sharing` to better reflect that the app is publishing the web view.
+- Removed the Import modal preview and tightened modal footer button spacing.
+- Reduced spacing between the update prompt and the changelog box; changelog content is now contained in a scrollable area.
 
-
-## 1.1.4 - 2026-03-08
-
-### Added
-- Discord Rich Presence!
-- Settings → Connectivity: Discord Rich Presence dropdown allowing users to enable or disable Rich Presence.
-
-## 1.1.3 - 2026-03-07
+### Packaging
+- Release packaging for v1.1.5: artifacts produced under `dist_release_115` (NSIS installer, portable executable, and blockmap).
 
 ### Fixed
 - Prevented new installs from auto-launching in Summary Mode (defaults to Monitoring).
 - Removed unintended bar/graph icon next to the header app icon.
+- Ensured packaged Windows icon uses the circle `SiR_SM_Circle.ico` asset.
+
+## 1.1.4 - 2026-03-08
+
+### Added
+- Settings → Connectivity: Discord Rich Presence dropdown allowing users to enable or disable Rich Presence without uninstalling the app.
+
+### Changed
+- Discord Rich Presence implemented using an in-repo IPC helper to avoid native build dependencies; presence is disabled immediately when turned off in settings.
+
 
 ## 1.1.2 - 2026-03-07
 
@@ -82,7 +88,7 @@
   - Classic
   - Neon
   - Minimal
-  - Glass (WIP)
+  - Glass
   - Terminal
 - Added per-style group icon sets, synced between desktop and browser views.
 

@@ -156,11 +156,6 @@ body.sidebar-resizing * {
   gap: 10px;
 }
 
-.sidebar-header::before {
-  content: '⚙️';
-  font-size: calc(20px * var(--font-scale));
-}
-
 .settings-section {
   margin-bottom: 12px;
   padding-bottom: 0;
@@ -282,6 +277,215 @@ body.sidebar-resizing * {
   color: var(--icon-color);
   font-size: calc(13px * var(--font-scale));
   line-height: 1;
+}
+
+.discord-status-row {
+  margin-top: 10px;
+}
+
+.discord-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: calc(11px * var(--font-scale));
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.discord-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  background: currentColor;
+}
+
+.discord-status-pill.connected {
+  color: #43b581;
+  border-color: rgba(67, 181, 129, 0.35);
+  background: rgba(67, 181, 129, 0.12);
+}
+
+.discord-status-pill.connected .discord-status-dot {
+  background: #43b581;
+}
+
+.discord-status-pill.disconnected {
+  color: #f04747;
+  border-color: rgba(240, 71, 71, 0.35);
+  background: rgba(240, 71, 71, 0.12);
+}
+
+.discord-status-pill.disconnected .discord-status-dot {
+  background: #f04747;
+}
+
+.discord-status-pill.disabled {
+  color: var(--text-secondary);
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.discord-status-pill.disabled .discord-status-dot {
+  background: #999999;
+}
+
+/* Discord Toggle Button in Header */
+.discord-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.discord-toggle-btn:hover {
+  background: var(--border-color);
+}
+
+.discord-toggle-btn i.bi-discord {
+  font-size: 16px;
+}
+
+.discord-toggle-btn.enabled {
+  background: rgba(88, 101, 242, 0.2);
+  border-color: #5865F2;
+  color: #5865F2;
+}
+
+.discord-toggle-btn.enabled:hover {
+  background: rgba(88, 101, 242, 0.3);
+}
+
+.discord-toggle-btn.connected {
+  background: rgba(67, 181, 129, 0.2);
+  border-color: #43b581;
+  color: #43b581;
+}
+
+.discord-toggle-btn.connected:hover {
+  background: rgba(67, 181, 129, 0.3);
+}
+
+.discord-toggle-btn.disabled {
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+}
+
+.discord-toggle-text {
+  white-space: nowrap;
+}
+
+/* Discord Toggle Button in Header */
+.discord-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.discord-toggle-btn:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent);
+}
+
+.discord-toggle-btn.enabled {
+  color: #7289da;
+  border-color: #7289da;
+  background: rgba(114, 137, 218, 0.15);
+}
+
+.discord-toggle-btn.enabled:hover {
+  background: rgba(114, 137, 218, 0.25);
+  border-color: #7289da;
+}
+
+.discord-toggle-btn.enabled.connected {
+  color: #43b581;
+  border-color: #43b581;
+  background: rgba(67, 181, 129, 0.15);
+}
+
+.discord-toggle-btn.enabled.connected:hover {
+  background: rgba(67, 181, 129, 0.25);
+  border-color: #43b581;
+}
+
+.discord-toggle-btn .bi-discord {
+  font-size: 16px;
+}
+
+/* Web Monitor Toggle Button in Header */
+.web-monitor-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.web-monitor-toggle-btn:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent);
+}
+
+.web-monitor-toggle-btn.enabled {
+  color: var(--accent-light);
+  border-color: var(--accent);
+  background: rgba(77, 159, 255, 0.15);
+}
+
+.web-monitor-toggle-btn.enabled:hover {
+  background: rgba(77, 159, 255, 0.25);
+  border-color: var(--accent);
+}
+
+.web-monitor-toggle-btn.enabled.running {
+  color: #43b581;
+  border-color: #43b581;
+  background: rgba(67, 181, 129, 0.15);
+}
+
+.web-monitor-toggle-btn.enabled.running:hover {
+  background: rgba(67, 181, 129, 0.25);
+  border-color: #43b581;
+}
+
+.web-monitor-toggle-btn .bi-globe {
+  font-size: 16px;
+}
+
+.web-monitor-toggle-text {
+  white-space: nowrap;
+}
+
+.discord-toggle-text {
+  white-space: nowrap;
 }
 
 .theme-selector {
@@ -1129,9 +1333,9 @@ body.summary-mode.view-terminal .stats-container {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding-right: 4px;
-  padding-bottom: 10px;
-  scroll-padding-bottom: 10px;
+  padding-right: 8px;
+  padding-bottom: 28px;
+  scroll-padding-bottom: 28px;
   overscroll-behavior: contain;
 }
 
@@ -1141,9 +1345,9 @@ body.summary-mode.view-terminal .stats-container {
   height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-right: 4px;
-  padding-bottom: 10px;
-  scroll-padding-bottom: 10px;
+  padding-right: 8px;
+  padding-bottom: 28px;
+  scroll-padding-bottom: 28px;
 }
 
 #cpuSensorsDynamic,

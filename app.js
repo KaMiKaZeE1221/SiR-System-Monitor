@@ -433,19 +433,19 @@ function buildWebMonitorHtml() {
       --accent-light: #4d9fff;
     }
     body { margin: 0; font-family: var(--font-family); background: var(--bg-primary); color: var(--text-primary); }
-    .wrap { max-width: 1400px; margin: 0 auto; padding: 16px; }
+    .wrap { max-width: 1400px; margin: 0 auto; padding: 10px; }
     .header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; }
     .header-right { display: inline-flex; align-items: center; gap: 8px; }
     .title { font-size: calc(22px * var(--font-scale)); font-weight: var(--font-weight-bold); color: var(--text-primary); }
     .meta { color: var(--text-secondary); font-size: calc(13px * var(--font-scale)); }
     .summary-toggle { border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); border-radius: 7px; padding: 6px 10px; cursor: pointer; font-size: calc(12px * var(--font-scale)); font-weight: var(--font-weight-bold); }
     .summary-toggle:hover { background: var(--border-color); color: var(--text-primary); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
-    .card { border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); padding: 12px; overflow: hidden; display: flex; flex-direction: column; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; }
+    .card { border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); padding: 10px; overflow: hidden; display: flex; flex-direction: column; }
     .card h3 { margin: 0 0 10px; font-size: calc(13px * var(--font-scale)); letter-spacing: .08em; color: var(--block-header-color); text-transform: uppercase; font-weight: var(--font-weight-bold); display: flex; align-items: center; gap: 8px; }
     .group-icon { color: var(--icon-color); font-size: calc(14px * var(--font-scale)); line-height: 1; }
-    .rows { overflow-y: auto; min-height: 0; flex: 1 1 auto; scrollbar-gutter: stable both-edges; padding-bottom: 10px; scroll-padding-bottom: 10px; }
-    .row { display: block; border-bottom: 1px solid var(--border-color); padding: 7px 0; font-size: calc(13px * var(--font-scale)); }
+    .rows { overflow-y: auto; min-height: 0; flex: 1 1 auto; scrollbar-gutter: stable both-edges; padding-bottom: 12px; scroll-padding-bottom: 12px; }
+    .row { display: block; border-bottom: 1px solid var(--border-color); padding: 6px 0; font-size: calc(13px * var(--font-scale)); }
     .row:last-child { border-bottom: none; }
     .row-main { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
     .label { color: var(--sensor-label-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--font-weight-regular); }
@@ -1000,7 +1000,13 @@ function buildWebMonitorHtml() {
         const payload = await response.json();
         render(payload);
       } catch (err) {
-        document.getElementById('meta').innerHTML = '<span class="error">Web monitor error: ' + err.message + '</span>';
+        let msg = '' + (err && (err.message || err.toString()) || 'Unknown error');
+        if (/networkerror|failed to fetch|network request failed|typeerror/i.test(msg)) {
+          msg = 'Disconnected from host';
+        } else if (!/^web monitor error:/i.test(msg)) {
+          msg = 'Web monitor error: ' + msg;
+        }
+        document.getElementById('meta').innerHTML = '<span class="error">' + msg + '</span>';
       } finally {
         loading = false;
       }
@@ -1134,34 +1140,53 @@ function publishWebMonitorPayload(mode, externalText) {
   };
 }
 
-function refreshWebMonitorStatusUi() {
-  const statusEl = document.getElementById('webMonitorStatus');
-  const urlEl = document.getElementById('webMonitorUrl');
-  const openBtn = document.getElementById('webMonitorOpenBtn');
-  const liveStatusEl = document.getElementById('liveStatusIndicator');
-  if (liveStatusEl) {
-    liveStatusEl.style.display = webMonitorRuntime.running ? 'flex' : 'none';
-  }
+    function refreshWebMonitorStatusUi() {
+      const statusEl = document.getElementById('webMonitorStatus');
+      const urlEl = document.getElementById('webMonitorUrl');
+      const openBtn = document.getElementById('webMonitorOpenBtn');
+      const liveStatusEl = document.getElementById('liveStatusIndicator');
+      const toggleBtn = document.getElementById('webMonitorToggleBtn');
+      if (liveStatusEl) {
+        liveStatusEl.style.display = webMonitorRuntime.running ? 'flex' : 'none';
+      }
 
-  if (!statusEl || !urlEl || !openBtn) return;
+      // Update header toggle button
+      if (toggleBtn) {
+        toggleBtn.classList.remove('disabled', 'enabled', 'running');
+        if (webMonitorRuntime.running) {
+          toggleBtn.classList.add('enabled', 'running');
+          toggleBtn.querySelector('.web-monitor-toggle-text').textContent = `Web: ${webMonitorRuntime.host}:${webMonitorRuntime.port}`;
+        } else {
+          toggleBtn.classList.add('disabled');
+          toggleBtn.querySelector('.web-monitor-toggle-text').textContent = 'Web: Off';
+        }
+      }
 
-  if (webMonitorRuntime.running) {
-    statusEl.textContent = `Running on ${webMonitorRuntime.host}:${webMonitorRuntime.port}`;
-    statusEl.classList.remove('web-status-error');
-    statusEl.classList.add('web-status-running');
-    const primaryUrl = webMonitorRuntime.urls[0] || '';
-    urlEl.textContent = primaryUrl;
-    urlEl.href = primaryUrl;
-    openBtn.disabled = !primaryUrl;
-  } else {
-    statusEl.textContent = webMonitorRuntime.error ? `Error: ${webMonitorRuntime.error}` : 'Stopped';
-    statusEl.classList.remove('web-status-running');
-    statusEl.classList.toggle('web-status-error', !!webMonitorRuntime.error);
-    urlEl.textContent = '--';
-    urlEl.removeAttribute('href');
-    openBtn.disabled = true;
-  }
-}
+      // Always hide the "Sharing" indicator - the header toggle button shows status instead
+      if (liveStatusEl) {
+        liveStatusEl.style.display = 'none';
+      }
+
+      if (!statusEl || !urlEl || !openBtn) return;
+
+
+      if (webMonitorRuntime.running) {
+        statusEl.textContent = `Running on ${webMonitorRuntime.host}:${webMonitorRuntime.port}`;
+        statusEl.classList.remove('web-status-error');
+        statusEl.classList.add('web-status-running');
+        const primaryUrl = webMonitorRuntime.urls[0] || '';
+        urlEl.textContent = primaryUrl;
+        urlEl.href = primaryUrl;
+        openBtn.disabled = !primaryUrl;
+      } else {
+        statusEl.textContent = webMonitorRuntime.error ? `Error: ${webMonitorRuntime.error}` : 'Stopped';
+        statusEl.classList.remove('web-status-running');
+        statusEl.classList.toggle('web-status-error', !!webMonitorRuntime.error);
+        urlEl.textContent = '--';
+        urlEl.removeAttribute('href');
+        openBtn.disabled = true;
+      }
+    }
 
 function stopWebMonitorServer() {
   return new Promise((resolve) => {
@@ -3996,6 +4021,20 @@ const SettingsManager = {
       });
     }
 
+    // Web Monitor toggle button in header
+    const webMonitorToggleBtn = document.getElementById('webMonitorToggleBtn');
+    if (webMonitorToggleBtn) {
+      webMonitorToggleBtn.addEventListener('click', () => {
+        const webEnabledCheckbox = document.getElementById('webMonitorEnabled');
+        if (webEnabledCheckbox) {
+          // Toggle the checkbox state
+          webEnabledCheckbox.checked = !webEnabledCheckbox.checked;
+        }
+        // Then apply the settings (which will read the checkbox state)
+        applyWebSettings();
+      });
+    }
+
     const savedWebSettings = normalizeWebMonitorSettings(loadWebMonitorSettings());
     if (webEnabled) webEnabled.checked = savedWebSettings.enabled;
     if (webAutoStart) webAutoStart.checked = savedWebSettings.autoStart;
@@ -4015,6 +4054,7 @@ const SettingsManager = {
     };
 
     const discordPresenceSelect = document.getElementById('discordPresenceSelect');
+    const discordPresenceStatus = document.getElementById('discordPresenceStatus');
 
     const applyAppBehaviorToUi = (settings) => {
       const normalized = normalizeAppBehaviorSettings(settings);
@@ -4024,6 +4064,47 @@ const SettingsManager = {
       });
       if (discordPresenceSelect) {
         discordPresenceSelect.value = normalized.enableDiscordRichPresence ? 'enabled' : 'disabled';
+      }
+    };
+
+    const updateDiscordPresenceStatusUi = ({ enabled, connected }) => {
+      let statusText = 'Unknown';
+      let stateClass = 'disabled';
+
+      if (!enabled) {
+        statusText = 'Disabled';
+        stateClass = 'disabled';
+      } else if (connected === true) {
+        statusText = 'Connected';
+        stateClass = 'connected';
+      } else if (connected === false) {
+        statusText = 'Disconnected';
+        stateClass = 'disconnected';
+      } else {
+        statusText = 'Connecting…';
+        stateClass = 'disabled';
+      }
+
+      // Update sidebar status pill
+      if (discordPresenceStatus) {
+        discordPresenceStatus.className = `discord-status-pill ${stateClass}`;
+        discordPresenceStatus.innerHTML = `<span class="discord-status-dot"></span><span class="status-text">${statusText}</span>`;
+      }
+
+      // Update header toggle button
+      const toggleBtn = document.getElementById('discordPresenceToggleBtn');
+      if (toggleBtn) {
+        toggleBtn.classList.remove('disabled', 'connected');
+        if (!enabled) {
+          toggleBtn.classList.add('disabled');
+          toggleBtn.querySelector('.discord-toggle-text').textContent = 'Discord: Off';
+        } else if (connected === true) {
+          toggleBtn.classList.add('enabled', 'connected');
+          toggleBtn.querySelector('.discord-toggle-text').textContent = 'Discord: On';
+        } else {
+          toggleBtn.classList.add('enabled');
+          toggleBtn.querySelector('.discord-toggle-text').textContent = 'Discord: On';
+        }
       }
     };
 
@@ -4052,11 +4133,32 @@ const SettingsManager = {
       discordPresenceSelect.addEventListener('change', async () => {
         const saved = await setAppBehaviorSettings(readAppBehaviorFromUi());
         applyAppBehaviorToUi(saved);
+        updateDiscordPresenceStatusUi({ enabled: saved.enableDiscordRichPresence, connected: false });
       });
     }
 
+    // Discord toggle button in header
+    const discordPresenceToggleBtn = document.getElementById('discordPresenceToggleBtn');
+    if (discordPresenceToggleBtn) {
+      discordPresenceToggleBtn.addEventListener('click', async () => {
+        const currentEnabled = discordPresenceSelect ? (discordPresenceSelect.value === 'enabled') : true;
+        const newEnabled = !currentEnabled;
+        if (discordPresenceSelect) {
+          discordPresenceSelect.value = newEnabled ? 'enabled' : 'disabled';
+        }
+        const saved = await setAppBehaviorSettings(readAppBehaviorFromUi());
+        applyAppBehaviorToUi(saved);
+        updateDiscordPresenceStatusUi({ enabled: saved.enableDiscordRichPresence, connected: false });
+      });
+    }
+
+    ipcRenderer.on('discord-presence:status', (_event, payload) => {
+      updateDiscordPresenceStatusUi(payload);
+    });
+
     getAppBehaviorSettings().then((settings) => {
       applyAppBehaviorToUi(settings);
+      updateDiscordPresenceStatusUi({ enabled: settings.enableDiscordRichPresence, connected: settings.enableDiscordRichPresence ? null : false });
     });
 
     const checkForUpdatesBtn = document.getElementById('checkForUpdatesBtn');

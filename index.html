@@ -11,7 +11,7 @@
 <body class="theme-blue">
   <!-- Settings Sidebar -->
   <div class="sidebar">
-    <div class="sidebar-header">Settings</div>
+    <div class="sidebar-header"><i class="bi bi-gear-fill group-icon" aria-hidden="true"></i>Settings</div>
 
     <div class="settings-group">
       <div class="settings-group-title">Appearance</div>
@@ -246,7 +246,10 @@
       </div>
 
       <div class="settings-section">
-        <label class="settings-label"><i class="bi bi-chat-dots settings-label-icon" aria-hidden="true"></i><span>Discord Rich Presence</span></label>
+        <label class="settings-label">
+          <i class="bi bi-chat-dots settings-label-icon" aria-hidden="true"></i>
+          <span>Discord Rich Presence</span>
+        </label>
         <select id="discordPresenceSelect" class="detection-select">
           <option value="enabled">Enabled</option>
           <option value="disabled">Disabled</option>
@@ -303,6 +306,14 @@
       </h1>
       <div class="header-actions">
         <button id="summaryModeBtn" class="monitoring-mode-btn">Summary Mode</button>
+        <button id="webMonitorToggleBtn" class="web-monitor-toggle-btn disabled" title="Web Monitor">
+          <i class="bi bi-globe" aria-hidden="true"></i>
+          <span class="web-monitor-toggle-text">Web: Off</span>
+        </button>
+        <button id="discordPresenceToggleBtn" class="discord-toggle-btn disabled" title="Discord Rich Presence">
+          <i class="bi bi-discord" aria-hidden="true"></i>
+          <span class="discord-toggle-text">Discord: Off</span>
+        </button>
         <button id="monitoringModeBtn" class="monitoring-mode-btn" title="Open Settings"><i class="bi bi-gear" aria-hidden="true"></i></button>
         <!-- Low Overhead Mode removed -->
         <div class="status-indicator" id="liveStatusIndicator">
