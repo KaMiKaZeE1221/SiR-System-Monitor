@@ -173,6 +173,6 @@ Current behavior is manual (user-driven):
 
 ## Screenshots
 More screenshots on Imgur
-https://imgur.com/a/wwcv4Fk
+https://imgur.com/a/pkG1Cyb
 
 <img width="1920" height="1032" alt="Standard_View" src="https://github.com/user-attachments/assets/8c2c2aba-5081-433f-8f86-dd68de212bc1" />
