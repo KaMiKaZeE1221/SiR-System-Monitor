@@ -175,4 +175,9 @@ Current behavior is manual (user-driven):
 More screenshots on Imgur
 https://imgur.com/a/pkG1Cyb
 
-<img width="1920" height="1032" alt="Standard_View" src="https://github.com/user-attachments/assets/8c2c2aba-5081-433f-8f86-dd68de212bc1" />
+<img width="1920" height="1032" alt="Standard_View" src="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/blob/main/Screenshots/SiR_System_Monitor_Orange.png" />
+<img width="1920" height="1032" alt="Standard_View" src="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/blob/main/Screenshots/SiR_System_Monitor_Blue.png" />
+<img width="1920" height="1032" alt="Standard_View" src="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/blob/main/Screenshots/SiR_System_Monitor_Cyan.png" />
+<img width="1920" height="1032" alt="Standard_View" src="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/blob/main/Screenshots/SiR_System_Monitor_Green.png" />
+<img width="1920" height="1032" alt="Standard_View" src="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/blob/main/Screenshots/SiR_System_Monitor_Purple.png" />
+<img width="1920" height="1032" alt="Standard_View" src="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/blob/main/Screenshots/SiR_System_Monitor_Red.png" />
