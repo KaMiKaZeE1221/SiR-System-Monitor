@@ -109,12 +109,10 @@ const SENSOR_GROUP_ICONS = {
   drives: 'bi-device-hdd-fill',
   other: 'bi-tools'
 };
-const VIEW_MODE_SEQUENCE = ['standard', 'compact', 'wide', 'glass', 'terminal'];
 const VIEW_MODE_LABELS = {
   standard: 'Classic',
   compact: 'Neon',
   wide: 'Minimal',
-  glass: 'Glass',
   terminal: 'Terminal'
 };
 const VIEW_MODE_GROUP_ICONS = {
@@ -147,16 +145,6 @@ const VIEW_MODE_GROUP_ICONS = {
     network: 'bi-ethernet',
     drives: 'bi-device-hdd',
     other: 'bi-sliders'
-  },
-  glass: {
-    cpu: 'bi-cpu-fill',
-    gpu: 'bi-badge-hd',
-    ram: 'bi-memory',
-    psu: 'bi-lightning-charge-fill',
-    fans: 'bi-fan',
-    network: 'bi-broadcast-pin',
-    drives: 'bi-hdd-network',
-    other: 'bi-gem'
   },
   terminal: {
     cpu: 'bi-terminal-fill',
@@ -488,16 +476,6 @@ function buildWebMonitorHtml() {
       background: color-mix(in srgb, var(--bg-secondary) 88%, var(--bg-primary) 12%);
     }
     body.view-wide .card h3 { letter-spacing: 0.12em; }
-    body.view-glass .wrap { max-width: 1650px; }
-    body.view-glass .grid { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
-    body.view-glass .card {
-      border-radius: 22px;
-      border-color: color-mix(in srgb, var(--text-primary) 25%, transparent);
-      background: color-mix(in srgb, var(--bg-secondary) 72%, transparent);
-      backdrop-filter: blur(8px);
-      box-shadow: 0 12px 30px color-mix(in srgb, var(--bg-primary) 65%, transparent);
-    }
-    body.view-glass .row { border-bottom-color: color-mix(in srgb, var(--text-secondary) 35%, transparent); }
     body.view-terminal .wrap { max-width: 1500px; }
     body.view-terminal .grid { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; }
     body.view-terminal .card {
@@ -514,7 +492,6 @@ function buildWebMonitorHtml() {
     body.view-terminal .row { border-bottom-style: dashed; }
     body.summary-mode.view-compact .grid { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
     body.summary-mode.view-wide .grid { grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); }
-    body.summary-mode.view-glass .grid { grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); }
     body.summary-mode.view-terminal .grid { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
   </style>
 </head>
@@ -540,7 +517,6 @@ function buildWebMonitorHtml() {
       standard: { cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-globe', drives: 'bi-device-hdd-fill', other: 'bi-tools' },
       compact: { cpu: 'bi-speedometer2', gpu: 'bi-badge-8k', ram: 'bi-diagram-3', psu: 'bi-lightning-charge', fans: 'bi-wind', network: 'bi-wifi', drives: 'bi-hdd-stack', other: 'bi-stars' },
       wide: { cpu: 'bi-cpu', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug', fans: 'bi-fan', network: 'bi-ethernet', drives: 'bi-device-hdd', other: 'bi-sliders' },
-      glass: { cpu: 'bi-cpu-fill', gpu: 'bi-badge-hd', ram: 'bi-memory', psu: 'bi-lightning-charge-fill', fans: 'bi-fan', network: 'bi-broadcast-pin', drives: 'bi-hdd-network', other: 'bi-gem' },
       terminal: { cpu: 'bi-terminal-fill', gpu: 'bi-pc-display-horizontal', ram: 'bi-diagram-2-fill', psu: 'bi-battery-half', fans: 'bi-arrow-repeat', network: 'bi-router-fill', drives: 'bi-device-ssd-fill', other: 'bi-braces-asterisk' }
     };
     const fontScaleMap = { small: 0.92, medium: 1, large: 1.28, xlarge: 1.38, xxlarge: 1.5 };
@@ -580,7 +556,7 @@ function buildWebMonitorHtml() {
 
     function normalizeViewMode(mode) {
       const normalized = String(mode || '').trim().toLowerCase();
-      if (normalized === 'compact' || normalized === 'wide' || normalized === 'glass' || normalized === 'terminal') return normalized;
+      if (normalized === 'compact' || normalized === 'wide' || normalized === 'terminal') return normalized;
       return 'standard';
     }
 
@@ -588,7 +564,7 @@ function buildWebMonitorHtml() {
       const nextMode = normalizeViewMode(mode);
       if (domState.viewMode === nextMode) return;
       domState.viewMode = nextMode;
-      document.body.classList.remove('view-compact', 'view-wide', 'view-glass', 'view-terminal');
+      document.body.classList.remove('view-compact', 'view-wide', 'view-terminal');
       if (nextMode !== 'standard') {
         document.body.classList.add('view-' + nextMode);
       }
@@ -2298,15 +2274,8 @@ function applyTemperatureUnit(unit, options = {}) {
 
 function normalizeViewMode(mode) {
   const normalized = String(mode || '').trim().toLowerCase();
-  if (normalized === 'compact' || normalized === 'wide' || normalized === 'glass' || normalized === 'terminal') return normalized;
+  if (normalized === 'compact' || normalized === 'wide' || normalized === 'terminal') return normalized;
   return 'standard';
-}
-
-function getNextViewMode(currentMode) {
-  const normalizedCurrent = normalizeViewMode(currentMode);
-  const currentIndex = VIEW_MODE_SEQUENCE.indexOf(normalizedCurrent);
-  const nextIndex = (currentIndex + 1) % VIEW_MODE_SEQUENCE.length;
-  return VIEW_MODE_SEQUENCE[nextIndex];
 }
 
 function applyDesktopGroupIconsForViewMode(mode) {
@@ -2330,7 +2299,7 @@ function applyViewMode(mode, options = {}) {
   const persist = options.persist !== false;
   const normalized = normalizeViewMode(mode);
 
-  document.body.classList.remove('view-compact', 'view-wide', 'view-glass', 'view-terminal');
+  document.body.classList.remove('view-compact', 'view-wide', 'view-terminal');
   if (normalized !== 'standard') {
     document.body.classList.add(`view-${normalized}`);
   }
@@ -2339,10 +2308,10 @@ function applyViewMode(mode, options = {}) {
     localStorage.setItem(VIEW_MODE_KEY, normalized);
   }
 
-  const button = document.getElementById('viewModeBtn');
-  if (button) {
-    button.textContent = `Style: ${VIEW_MODE_LABELS[normalized] || VIEW_MODE_LABELS.standard}`;
-  }
+  const styleButtons = document.querySelectorAll('.style-btn');
+  styleButtons.forEach((button) => {
+    button.classList.toggle('active', button.dataset.viewMode === normalized);
+  });
 
   applyDesktopGroupIconsForViewMode(normalized);
 
@@ -2369,8 +2338,8 @@ function applyMonitoringMode(enabled) {
   if (button) {
     // Use a settings gear icon for the button; toggle tooltip and active state
     button.innerHTML = '<i class="bi bi-gear" aria-hidden="true"></i>';
-    button.title = enabled ? 'Close Settings' : 'Open Settings';
-    button.classList.toggle('active', !!enabled);
+    button.title = enabled ? 'Open Settings' : 'Close Settings';
+    button.classList.toggle('active', !enabled);
   }
 }
 
@@ -2410,7 +2379,10 @@ function applySummaryMode(enabled) {
 
   const button = document.getElementById('summaryModeBtn');
   if (button) {
-    button.textContent = summaryModeEnabled ? 'Exit Summary Mode' : 'Summary Mode';
+    button.innerHTML = summaryModeEnabled
+      ? '<i class="bi bi-grid-3x3-gap-fill" aria-hidden="true"></i><span>Exit Summary Mode</span>'
+      : '<i class="bi bi-grid-1x2-fill" aria-hidden="true"></i><span>Summary Mode</span>';
+    button.classList.toggle('active', summaryModeEnabled);
   }
 
   if (summaryModeEnabled) {
@@ -3473,20 +3445,20 @@ const BASE_COLOR_DEFAULTS = {
   background: '#1a1a1a'
 };
 const THEME_ACCENT_LIGHT_MAP = {
-  blue: '#4d9fff',
-  purple: '#c77dff',
-  green: '#26d0b8',
-  red: '#f07b7d',
-  cyan: '#4dfdff',
-  orange: '#ffb347'
+  blue: '#3f95ff',
+  purple: '#b85cff',
+  green: '#19db63',
+  red: '#ff5959',
+  cyan: '#33e7ff',
+  orange: '#ffa033'
 };
 const THEME_ACCENT_MAP = {
   blue: '#0066ff',
-  purple: '#9d4edd',
-  green: '#06a77d',
-  red: '#e63946',
-  cyan: '#00d9ff',
-  orange: '#f77f00'
+  purple: '#8f2dff',
+  green: '#00b84f',
+  red: '#ff2d2d',
+  cyan: '#00c8ff',
+  orange: '#ff7a00'
 };
 
 function getThemeDefaults(themeName) {
@@ -3590,17 +3562,15 @@ const CustomColorManager = {
 
 const ThemeManager = {
   setTheme(theme) {
-    const previousTheme = this.getTheme();
-    const previousDefaults = getThemeDefaults(previousTheme);
     const nextDefaults = getThemeDefaults(theme);
-    const currentColors = CustomColorManager.getColors(previousTheme);
-    const migratedColors = { ...currentColors };
-
-    ['sensorValue', 'icon', 'graph', 'blockHeader'].forEach((key) => {
-      if (normalizeHexColor(currentColors[key], previousDefaults[key]) === normalizeHexColor(previousDefaults[key], previousDefaults[key])) {
-        migratedColors[key] = nextDefaults[key];
-      }
-    });
+    const currentColors = CustomColorManager.getColors(this.getTheme());
+    const migratedColors = {
+      ...currentColors,
+      sensorValue: nextDefaults.sensorValue,
+      icon: nextDefaults.icon,
+      graph: nextDefaults.graph,
+      blockHeader: nextDefaults.blockHeader
+    };
 
     document.body.classList.remove('theme-blue', 'theme-purple', 'theme-green', 'theme-red', 'theme-cyan', 'theme-orange');
     document.body.classList.add(`theme-${theme}`);
@@ -3652,6 +3622,14 @@ const SettingsManager = {
         ThemeManager.setTheme(e.target.dataset.theme);
         customColors = CustomColorManager.getColors();
         syncCustomInputsFromColors(customColors);
+      });
+    });
+
+    const styleButtons = document.querySelectorAll('.style-btn');
+    styleButtons.forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const nextMode = e.currentTarget?.dataset?.viewMode || 'standard';
+        applyViewMode(nextMode);
       });
     });
 
@@ -3967,17 +3945,8 @@ const SettingsManager = {
       });
     }
 
-    const viewModeButton = document.getElementById('viewModeBtn');
     const savedViewMode = normalizeViewMode(localStorage.getItem(VIEW_MODE_KEY) || 'standard');
     applyViewMode(savedViewMode, { persist: false });
-
-    if (viewModeButton) {
-      viewModeButton.addEventListener('click', () => {
-        const currentMode = normalizeViewMode(localStorage.getItem(VIEW_MODE_KEY) || 'standard');
-        const nextMode = getNextViewMode(currentMode);
-        applyViewMode(nextMode);
-      });
-    }
 
     // Low Overhead Mode UI removed; no bindings required here.
 
@@ -4094,7 +4063,7 @@ const SettingsManager = {
       // Update header toggle button
       const toggleBtn = document.getElementById('discordPresenceToggleBtn');
       if (toggleBtn) {
-        toggleBtn.classList.remove('disabled', 'connected');
+        toggleBtn.classList.remove('disabled', 'enabled', 'connected');
         if (!enabled) {
           toggleBtn.classList.add('disabled');
           toggleBtn.querySelector('.discord-toggle-text').textContent = 'Discord: Off';

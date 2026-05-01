@@ -39,8 +39,8 @@ let autoUpdaterInitialized = false;
 let updateDownloadedInfo = null;
 let discordActivityInterval = null;
 let discordReconnectInterval = null;
-const DISCORD_ACTIVITY_INTERVAL_MS = 15_000;
-const DISCORD_RECONNECT_INTERVAL_MS = 15_000;
+const DISCORD_ACTIVITY_INTERVAL_MS = 5_000;
+const DISCORD_RECONNECT_INTERVAL_MS = 5_000;
 
 function isMissingLatestYmlError(error) {
   const message = String(error?.message || error || '').toLowerCase();

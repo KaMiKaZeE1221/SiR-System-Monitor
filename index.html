@@ -11,7 +11,16 @@
 <body class="theme-blue">
   <!-- Settings Sidebar -->
   <div class="sidebar">
-    <div class="sidebar-header"><i class="bi bi-gear-fill group-icon" aria-hidden="true"></i>Settings</div>
+    <div class="sidebar-header">
+      <div class="sidebar-header-mark">
+        <img src="SiR_SM_Circle.ico" alt="SiR System Monitor" class="sidebar-header-logo">
+      </div>
+      <div class="sidebar-header-copy">
+        <div class="sidebar-header-eyebrow">Control Panel</div>
+        <div class="sidebar-header-title">Settings</div>
+        <div class="sidebar-header-subtitle">Tune appearance, monitoring, connectivity, and app behavior from one organized workspace.</div>
+      </div>
+    </div>
 
     <div class="settings-group">
       <div class="settings-group-title">Appearance</div>
@@ -30,26 +39,28 @@
 
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-fonts settings-label-icon" aria-hidden="true"></i><span>Font Settings</span></label>
-        <select id="fontSizeSelect" class="detection-select">
-          <option value="small">Small</option>
-          <option value="medium">Medium</option>
-          <option value="large">Large</option>
-          <option value="xlarge">X-Large</option>
-          <option value="xxlarge">XX-Large</option>
-        </select>
-        <select id="fontFamilySelect" class="detection-select">
-          <option value="segoe">Segoe UI</option>
-          <option value="arial">Arial</option>
-          <option value="verdana">Verdana</option>
-          <option value="tahoma">Tahoma</option>
-          <option value="georgia">Georgia</option>
-          <option value="calibri">Calibri</option>
-          <option value="trebuchet">Trebuchet MS</option>
-          <option value="cambria">Cambria</option>
-          <option value="garamond">Garamond</option>
-          <option value="consolas">Consolas</option>
-          <option value="monospace">Monospace</option>
-        </select>
+        <div class="settings-field-grid">
+          <select id="fontSizeSelect" class="detection-select">
+            <option value="small">Small</option>
+            <option value="medium">Medium</option>
+            <option value="large">Large</option>
+            <option value="xlarge">X-Large</option>
+            <option value="xxlarge">XX-Large</option>
+          </select>
+          <select id="fontFamilySelect" class="detection-select">
+            <option value="segoe">Segoe UI</option>
+            <option value="arial">Arial</option>
+            <option value="verdana">Verdana</option>
+            <option value="tahoma">Tahoma</option>
+            <option value="georgia">Georgia</option>
+            <option value="calibri">Calibri</option>
+            <option value="trebuchet">Trebuchet MS</option>
+            <option value="cambria">Cambria</option>
+            <option value="garamond">Garamond</option>
+            <option value="consolas">Consolas</option>
+            <option value="monospace">Monospace</option>
+          </select>
+        </div>
         <label class="checkbox-label settings-inline-gap-sm">
           <input type="checkbox" id="fontBoldToggle">
           <span>Bold Text</span>
@@ -109,7 +120,12 @@
 
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-brush settings-label-icon" aria-hidden="true"></i><span>Style</span></label>
-        <button id="viewModeBtn" class="monitoring-mode-btn">Style: Classic</button>
+        <div class="style-selector">
+          <button class="style-btn active" data-view-mode="standard">Classic</button>
+          <button class="style-btn" data-view-mode="compact">Neon</button>
+          <button class="style-btn" data-view-mode="wide">Minimal</button>
+          <button class="style-btn" data-view-mode="terminal">Terminal</button>
+        </div>
         <div class="settings-note">Cycle visual style presets for the desktop and web monitor.</div>
       </div>
     </div>
@@ -177,7 +193,7 @@
 
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-cloud-arrow-up-fill settings-label-icon" aria-hidden="true"></i><span>Backup / Restore</span></label>
-        <div class="web-monitor-actions settings-inline-gap-sm">
+        <div class="web-monitor-actions action-grid-two settings-inline-gap-sm">
           <button id="exportSettingsBtn" class="test-btn" type="button">Export Settings</button>
           <button id="importSettingsBtn" class="test-btn" type="button">Import Settings</button>
         </div>
@@ -236,7 +252,7 @@
           <input id="webMonitorHost" class="detection-select" placeholder="Host (e.g. 127.0.0.1 or 0.0.0.0)" value="127.0.0.1">
           <input id="webMonitorPort" class="detection-select" type="number" min="1024" max="65535" value="17381">
         </div>
-        <div class="web-monitor-actions">
+        <div class="web-monitor-actions action-grid-two">
           <button id="webMonitorApplyBtn" class="test-btn">Apply Web Settings</button>
           <button id="webMonitorOpenBtn" class="test-btn" disabled>Open in Browser</button>
         </div>
@@ -286,7 +302,7 @@
 
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-cloud-arrow-down-fill settings-label-icon" aria-hidden="true"></i><span>App Updates</span></label>
-        <div class="web-monitor-actions">
+        <div class="web-monitor-actions action-grid-two">
           <button id="checkForUpdatesBtn" class="test-btn" type="button">Check for Updates</button>
           <button id="openLatestReleaseBtn" class="test-btn" type="button" disabled>Open Latest Release</button>
         </div>
@@ -305,16 +321,16 @@
         SiR System Monitor
       </h1>
       <div class="header-actions">
-        <button id="summaryModeBtn" class="monitoring-mode-btn">Summary Mode</button>
-        <button id="webMonitorToggleBtn" class="web-monitor-toggle-btn disabled" title="Web Monitor">
+        <button id="summaryModeBtn" class="header-control-btn monitoring-mode-btn"><i class="bi bi-grid-1x2-fill" aria-hidden="true"></i><span>Summary Mode</span></button>
+        <button id="webMonitorToggleBtn" class="header-control-btn web-monitor-toggle-btn disabled" title="Web Monitor">
           <i class="bi bi-globe" aria-hidden="true"></i>
           <span class="web-monitor-toggle-text">Web: Off</span>
         </button>
-        <button id="discordPresenceToggleBtn" class="discord-toggle-btn disabled" title="Discord Rich Presence">
+        <button id="discordPresenceToggleBtn" class="header-control-btn discord-toggle-btn disabled" title="Discord Rich Presence">
           <i class="bi bi-discord" aria-hidden="true"></i>
           <span class="discord-toggle-text">Discord: Off</span>
         </button>
-        <button id="monitoringModeBtn" class="monitoring-mode-btn" title="Open Settings"><i class="bi bi-gear" aria-hidden="true"></i></button>
+        <button id="monitoringModeBtn" class="header-control-btn monitoring-mode-btn icon-only" title="Open Settings"><i class="bi bi-gear" aria-hidden="true"></i></button>
         <!-- Low Overhead Mode removed -->
         <div class="status-indicator" id="liveStatusIndicator">
           <span class="status-dot"></span>
