@@ -1,7 +1,25 @@
 # Changelog
 
-> Note: Entries for older builds are estimated from development history and may not map 1:1 to exact historic commit dates.
+## 1.1.9 - 2026-04-26
 
+### Added
+- Added a full visual overhaul for the Settings sidebar with cleaner section hierarchy, richer spacing, and theme-aware control styling.
+- Added per-style selection buttons in Appearance so each visual mode can be chosen directly.
+- Added themed header action styling so `Summary Mode`, `Web`, `Discord`, and the settings gear share a matching control treatment.
+- Added icons to the `Summary Mode` header control and active-state feedback when summary mode is enabled.
+
+### Changed
+- Reorganized the Settings panel into a more polished control-panel layout while preserving existing functionality and saved settings behavior.
+- Improved preset theme colors so the built-in theme palette appears more saturated and closer to the intended color names.
+- Updated theme switching so theme-driven custom colors refresh correctly when changing presets.
+- Reworked style selection from a text-based cycle action into direct buttons for `Classic`, `Neon`, `Minimal`, and `Terminal`.
+- Improved dropdown/select styling to better match the app theme and remain readable against the dark UI.
+- Adjusted Sensor Selection category layout to a single-column flow to avoid overlap issues while expanding groups.
+- Adjusted Discord re-connect and activity interval down to 5 seconds from 15 seconds, this should help it re-register in the event of a disconnect or toggle.
+
+### Removed
+- Removed the `Glass` theme and its related code paths as it caused performance issues.
+- Removed the temporary settings overview strip from the redesigned sidebar after review.
 
 
 ## 1.1.8 - 2026-04-04
