@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.2.0 - 2026-05-7
+
+### Added New Features
+- Overlay System — Added a persistent, always‑on‑top transparent overlay for real‑time sensor display.
+- Enable/Disable Toggle — Users can now activate or deactivate the overlay with a single checkbox.
+- Font Controls — Introduced font size presets (including X‑Large), font family selection, and optional bold styling.
+- Position Selector — Overlay can now be anchored to screen corners, including Top Left.
+- Style Modes — Added “Grouped line” display mode for structured sensor grouping.
+- Hotkey Support — Early implementation of a toggle hotkey (WIP, Doesn't Function Yet!).
+- Monitor Selection — Users can choose which display the overlay appears on.
+
+### Added Customization Improvements
+- Group Spacing Slider — Fine‑tune spacing between grouped sensor lines.
+- Unit Scale Slider — Adjust scaling of measurement units for readability.
+- Background Opacity — Smooth slider for transparency control.
+- Show Units Toggle — Optional display of measurement units.
+
+### Added Visual Enhancements
+- Text Color Picker — Choose custom text color.
+- Value Color Picker — Separate color control for numeric values.
+- Background Color Picker — Customize overlay background tint.
+
+### Added General Improvements
+- Instant Apply — All overlay changes now apply immediately without restarting the app.
+- Sensor Integration — Overlay automatically uses the user’s selected sensors for display.
+
 ## 1.1.9 - 2026-04-26
 
 ### Added
