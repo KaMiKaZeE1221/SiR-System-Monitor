@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, Tray, ipcMain, shell, screen, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
@@ -41,6 +41,7 @@ let discordActivityInterval = null;
 let discordReconnectInterval = null;
 const DISCORD_ACTIVITY_INTERVAL_MS = 5_000;
 const DISCORD_RECONNECT_INTERVAL_MS = 5_000;
+let currentOverlayHotkey = null;
 
 function isMissingLatestYmlError(error) {
   const message = String(error?.message || error || '').toLowerCase();
@@ -582,6 +583,239 @@ function createWindow() {
     });
   }
 }
+
+let overlayWindow = null;
+
+function createOverlayWindow() {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    return overlayWindow;
+  }
+
+  overlayWindow = new BrowserWindow({
+    width: 360,
+    height: 220,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    movable: false,
+    focusable: true,
+    hasShadow: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+      backgroundThrottling: false
+    }
+  });
+
+  overlayWindow.loadFile('overlay.html');
+  overlayWindow.setMenuBarVisibility(false);
+  overlayWindow.setIgnoreMouseEvents(true);
+  overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+  if (typeof overlayWindow.setVisibleOnAllWorkspaces === 'function') {
+    overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
+
+  overlayWindow.on('closed', () => {
+    overlayWindow = null;
+  });
+
+  return overlayWindow;
+}
+
+function getOverlayDisplay(displayId) {
+  if (displayId === null || displayId === undefined || String(displayId).trim() === '') {
+    return screen.getPrimaryDisplay();
+  }
+  const display = screen.getAllDisplays().find((entry) => String(entry.id) === String(displayId));
+  return display || screen.getPrimaryDisplay();
+}
+
+function destroyOverlayWindow() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) {
+    overlayWindow = null;
+    return;
+  }
+  try {
+    overlayWindow.close();
+  } catch (e) {
+    overlayWindow = null;
+  }
+}
+
+ipcMain.handle('overlay:set-enabled', (_event, enabled) => {
+  if (enabled) {
+    createOverlayWindow();
+    // Register hotkey when overlay is enabled
+    const hotkey = localStorage.getItem('overlayHotkey');
+    if (hotkey) {
+      registerOverlayHotkey(hotkey);
+    }
+  } else {
+    destroyOverlayWindow();
+    // Unregister hotkey when overlay is disabled
+    unregisterOverlayHotkey();
+  }
+  return !!enabled;
+});
+
+ipcMain.handle('overlay:update-hotkey', (_event, hotkey) => {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    registerOverlayHotkey(hotkey);
+  } else {
+    unregisterOverlayHotkey();
+  }
+  return true;
+});
+
+ipcMain.handle('overlay:get-displays', (_event) => {
+  return screen.getAllDisplays().map((display) => ({
+    id: display.id,
+    name: `${display.label || `Display ${display.id}`}${display.primary ? ' (Primary)' : ''}`
+  }));
+});
+
+function registerOverlayHotkey(hotkey) {
+  if (currentOverlayHotkey) {
+    globalShortcut.unregister(currentOverlayHotkey);
+    currentOverlayHotkey = null;
+  }
+  
+  if (hotkey && hotkey.trim()) {
+    try {
+      // Convert from our format to Electron format
+      const electronHotkey = hotkey
+        .replace(/Ctrl/g, 'CommandOrControl')
+        .replace(/Cmd/g, 'CommandOrControl')
+        .replace(/Command/g, 'CommandOrControl')
+        .replace(/Meta/g, 'CommandOrControl');
+      
+      const success = globalShortcut.register(electronHotkey, () => {
+        // Toggle overlay when hotkey is pressed
+        const isEnabled = overlayWindow && !overlayWindow.isDestroyed();
+        if (isEnabled) {
+          destroyOverlayWindow();
+        } else {
+          createOverlayWindow();
+        }
+        
+        // Update the UI toggle button
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('overlay:toggle-state-changed', !isEnabled);
+        }
+      });
+      
+      if (success) {
+        currentOverlayHotkey = electronHotkey;
+        console.log('Registered overlay hotkey:', electronHotkey);
+      } else {
+        console.warn('Failed to register overlay hotkey:', electronHotkey);
+      }
+    } catch (error) {
+      console.error('Error registering overlay hotkey:', error);
+    }
+  }
+}
+
+function unregisterOverlayHotkey() {
+  if (currentOverlayHotkey) {
+    globalShortcut.unregister(currentOverlayHotkey);
+    currentOverlayHotkey = null;
+    console.log('Unregistered overlay hotkey');
+  }
+}
+
+ipcMain.on('overlay:update', (_event, payload) => {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  try {
+    overlayWindow.webContents.send('overlay:update', payload);
+    const bounds = overlayWindow.getBounds();
+    const targetWidth = payload.width || bounds.width;
+    const targetHeight = payload.height || bounds.height;
+
+    if (payload.position) {
+      const display = getOverlayDisplay(payload.settings?.displayId).workArea;
+      const margin = 4;
+      const topMargin = 0; // Reduced top margin
+      const position = String(payload.position || 'top-right');
+      let x = display.x + margin;
+      let y = display.y + margin;
+
+      switch (position) {
+        case 'top-right':
+          x = display.x + Math.max(0, display.width - targetWidth - margin);
+          y = display.y + topMargin;
+          break;
+        case 'bottom-left':
+          x = display.x + margin;
+          y = display.y + Math.max(0, display.height - targetHeight - margin);
+          break;
+        case 'bottom-right':
+          x = display.x + Math.max(0, display.width - targetWidth - margin);
+          y = display.y + Math.max(0, display.height - targetHeight - margin);
+          break;
+        case 'top-left':
+        default:
+          x = display.x + margin;
+          y = display.y + topMargin;
+          break;
+      }
+
+      overlayWindow.setBounds({ x, y, width: targetWidth, height: targetHeight });
+      overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+    } else if (targetHeight !== bounds.height) {
+      overlayWindow.setSize(targetWidth, targetHeight);
+    }
+  } catch (e) {
+    console.error('Failed to forward overlay payload:', e);
+  }
+});
+
+ipcMain.on('overlay:resize', (_event, payload) => {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  try {
+    const bounds = overlayWindow.getBounds();
+    const targetWidth = Number.isFinite(payload.width) ? payload.width : bounds.width;
+    const targetHeight = Number.isFinite(payload.height) ? payload.height : bounds.height;
+    if (payload.position) {
+      const display = getOverlayDisplay(payload.settings?.displayId).workArea;
+      const margin = 4;
+      const topMargin = 0; // Reduced top margin
+      const position = String(payload.position || 'top-right');
+      let x = display.x + margin;
+      let y = display.y + margin;
+
+      switch (position) {
+        case 'top-right':
+          x = display.x + Math.max(0, display.width - targetWidth - margin);
+          y = display.y + topMargin;
+          break;
+        case 'bottom-left':
+          x = display.x + margin;
+          y = display.y + Math.max(0, display.height - targetHeight - margin);
+          break;
+        case 'bottom-right':
+          x = display.x + Math.max(0, display.width - targetWidth - margin);
+          y = display.y + Math.max(0, display.height - targetHeight - margin);
+          break;
+        case 'top-left':
+        default:
+          x = display.x + margin;
+          y = display.y + topMargin;
+          break;
+      }
+
+      overlayWindow.setBounds({ x, y, width: targetWidth, height: targetHeight });
+      overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+    } else if (targetWidth !== bounds.width || targetHeight !== bounds.height) {
+      overlayWindow.setSize(targetWidth, targetHeight);
+    }
+  } catch (e) {
+    console.error('Failed to resize overlay window:', e);
+  }
+});
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);

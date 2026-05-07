@@ -55,6 +55,7 @@ let sensorReader = new SensorReader();
 let updateInterval = 1000;
 let updateTimer;
 let sensorSelection = {};
+let overlaySensorSelection = {};
 let sensorCategorySelection = {};
 let sensorCategoryCollapse = {};
 let sensorOrderByGroup = {};
@@ -85,11 +86,30 @@ const SUMMARY_MODE_KEY = 'summaryMode';
 const VIEW_MODE_KEY = 'viewMode';
 const GRAPH_EXPANDED_KEY = 'graphExpandedSensors';
 const WEB_MONITOR_SETTINGS_KEY = 'webMonitorSettings';
+const OVERLAY_ENABLED_KEY = 'overlayEnabled';
+const OVERLAY_FONT_SIZE_KEY = 'overlayFontSize';
+const OVERLAY_FONT_FAMILY_KEY = 'overlayFontFamily';
+const OVERLAY_FONT_BOLD_KEY = 'overlayFontBold';
+const OVERLAY_TEXT_COLOR_KEY = 'overlayTextColor';
+const OVERLAY_VALUE_COLOR_KEY = 'overlayValueColor';
+const OVERLAY_BG_COLOR_KEY = 'overlayBackgroundColor';
+const OVERLAY_OPACITY_KEY = 'overlayOpacity';
+const OVERLAY_GROUP_SPACING_KEY = 'overlayGroupSpacing';
+const OVERLAY_SCALE_KEY = 'overlayScale';
+const OVERLAY_WIDTH_KEY = 'overlayWidth';
+const OVERLAY_WIDTH_PRESET_KEY = 'overlayWidthPreset';
+const OVERLAY_POSITION_KEY = 'overlayPosition';
+const OVERLAY_STYLE_KEY = 'overlayStyle';
+const OVERLAY_SHOW_UNITS_KEY = 'overlayShowUnits';
+const OVERLAY_MONITOR_KEY = 'overlayMonitorId';
+const OVERLAY_HOTKEY_KEY = 'overlayHotkey';
+const SENSOR_OVERLAY_SELECTION_KEY = 'overlaySensorSelection';
 const SETUP_GUIDE_SUPPRESS_KEY = 'setupGuideSuppress';
 const APP_BEHAVIOR_SETTINGS_KEY = 'appBehaviorSettings';
 const SIDEBAR_WIDTH_KEY = 'sidebarWidth';
-const SENSOR_GROUP_ORDER = ['cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'drives', 'other'];
+const SENSOR_GROUP_ORDER = ['fps', 'cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'drives', 'other'];
 const SENSOR_GROUP_LABELS = {
+  fps: 'FPS',
   cpu: 'CPU',
   gpu: 'GPU',
   ram: 'RAM',
@@ -107,6 +127,7 @@ const SENSOR_GROUP_ICONS = {
   fans: 'bi-fan',
   network: 'bi-globe',
   drives: 'bi-device-hdd-fill',
+  fps: 'bi-graph-up',
   other: 'bi-tools'
 };
 const VIEW_MODE_LABELS = {
@@ -1408,7 +1429,7 @@ function renderSensorGraph(sensor) {
 }
 
 function createEmptyGroupedBuckets() {
-  return { cpu: [], gpu: [], ram: [], psu: [], fans: [], network: [], drives: [], other: [] };
+  return { fps: [], cpu: [], gpu: [], ram: [], psu: [], fans: [], network: [], drives: [], other: [] };
 }
 
 function loadSensorSelection() {
@@ -1422,6 +1443,19 @@ function loadSensorSelection() {
 
 function saveSensorSelection() {
   localStorage.setItem(SENSOR_SELECTION_KEY, JSON.stringify(sensorSelection));
+}
+
+function loadOverlaySensorSelection() {
+  try {
+    const raw = localStorage.getItem(SENSOR_OVERLAY_SELECTION_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveOverlaySensorSelection() {
+  localStorage.setItem(SENSOR_OVERLAY_SELECTION_KEY, JSON.stringify(overlaySensorSelection));
 }
 
 function loadSensorCategorySelection() {
@@ -2241,6 +2275,318 @@ function applyFontBold(enabled) {
   localStorage.setItem(FONT_BOLD_KEY, enabled ? 'true' : 'false');
 }
 
+function normalizeOverlayFontSize(size) {
+  return ['small', 'medium', 'large', 'xlarge', 'xxlarge'].includes(size) ? size : 'medium';
+}
+
+function normalizeOverlayFontFamily(family) {
+  return Object.prototype.hasOwnProperty.call(FONT_FAMILY_MAP, family) ? family : 'segoe';
+}
+
+function normalizeOverlayColor(color, fallback) {
+  const normalized = String(color || '').trim();
+  return /^#([0-9A-F]{3}){1,2}$/i.test(normalized) ? normalized : fallback;
+}
+
+function normalizeOverlayOpacity(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 70;
+  return Math.max(0, Math.min(100, Math.round(numeric / 5) * 5));
+}
+
+function normalizeOverlayFontBold(value) {
+  return String(value || '').trim() === 'true';
+}
+
+function normalizeOverlayWidthPreset(value) {
+  const valid = ['small', 'medium', 'large', 'wide', 'custom'];
+  return valid.includes(String(value || '').trim()) ? String(value).trim() : 'medium';
+}
+
+function normalizeOverlayWidth(value, preset = 'medium') {
+  const presets = {
+    small: 280,
+    medium: 360,
+    large: 460,
+    wide: 560
+  };
+  const normalizedPreset = normalizeOverlayWidthPreset(preset);
+  if (normalizedPreset !== 'custom') {
+    return presets[normalizedPreset] || presets.medium;
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return presets.medium;
+  return Math.max(260, Math.min(1000, Math.round(numeric / 10) * 10));
+}
+
+function normalizeOverlayPosition(value) {
+  const valid = ['top-left', 'top-right'];
+  return valid.includes(String(value || '').trim()) ? String(value).trim() : 'top-right';
+}
+
+function normalizeOverlayGroupSpacing(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(32, Math.round(numeric)));
+}
+
+function normalizeOverlayScale(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 100;
+  return Math.max(50, Math.min(200, Math.round(numeric)));
+}
+
+function normalizeOverlayHotkey(value) {
+  const hotkey = String(value || '').trim();
+  if (!hotkey) return '';
+  
+  // Basic validation - should contain at least one modifier and one key
+  const parts = hotkey.split('+').map(p => p.trim());
+  if (parts.length < 2) return '';
+  
+  // Validate modifiers
+  const validModifiers = ['ctrl', 'alt', 'shift', 'cmd', 'command', 'meta'];
+  const modifiers = parts.slice(0, -1);
+  const key = parts[parts.length - 1];
+  
+  if (!modifiers.every(mod => validModifiers.includes(mod.toLowerCase()))) return '';
+  if (!key || key.length === 0) return '';
+  
+  // Normalize to standard format
+  return modifiers.map(mod => mod.charAt(0).toUpperCase() + mod.slice(1).toLowerCase()).join('+') + '+' + key.toUpperCase();
+}
+
+function normalizeOverlayStyle(value) {
+  const valid = ['compact', 'grouped', 'category', 'grouped-line'];
+  return valid.includes(String(value || '').trim()) ? String(value).trim() : 'compact';
+}
+
+function normalizeOverlayShowUnits(value) {
+  return String(value || '').trim().toLowerCase() !== 'false';
+}
+
+function formatOverlaySensor(sensor) {
+  const resolvedUnits = resolveDisplayUnits(sensor) || sensor.units || inferUnitsFromSensor(sensor);
+  const numericValue = Number(sensor.value);
+  const hasNumericValue = Number.isFinite(numericValue);
+  const sensorForFormatting = { ...sensor, units: resolvedUnits };
+  const normalizedCurrent = hasNumericValue ? normalizeValueForDisplay(sensorForFormatting, numericValue) : null;
+  return {
+    ...sensor,
+    displayValue: hasNumericValue && normalizedCurrent ? normalizedCurrent.value : sensor.value,
+    displayUnits: hasNumericValue && normalizedCurrent ? normalizedCurrent.units : resolvedUnits,
+    formatted: formatSensorValue(sensorForFormatting),
+    displayLabel: getFinalDisplayLabel(sensor)
+  };
+}
+
+function calculateOverlayHeight(payload, settings) {
+  const count = Array.isArray(payload) ? payload.length : 0;
+  const scaleMap = {
+    small: 0.92,
+    medium: 1,
+    large: 1.18,
+    xlarge: 1.32,
+    xxlarge: 1.5
+  };
+  const scale = scaleMap[settings.fontSize] || 1;
+  const headerHeight = 0;
+  const contentPadding = 30;
+  let itemHeight = Math.round(32 * scale + 4);
+  let extraHeight = 0;
+  let rows = count;
+
+  if (settings.style === 'card') {
+    itemHeight = Math.round(40 * scale + 8);
+  }
+
+  if (settings.style === 'grouped' || settings.style === 'category' || settings.style === 'grouped-line') {
+    const groups = {};
+    (Array.isArray(payload) ? payload : []).forEach((sensor) => {
+      const label = String(sensor.group || sensor.category || '').trim() || 'General';
+      groups[label] = (groups[label] || 0) + 1;
+    });
+    const groupCount = Math.max(1, Object.keys(groups).length);
+
+    if (settings.style === 'grouped-line') {
+      itemHeight = Math.round(32 * scale + 4);
+      rows = groupCount;
+      extraHeight = groupCount * 6;
+    } else if (settings.style === 'category') {
+      itemHeight = Math.round(38 * scale + 8);
+      rows = count + groupCount;
+      extraHeight = groupCount * 14;
+    } else {
+      itemHeight = Math.round(36 * scale + 6);
+      rows = count + groupCount;
+      extraHeight = groupCount * 10;
+    }
+  }
+
+  if (settings.style === 'horizontal') {
+    rows = 1;
+    itemHeight = Math.round(34 * scale + 6);
+  }
+
+  const height = headerHeight + contentPadding + Math.max(1, rows) * itemHeight + extraHeight;
+  return Math.max(140, Math.min(1200, height));
+}
+
+function loadOverlaySettings() {
+  const widthPreset = normalizeOverlayWidthPreset(localStorage.getItem(OVERLAY_WIDTH_PRESET_KEY));
+  return {
+    enabled: localStorage.getItem(OVERLAY_ENABLED_KEY) === 'true',
+    fontSize: normalizeOverlayFontSize(localStorage.getItem(OVERLAY_FONT_SIZE_KEY)),
+    fontFamily: normalizeOverlayFontFamily(localStorage.getItem(OVERLAY_FONT_FAMILY_KEY)),
+    fontBold: normalizeOverlayFontBold(localStorage.getItem(OVERLAY_FONT_BOLD_KEY)),
+    textColor: normalizeOverlayColor(localStorage.getItem(OVERLAY_TEXT_COLOR_KEY), '#e0e0e0'),
+    valueColor: normalizeOverlayColor(localStorage.getItem(OVERLAY_VALUE_COLOR_KEY), '#ffffff'),
+    backgroundColor: normalizeOverlayColor(localStorage.getItem(OVERLAY_BG_COLOR_KEY), '#000000'),
+    opacity: normalizeOverlayOpacity(localStorage.getItem(OVERLAY_OPACITY_KEY)),
+    groupSpacing: normalizeOverlayGroupSpacing(localStorage.getItem(OVERLAY_GROUP_SPACING_KEY)),
+    scale: normalizeOverlayScale(localStorage.getItem(OVERLAY_SCALE_KEY)),
+    widthPreset,
+    width: normalizeOverlayWidth(localStorage.getItem(OVERLAY_WIDTH_KEY), widthPreset),
+    position: normalizeOverlayPosition(localStorage.getItem(OVERLAY_POSITION_KEY)),
+    style: normalizeOverlayStyle(localStorage.getItem(OVERLAY_STYLE_KEY)),
+    showUnits: normalizeOverlayShowUnits(localStorage.getItem(OVERLAY_SHOW_UNITS_KEY)),
+    displayId: localStorage.getItem(OVERLAY_MONITOR_KEY) || '',
+    hotkey: normalizeOverlayHotkey(localStorage.getItem(OVERLAY_HOTKEY_KEY))
+  };
+}
+
+function saveOverlaySetting(key, value) {
+  localStorage.setItem(key, String(value));
+}
+
+function updateOverlayToggleButton(enabled) {
+  const overlayToggleBtn = document.getElementById('overlayToggleBtn');
+  if (!overlayToggleBtn) return;
+  overlayToggleBtn.classList.remove('disabled', 'enabled');
+  overlayToggleBtn.classList.add(enabled ? 'enabled' : 'disabled');
+  const statusText = overlayToggleBtn.querySelector('.overlay-toggle-text');
+  if (statusText) {
+    statusText.textContent = enabled ? 'Overlay: On' : 'Overlay: Off';
+  }
+  overlayToggleBtn.title = enabled ? 'Hide Overlay' : 'Show Overlay';
+}
+
+function applyOverlaySettings() {
+  const settings = loadOverlaySettings();
+  const textColorInput = document.getElementById('overlayTextColor');
+  const valueColorInput = document.getElementById('overlayValueColor');
+  const bgColorInput = document.getElementById('overlayBackgroundColor');
+  const overlayFontSizeSelect = document.getElementById('overlayFontSizeSelect');
+  const overlayFontFamilySelect = document.getElementById('overlayFontFamilySelect');
+  const overlayPositionSelect = document.getElementById('overlayPositionSelect');
+  const overlayStyleSelect = document.getElementById('overlayStyleSelect');
+  const overlayGroupSpacingInput = document.getElementById('overlayGroupSpacing');
+  const overlayShowUnitsToggle = document.getElementById('overlayShowUnitsToggle');
+  const overlayWidthSelect = document.getElementById('overlayWidthSelect');
+  const overlayWidthInput = document.getElementById('overlayWidthInput');
+  const overlayOpacityInput = document.getElementById('overlayOpacity');
+  const overlayEnabledToggle = document.getElementById('overlayEnabledToggle');
+
+  if (overlayEnabledToggle) {
+    overlayEnabledToggle.checked = settings.enabled;
+  }
+  if (overlayFontSizeSelect) {
+    overlayFontSizeSelect.value = settings.fontSize;
+  }
+  if (overlayFontFamilySelect) {
+    overlayFontFamilySelect.value = settings.fontFamily;
+  }
+  if (textColorInput) {
+    textColorInput.value = settings.textColor;
+  }
+  if (valueColorInput) {
+    valueColorInput.value = settings.valueColor;
+  }
+  if (bgColorInput) {
+    bgColorInput.value = settings.backgroundColor;
+  }
+  if (overlayWidthSelect) {
+    overlayWidthSelect.value = settings.widthPreset;
+  }
+  if (overlayPositionSelect) {
+    overlayPositionSelect.value = settings.position;
+  }
+  if (overlayStyleSelect) {
+    overlayStyleSelect.value = settings.style;
+  }
+  if (overlayGroupSpacingInput) {
+    overlayGroupSpacingInput.value = String(settings.groupSpacing);
+  }
+  if (overlayShowUnitsToggle) {
+    overlayShowUnitsToggle.checked = settings.showUnits;
+  }
+  if (overlayWidthInput) {
+    overlayWidthInput.value = String(settings.width);
+    overlayWidthInput.disabled = settings.widthPreset !== 'custom';
+  }
+  if (overlayOpacityInput) {
+    overlayOpacityInput.value = String(settings.opacity);
+  }
+  const overlayScaleInput = document.getElementById('overlayScale');
+  if (overlayScaleInput) {
+    overlayScaleInput.value = String(settings.scale);
+  }
+  const overlayHotkeyInput = document.getElementById('overlayHotkey');
+  if (overlayHotkeyInput) {
+    overlayHotkeyInput.value = settings.hotkey;
+  }
+
+  updateOverlayToggleButton(settings.enabled);
+
+  if (settings.enabled && ipcRenderer && ipcRenderer.invoke) {
+    ipcRenderer.invoke('overlay:set-enabled', true).catch(() => {});
+  }
+}
+
+function normalizeOverlaySensorGroup(sensor) {
+  if (!sensor) return sensor;
+  const name = String(sensor.name || '').toLowerCase();
+  if (name.includes('frame time') || name.includes('frametime') || /\bfps\b/.test(name)) {
+    return 'fps';
+  }
+  return sensor.group || sensor.category || 'other';
+}
+
+function getOverlaySensorPayload(groupedSensors) {
+  const output = [];
+  Object.keys(groupedSensors || {}).forEach((group) => {
+    (Array.isArray(groupedSensors[group]) ? groupedSensors[group] : []).forEach((sensor) => {
+      if (!sensor) return;
+      const overlaySelected = overlaySensorSelection[sensor.id];
+      const shouldDisplay = overlaySelected !== undefined ? overlaySelected : !!sensorSelection[sensor.id];
+      if (!shouldDisplay) return;
+      output.push(formatOverlaySensor({
+        ...sensor,
+        group: normalizeOverlaySensorGroup(sensor)
+      }));
+    });
+  });
+  return output;
+}
+
+function sendOverlayPayload(payload) {
+  if (!ipcRenderer || typeof ipcRenderer.send !== 'function') return;
+  const settings = loadOverlaySettings();
+  if (!settings.enabled) return;
+  ipcRenderer.send('overlay:update', {
+    settings,
+    sensors: payload,
+    height: calculateOverlayHeight(payload, settings),
+    position: settings.position
+  });
+}
+
+function refreshOverlayWindowState(enabled) {
+  if (!ipcRenderer || typeof ipcRenderer.invoke !== 'function') return;
+  ipcRenderer.invoke('overlay:set-enabled', !!enabled).catch(() => {});
+}
+
+// NOTE: getOverlaySensorPayload is defined once above and used for overlay sensor payload generation.
 function normalizeTemperatureUnit(unit) {
   return String(unit || '').trim().toLowerCase() === 'f' ? 'f' : 'c';
 }
@@ -2450,6 +2796,9 @@ function ensureSensorDefaults(groupedSensors) {
     (list || []).forEach((sensor) => {
       if (sensorSelection[sensor.id] === undefined) {
         sensorSelection[sensor.id] = true;
+      }
+      if (overlaySensorSelection[sensor.id] === undefined) {
+        overlaySensorSelection[sensor.id] = !!sensorSelection[sensor.id];
       }
     });
   });
@@ -2919,6 +3268,7 @@ function renderSensorOptions(groupedSensors) {
   ensureCategoryDefaults(groupedSensors);
   ensureSensorOrderDefaults(groupedSensors);
   saveSensorSelection();
+  saveOverlaySensorSelection();
   saveSensorCategorySelection();
 
   const html = SENSOR_GROUP_ORDER
@@ -2929,6 +3279,7 @@ function renderSensorOptions(groupedSensors) {
       const items = sensors
         .map((sensor, index) => {
           const checked = sensorSelection[sensor.id] ? 'checked' : '';
+          const overlayChecked = overlaySensorSelection[sensor.id] ? 'checked' : '';
           const disabled = groupEnabled ? '' : 'disabled';
           const label = escapeHtml(getFinalDisplayLabel(sensor));
           return `
@@ -2936,6 +3287,7 @@ function renderSensorOptions(groupedSensors) {
               <span class="sensor-drag-handle" title="Drag to reorder" aria-hidden="true">⋮⋮</span>
               <label class="checkbox-label sensor-item-label"><input type="checkbox" data-sensor-id="${sensor.id}" ${checked} ${disabled}><span class="sensor-name">${label}</span></label>
               <div class="sensor-item-actions">
+                <label class="checkbox-label overlay-checkbox" title="Show in overlay"><input type="checkbox" data-overlay-sensor-id="${sensor.id}" ${overlayChecked} ${disabled}><span>Overlay</span></label>
                 <button type="button" class="sensor-order-btn sensor-rename-btn" data-rename-sensor-id="${sensor.id}" aria-label="Rename ${label}" title="Rename sensor">✎</button>
               </div>
             </div>
@@ -3103,7 +3455,7 @@ function createDisplayNamedGroupedSensors(groupedSensors) {
         .map((match) => match[1].toUpperCase())))
       : [];
 
-    output[group] = sourceList.map((sensor) => {
+    sourceList.forEach((sensor) => {
       const sourceName = String(sensor && sensor.name ? sensor.name : '');
       let normalizedSensor = sensor;
 
@@ -3119,6 +3471,12 @@ function createDisplayNamedGroupedSensors(groupedSensors) {
             };
           }
         }
+      }
+
+      let normalizedGroup = group;
+      const lowerName = sourceName.toLowerCase();
+      if (lowerName.includes('frame time') || lowerName.includes('frametime') || /\bfps\b/.test(lowerName)) {
+        normalizedGroup = 'fps';
       }
 
       let baseName = resolveBaseDisplayName(normalizedSensor);
@@ -3139,10 +3497,13 @@ function createDisplayNamedGroupedSensors(groupedSensors) {
         displayName = unit ? `${baseName} (${unit} ${count})` : `${baseName} (${count})`;
       }
 
-      return {
+      const finalSensor = {
         ...normalizedSensor,
         name: getFinalDisplayLabel({ ...normalizedSensor, name: displayName })
       };
+
+      output[normalizedGroup] = output[normalizedGroup] || [];
+      output[normalizedGroup].push(finalSensor);
     });
   });
 
@@ -3186,6 +3547,21 @@ function enrichGroupedSensorsWithRealtime(groupedSensors, externalData) {
   }
 
   if (!base.other) base.other = [];
+  if (!base.fps) base.fps = [];
+
+  // Move any existing FPS/frame-time sensors into the dedicated FPS group.
+  Object.keys(base).forEach((groupKey) => {
+    if (groupKey === 'fps') return;
+    const list = base[groupKey] || [];
+    for (let idx = list.length - 1; idx >= 0; idx -= 1) {
+      const sensor = list[idx];
+      const name = String(sensor && sensor.name ? sensor.name : '').toLowerCase();
+      if (name.includes('frame time') || name.includes('frametime') || /\bfps\b/.test(name)) {
+        base.fps.push(sensor);
+        list.splice(idx, 1);
+      }
+    }
+  });
 
   const allSensors = Object.values(base).flat();
   const findByName = (predicate) => allSensors.find((sensor) => predicate(String(sensor && sensor.name ? sensor.name : '').toLowerCase()));
@@ -3237,13 +3613,17 @@ function enrichGroupedSensorsWithRealtime(groupedSensors, externalData) {
       id: current.id || frameSensorEntry.id,
       name: current.name || frameSensorEntry.name
     };
+    if (frameMatch.group !== 'fps') {
+      base.fps.push(base[frameMatch.group][frameMatch.idx]);
+      base[frameMatch.group].splice(frameMatch.idx, 1);
+    }
   } else {
-    const fpsIndexInOther = base.other.findIndex((sensor) => {
+    const fpsIndexInFps = base.fps.findIndex((sensor) => {
       const name = String(sensor && sensor.name ? sensor.name : '').toLowerCase();
       return /\bfps\b/.test(name);
     });
-    const insertIndex = fpsIndexInOther >= 0 ? fpsIndexInOther + 1 : 0;
-    base.other.splice(insertIndex, 0, frameSensorEntry);
+    const insertIndex = fpsIndexInFps >= 0 ? fpsIndexInFps + 1 : 0;
+    base.fps.splice(insertIndex, 0, frameSensorEntry);
   }
 
   return base;
@@ -3731,6 +4111,7 @@ const SettingsManager = {
     const SETTINGS_EXPORT_KEYS = [
       SENSOR_ORDER_KEY,
       SENSOR_SELECTION_KEY,
+      SENSOR_OVERLAY_SELECTION_KEY,
       SENSOR_CATEGORY_SELECTION_KEY,
       SENSOR_CUSTOM_NAMES_KEY,
       CUSTOM_COLORS_KEY,
@@ -3740,7 +4121,20 @@ const SettingsManager = {
       FONT_FAMILY_KEY,
       VALUE_FONT_MONOSPACE_KEY,
       SUMMARY_MODE_KEY,
-      'refreshRate'
+      'refreshRate',
+      OVERLAY_ENABLED_KEY,
+      OVERLAY_FONT_SIZE_KEY,
+      OVERLAY_FONT_FAMILY_KEY,
+      OVERLAY_FONT_BOLD_KEY,
+      OVERLAY_TEXT_COLOR_KEY,
+      OVERLAY_VALUE_COLOR_KEY,
+      OVERLAY_BG_COLOR_KEY,
+      OVERLAY_OPACITY_KEY,
+      OVERLAY_WIDTH_PRESET_KEY,
+      OVERLAY_WIDTH_KEY,
+      OVERLAY_POSITION_KEY,
+      OVERLAY_STYLE_KEY,
+      OVERLAY_SHOW_UNITS_KEY
     ];
 
     if (exportSettingsBtn) {
@@ -3873,6 +4267,234 @@ const SettingsManager = {
       applyValueFontMonospace(isMonospace);
       valueFontMonospaceToggle.addEventListener('change', (e) => {
         applyValueFontMonospace(!!e.target.checked);
+      });
+    }
+
+    const overlayEnabledToggle = document.getElementById('overlayEnabledToggle');
+    const overlayFontSizeSelect = document.getElementById('overlayFontSizeSelect');
+    const overlayFontFamilySelect = document.getElementById('overlayFontFamilySelect');
+    const overlayPositionSelect = document.getElementById('overlayPositionSelect');
+    const overlayStyleSelect = document.getElementById('overlayStyleSelect');
+    const overlayGroupSpacingInput = document.getElementById('overlayGroupSpacing');
+    const overlayShowUnitsToggle = document.getElementById('overlayShowUnitsToggle');
+    const overlayTextColorInput = document.getElementById('overlayTextColor');
+    const overlayValueColorInput = document.getElementById('overlayValueColor');
+    const overlayBgColorInput = document.getElementById('overlayBackgroundColor');
+    const overlayWidthSelect = document.getElementById('overlayWidthSelect');
+    const overlayWidthInput = document.getElementById('overlayWidthInput');
+    const overlayOpacityInput = document.getElementById('overlayOpacity');
+
+    if (overlayEnabledToggle) {
+      overlayEnabledToggle.checked = localStorage.getItem(OVERLAY_ENABLED_KEY) === 'true';
+      overlayEnabledToggle.addEventListener('change', (e) => {
+        const enabled = !!e.target.checked;
+        saveOverlaySetting(OVERLAY_ENABLED_KEY, enabled ? 'true' : 'false');
+        updateOverlayToggleButton(enabled);
+        refreshOverlayWindowState(enabled);
+      });
+    }
+
+    if (overlayFontSizeSelect) {
+      overlayFontSizeSelect.value = normalizeOverlayFontSize(localStorage.getItem(OVERLAY_FONT_SIZE_KEY));
+      overlayFontSizeSelect.addEventListener('change', (e) => {
+        saveOverlaySetting(OVERLAY_FONT_SIZE_KEY, normalizeOverlayFontSize(e.target.value));
+        refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
+      });
+    }
+
+    if (overlayFontFamilySelect) {
+      overlayFontFamilySelect.value = normalizeOverlayFontFamily(localStorage.getItem(OVERLAY_FONT_FAMILY_KEY));
+      overlayFontFamilySelect.addEventListener('change', (e) => {
+        saveOverlaySetting(OVERLAY_FONT_FAMILY_KEY, normalizeOverlayFontFamily(e.target.value));
+        refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
+      });
+    }
+
+    const overlayFontBoldToggle = document.getElementById('overlayFontBoldToggle');
+    if (overlayFontBoldToggle) {
+      overlayFontBoldToggle.checked = normalizeOverlayFontBold(localStorage.getItem(OVERLAY_FONT_BOLD_KEY));
+      overlayFontBoldToggle.addEventListener('change', (e) => {
+        saveOverlaySetting(OVERLAY_FONT_BOLD_KEY, e.target.checked ? 'true' : 'false');
+        refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
+      });
+    }
+
+    if (overlayTextColorInput) {
+      overlayTextColorInput.value = normalizeOverlayColor(localStorage.getItem(OVERLAY_TEXT_COLOR_KEY), '#e0e0e0');
+      overlayTextColorInput.addEventListener('input', (e) => {
+        saveOverlaySetting(OVERLAY_TEXT_COLOR_KEY, normalizeOverlayColor(e.target.value, '#e0e0e0'));
+        refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
+      });
+    }
+
+    if (overlayValueColorInput) {
+      overlayValueColorInput.value = normalizeOverlayColor(localStorage.getItem(OVERLAY_VALUE_COLOR_KEY), '#ffffff');
+      overlayValueColorInput.addEventListener('input', (e) => {
+        saveOverlaySetting(OVERLAY_VALUE_COLOR_KEY, normalizeOverlayColor(e.target.value, '#ffffff'));
+        refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
+      });
+    }
+
+    if (overlayBgColorInput) {
+      overlayBgColorInput.value = normalizeOverlayColor(localStorage.getItem(OVERLAY_BG_COLOR_KEY), '#000000');
+      overlayBgColorInput.addEventListener('input', (e) => {
+        saveOverlaySetting(OVERLAY_BG_COLOR_KEY, normalizeOverlayColor(e.target.value, '#000000'));
+        refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
+      });
+    }
+
+    if (overlayWidthSelect) {
+      overlayWidthSelect.value = normalizeOverlayWidthPreset(localStorage.getItem(OVERLAY_WIDTH_PRESET_KEY));
+      overlayWidthSelect.addEventListener('change', (e) => {
+        const preset = normalizeOverlayWidthPreset(e.target.value);
+        saveOverlaySetting(OVERLAY_WIDTH_PRESET_KEY, preset);
+        const width = normalizeOverlayWidth(localStorage.getItem(OVERLAY_WIDTH_KEY), preset);
+        if (overlayWidthInput) {
+          overlayWidthInput.value = String(width);
+          overlayWidthInput.disabled = preset !== 'custom';
+        }
+        refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
+      });
+    }
+
+    if (overlayPositionSelect) {
+      overlayPositionSelect.value = normalizeOverlayPosition(localStorage.getItem(OVERLAY_POSITION_KEY));
+      overlayPositionSelect.addEventListener('change', (e) => {
+        const position = normalizeOverlayPosition(e.target.value);
+        saveOverlaySetting(OVERLAY_POSITION_KEY, position);
+        refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
+      });
+    }
+
+    if (overlayStyleSelect) {
+      overlayStyleSelect.value = normalizeOverlayStyle(localStorage.getItem(OVERLAY_STYLE_KEY));
+      overlayStyleSelect.addEventListener('change', (e) => {
+        const style = normalizeOverlayStyle(e.target.value);
+        saveOverlaySetting(OVERLAY_STYLE_KEY, style);
+        refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
+      });
+    }
+
+    const overlayMonitorSelect = document.getElementById('overlayMonitorSelect');
+    if (overlayMonitorSelect) {
+      ipcRenderer.invoke('overlay:get-displays').then((displays) => {
+        if (!Array.isArray(displays)) return;
+        const savedDisplay = localStorage.getItem(OVERLAY_MONITOR_KEY) || '';
+        overlayMonitorSelect.innerHTML = '';
+        displays.forEach((display) => {
+          const option = document.createElement('option');
+          option.value = String(display.id);
+          option.textContent = display.name || `Display ${display.id}`;
+          overlayMonitorSelect.appendChild(option);
+        });
+        overlayMonitorSelect.value = savedDisplay || (displays[0] ? String(displays[0].id) : '');
+      }).catch(() => {});
+      overlayMonitorSelect.addEventListener('change', (e) => {
+        const displayId = String(e.target.value || '');
+        saveOverlaySetting(OVERLAY_MONITOR_KEY, displayId);
+        refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
+      });
+    }
+
+    if (overlayShowUnitsToggle) {
+      overlayShowUnitsToggle.checked = normalizeOverlayShowUnits(localStorage.getItem(OVERLAY_SHOW_UNITS_KEY));
+      overlayShowUnitsToggle.addEventListener('change', (e) => {
+        const enabled = !!e.target.checked;
+        saveOverlaySetting(OVERLAY_SHOW_UNITS_KEY, enabled ? 'true' : 'false');
+        refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
+      });
+    }
+
+    if (overlayWidthInput) {
+      overlayWidthInput.value = String(normalizeOverlayWidth(localStorage.getItem(OVERLAY_WIDTH_KEY), normalizeOverlayWidthPreset(localStorage.getItem(OVERLAY_WIDTH_PRESET_KEY))));
+      overlayWidthInput.addEventListener('input', (e) => {
+        const preset = overlayWidthSelect ? overlayWidthSelect.value : 'custom';
+        if (preset === 'custom') {
+          saveOverlaySetting(OVERLAY_WIDTH_KEY, normalizeOverlayWidth(e.target.value, 'custom'));
+        }
+        refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
+      });
+    }
+
+    if (overlayOpacityInput) {
+      overlayOpacityInput.value = String(normalizeOverlayOpacity(localStorage.getItem(OVERLAY_OPACITY_KEY)));
+      overlayOpacityInput.addEventListener('input', (e) => {
+        saveOverlaySetting(OVERLAY_OPACITY_KEY, normalizeOverlayOpacity(e.target.value));
+        refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
+      });
+    }
+
+    if (overlayGroupSpacingInput) {
+      overlayGroupSpacingInput.value = String(normalizeOverlayGroupSpacing(localStorage.getItem(OVERLAY_GROUP_SPACING_KEY)));
+      overlayGroupSpacingInput.addEventListener('input', (e) => {
+        saveOverlaySetting(OVERLAY_GROUP_SPACING_KEY, normalizeOverlayGroupSpacing(e.target.value));
+        refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
+      });
+    }
+
+    const overlayScaleInput = document.getElementById('overlayScale');
+    if (overlayScaleInput) {
+      overlayScaleInput.value = String(normalizeOverlayScale(localStorage.getItem(OVERLAY_SCALE_KEY)));
+      overlayScaleInput.addEventListener('input', (e) => {
+        saveOverlaySetting(OVERLAY_SCALE_KEY, normalizeOverlayScale(e.target.value));
+        refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
+      });
+    }
+
+    const overlayHotkeyInput = document.getElementById('overlayHotkey');
+    if (overlayHotkeyInput) {
+      overlayHotkeyInput.value = String(normalizeOverlayHotkey(localStorage.getItem(OVERLAY_HOTKEY_KEY)));
+      
+      // Prevent default input behavior and capture key combinations
+      overlayHotkeyInput.addEventListener('keydown', (e) => {
+        e.preventDefault();
+        
+        const modifiers = [];
+        if (e.ctrlKey) modifiers.push('Ctrl');
+        if (e.altKey) modifiers.push('Alt');
+        if (e.shiftKey) modifiers.push('Shift');
+        if (e.metaKey) modifiers.push('Meta');
+        
+        // Don't allow modifier-only hotkeys
+        if (modifiers.length === 0) return;
+        
+        // Get the key name
+        let key = e.key;
+        if (key === ' ') key = 'Space';
+        else if (key.length === 1) key = key.toUpperCase();
+        
+        const hotkey = [...modifiers, key].join('+');
+        const normalized = normalizeOverlayHotkey(hotkey);
+        
+        if (normalized) {
+          overlayHotkeyInput.value = normalized;
+          saveOverlaySetting(OVERLAY_HOTKEY_KEY, normalized);
+          if (ipcRenderer && ipcRenderer.invoke) {
+            ipcRenderer.invoke('overlay:update-hotkey', normalized).catch(() => {});
+          }
+        }
+      });
+      
+      // Prevent typing in the input field
+      overlayHotkeyInput.addEventListener('keypress', (e) => {
+        e.preventDefault();
+      });
+      
+      overlayHotkeyInput.addEventListener('paste', (e) => {
+        e.preventDefault();
+      });
+    }
+
+    // Overlay toggle button in header
+    const overlayToggleBtn = document.getElementById('overlayToggleBtn');
+    if (overlayToggleBtn) {
+      overlayToggleBtn.addEventListener('click', async () => {
+        const currentEnabled = localStorage.getItem(OVERLAY_ENABLED_KEY) === 'true';
+        const newEnabled = !currentEnabled;
+        saveOverlaySetting(OVERLAY_ENABLED_KEY, newEnabled ? 'true' : 'false');
+        if (overlayEnabledToggle) overlayEnabledToggle.checked = newEnabled;
+        updateOverlayToggleButton(newEnabled);
+        refreshOverlayWindowState(newEnabled);
       });
     }
 
@@ -4123,6 +4745,15 @@ const SettingsManager = {
 
     ipcRenderer.on('discord-presence:status', (_event, payload) => {
       updateDiscordPresenceStatusUi(payload);
+    });
+
+    ipcRenderer.on('overlay:toggle-state-changed', (_event, enabled) => {
+      const overlayEnabledToggle = document.getElementById('overlayEnabledToggle');
+      if (overlayEnabledToggle) {
+        overlayEnabledToggle.checked = enabled;
+        saveOverlaySetting(OVERLAY_ENABLED_KEY, enabled ? 'true' : 'false');
+        updateOverlayToggleButton(enabled);
+      }
     });
 
     getAppBehaviorSettings().then((settings) => {
@@ -4483,6 +5114,7 @@ const SettingsManager = {
     }
 
     sensorSelection = loadSensorSelection();
+    overlaySensorSelection = loadOverlaySensorSelection();
     sensorCategorySelection = loadSensorCategorySelection();
     sensorCategoryCollapse = loadSensorCategoryCollapse();
     sensorOrderByGroup = loadSensorOrder();
@@ -4553,6 +5185,12 @@ const SettingsManager = {
         if (target && target.dataset && target.dataset.sensorId) {
           sensorSelection[target.dataset.sensorId] = !!target.checked;
           saveSensorSelection();
+          updateStats();
+          return;
+        }
+        if (target && target.dataset && target.dataset.overlaySensorId) {
+          overlaySensorSelection[target.dataset.overlaySensorId] = !!target.checked;
+          saveOverlaySensorSelection();
           updateStats();
         }
       });
@@ -4666,6 +5304,7 @@ const SettingsManager = {
       localStorage.setItem('refreshRate', String(updateInterval));
     }
 
+    applyOverlaySettings();
     initializeSetupGuideModal();
     initializeImportSettingsModal();
   }
@@ -4708,6 +5347,7 @@ async function updateStats(forceRender = false) {
         latestSelectedGroupedSensors = createEmptyGroupedBuckets();
       }
       renderAllDynamicGroups(latestSelectedGroupedSensors);
+      sendOverlayPayload(getOverlaySensorPayload(latestSelectedGroupedSensors));
       publishWebMonitorPayload(mode, 'No data');
       return;
     }
@@ -4750,6 +5390,7 @@ async function updateStats(forceRender = false) {
         }
         lastSuccessfulSensorReadAt = Date.now();
         renderAllDynamicGroups(selected, { force: forceRender });
+        sendOverlayPayload(getOverlaySensorPayload(selected));
       } else {
         const now = Date.now();
         if ((now - lastSuccessfulSensorReadAt) > SENSOR_READ_STALE_HOLD_MS) {
@@ -4766,6 +5407,7 @@ async function updateStats(forceRender = false) {
         latestSelectedGroupedSensors = createEmptyGroupedBuckets();
       }
       renderAllDynamicGroups(latestSelectedGroupedSensors, { force: forceRender });
+      sendOverlayPayload(getOverlaySensorPayload(latestSelectedGroupedSensors));
       publishWebMonitorPayload(mode, 'N/A');
     }
 

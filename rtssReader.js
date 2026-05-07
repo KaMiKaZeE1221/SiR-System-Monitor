@@ -1265,7 +1265,13 @@ class RTSSReader {
         const mergedFallbackCatalog = providerCatalog;
         const mergedFallbackAvailable = this.flattenGroupedCatalog(mergedFallbackCatalog);
         const mergedFps = firstAvailable(mahmData && mahmData.fps > 0 ? mahmData.fps : null, rtssData ? rtssData.fps : 0) || 0;
-        const rawMergedFrameTime = firstAvailable(mahmData && mahmData.frameTime > 0 ? mahmData.frameTime : null, rtssData ? rtssData.frameTime : 0) || 0;
+        let rawMergedFrameTime = firstAvailable(rtssData && rtssData.frameTime > 0 ? rtssData.frameTime : null, mahmData && mahmData.frameTime > 0 ? mahmData.frameTime : null) || 0;
+        
+        // If MAHM frameTime is very small (likely in microseconds), convert to milliseconds
+        if (rawMergedFrameTime > 0 && rawMergedFrameTime < 1 && mahmData && mahmData.frameTime > 0) {
+          rawMergedFrameTime = mahmData.frameTime / 1000;
+        }
+        
         const mergedFrameTime = (rawMergedFrameTime > 0)
           ? rawMergedFrameTime
           : (mergedFps > 0 ? (1000 / mergedFps) : 0);

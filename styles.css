@@ -246,8 +246,21 @@ body.sidebar-resizing * {
 }
 
 .settings-group .settings-section {
+  display: grid;
+  gap: 10px;
   margin-bottom: 10px;
   padding-bottom: 0;
+}
+
+.settings-group .settings-section > .settings-label {
+  margin-bottom: 0;
+}
+
+.settings-group .settings-section > .visibility-options,
+.settings-group .settings-section > #sensorOptions,
+.settings-group .settings-section > .web-monitor-actions,
+.settings-group .settings-section > .settings-note {
+  margin-top: 6px;
 }
 
 .settings-group .settings-section:last-child {
@@ -546,25 +559,28 @@ body.sidebar-resizing * {
 
 .visibility-options {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
 }
 
 #sensorOptions {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 10px;
+  gap: 12px;
 }
 
 .sensor-category-block {
   border: 1px solid var(--border-color);
   border-radius: 10px;
   background: color-mix(in srgb, var(--bg-tertiary) 75%, transparent);
-  padding: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .sensor-category-block.is-disabled {
-  opacity: 0.7;
+  opacity: 0.75;
 }
 
 .sensor-category-header {
@@ -648,16 +664,21 @@ body.sidebar-resizing * {
   border-top: 1px solid var(--border-color);
   display: grid;
   grid-template-columns: 1fr;
-  gap: 4px;
+  gap: 8px;
 }
 
 .sensor-item-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 4px;
-  border-radius: 6px;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
   cursor: grab;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.sensor-item-row:hover {
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .sensor-item-row.is-renaming {
@@ -700,7 +721,10 @@ body.sidebar-resizing * {
 .sensor-order-controls,
 .sensor-item-actions {
   display: inline-flex;
-  gap: 4px;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .sensor-order-btn {
@@ -733,6 +757,29 @@ body.sidebar-resizing * {
 .sensor-order-btn:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+.overlay-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: calc(11px * var(--font-scale));
+  color: var(--text-secondary);
+  background: rgba(255,255,255,0.04);
+  cursor: pointer;
+}
+
+.overlay-checkbox input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.overlay-checkbox:hover {
+  border-color: var(--accent);
+  color: var(--accent-light);
 }
 
 .sensor-category-items.is-collapsed {
@@ -1039,6 +1086,17 @@ body.sidebar-resizing * {
 }
 
 .web-monitor-toggle-btn.disabled {
+  color: var(--text-secondary);
+}
+
+.overlay-toggle-btn.enabled {
+  color: #062015;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, #6fe6ab 76%, white), color-mix(in srgb, #1d9a62 88%, black));
+  border-color: color-mix(in srgb, #7ef0ba 65%, white);
+}
+
+.overlay-toggle-btn.disabled {
   color: var(--text-secondary);
 }
 
@@ -1600,6 +1658,75 @@ body.summary-mode .stat-label {
   gap: 8px;
 }
 
+.overlay-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.overlay-section {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-secondary) 92%, transparent), color-mix(in srgb, var(--bg-primary) 88%, var(--bg-secondary)));
+  border: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+  border-radius: 16px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.overlay-section-title {
+  font-size: calc(13px * var(--font-scale));
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.overlay-section-description {
+  font-size: calc(11px * var(--font-scale));
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.overlay-section-row {
+  display: grid;
+  gap: 6px;
+}
+
+.overlay-colors-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.overlay-field-label {
+  display: block;
+  font-size: calc(11px * var(--font-scale));
+  color: var(--text-secondary);
+}
+
+.full-width {
+  width: 100%;
+}
+
+.overlay-colors-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.overlay-checkbox-row {
+  align-items: center;
+}
+
+.overlay-settings-row {
+  align-items: center;
+}
+
+.settings-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: calc(13px * var(--font-scale));
+}
+
 .web-monitor-grid {
   display: grid;
   grid-template-columns: 1fr 110px;
@@ -1692,7 +1819,9 @@ body.summary-mode .stat-label {
   .color-custom-grid,
   .settings-field-grid,
   .action-grid-two,
-  .web-monitor-grid {
+  .web-monitor-grid,
+  .overlay-settings-grid,
+  .overlay-colors-grid {
     grid-template-columns: 1fr;
   }
 

@@ -72,6 +72,112 @@
       </div>
 
       <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-pc-display-horizontal settings-label-icon" aria-hidden="true"></i><span>On-Screen Overlay</span></label>
+        <label class="checkbox-label settings-inline-gap-sm">
+          <input type="checkbox" id="overlayEnabledToggle">
+          <span>Enable Overlay</span>
+        </label>
+        <div class="settings-field-grid">
+          <div>
+            <label class="settings-label" for="overlayFontSizeSelect">Font Size</label>
+            <select id="overlayFontSizeSelect" class="detection-select">
+              <option value="small">Small</option>
+              <option value="medium">Medium</option>
+              <option value="large">Large</option>
+              <option value="xlarge">X-Large</option>
+              <option value="xxlarge">XX-Large</option>
+            </select>
+          </div>
+          <div>
+            <label class="settings-label" for="overlayFontFamilySelect">Font</label>
+            <select id="overlayFontFamilySelect" class="detection-select">
+              <option value="segoe">Segoe UI</option>
+              <option value="arial">Arial</option>
+              <option value="verdana">Verdana</option>
+              <option value="tahoma">Tahoma</option>
+              <option value="georgia">Georgia</option>
+              <option value="calibri">Calibri</option>
+              <option value="trebuchet">Trebuchet MS</option>
+              <option value="cambria">Cambria</option>
+              <option value="garamond">Garamond</option>
+              <option value="consolas">Consolas</option>
+              <option value="monospace">Monospace</option>
+            </select>
+          </div>
+        </div>
+        <div class="overlay-checkbox">
+          <input type="checkbox" id="overlayFontBoldToggle">
+          <span>Bold Font</span>
+        </div>
+        <div class="settings-group">
+          <div class="settings-group-title">Overlay Settings</div>
+          <div class="overlay-section">
+            <div class="overlay-settings-grid">
+              <div class="overlay-section-row">
+                <label class="settings-label overlay-field-label" for="overlayPositionSelect">Position</label>
+                <select id="overlayPositionSelect" class="detection-select full-width">
+                  <option value="top-left">Top Left</option>
+                  <option value="top-right">Top Right</option>
+                </select>
+              </div>
+              <div class="overlay-section-row">
+                <label class="settings-label overlay-field-label" for="overlayStyleSelect">Style</label>
+                <select id="overlayStyleSelect" class="detection-select full-width">
+                  <option value="compact">Compact</option>
+                  <option value="grouped">Grouped</option>
+                  <option value="grouped-line">Grouped line</option>
+                  <option value="category">Category</option>
+                </select>
+              </div>
+              <div class="overlay-section-row">
+                <label class="settings-label overlay-field-label" for="overlayGroupSpacing">Group spacing</label>
+                <input type="range" id="overlayGroupSpacing" min="0" max="32" value="0" step="1" class="full-width">
+              </div>
+              <div class="overlay-section-row">
+                <label class="settings-label overlay-field-label" for="overlayScale">Unit Scale</label>
+                <input type="range" id="overlayScale" min="50" max="200" value="100" step="5" class="full-width">
+              </div>
+              <div class="overlay-section-row">
+                <label class="settings-label overlay-field-label" for="overlayHotkey">Toggle Hotkey (WIP)</label>
+                <input type="text" id="overlayHotkey" placeholder="Ctrl+Shift+O" title="Format: Modifier+Key (e.g., Ctrl+Shift+O, Alt+F12)" class="detection-select full-width">
+              </div>
+              <div class="overlay-section-row">
+                <label class="settings-label overlay-field-label" for="overlayMonitorSelect">Display</label>
+                <select id="overlayMonitorSelect" class="detection-select full-width">
+                  <option value="">Loading…</option>
+                </select>
+              </div>
+              <div class="overlay-section-row">
+                <label class="settings-label overlay-field-label" for="overlayOpacity">Background opacity</label>
+                <input type="range" id="overlayOpacity" min="0" max="100" value="70" step="1" class="full-width">
+              </div>
+              <div class="overlay-checkbox-row settings-checkbox-row">
+                <input type="checkbox" id="overlayShowUnitsToggle">
+                <span>Show units</span>
+              </div>
+            </div>
+
+            <div class="overlay-colors-grid">
+              <label class="color-picker-row">
+                <span>Text Color</span>
+                <input type="color" id="overlayTextColor" class="color-picker-input" value="#e0e0e0">
+              </label>
+              <label class="color-picker-row">
+                <span>Value Color</span>
+                <input type="color" id="overlayValueColor" class="color-picker-input" value="#ffffff">
+              </label>
+              <label class="color-picker-row">
+                <span>Background Color</span>
+                <input type="color" id="overlayBackgroundColor" class="color-picker-input" value="#000000">
+              </label>
+            </div>
+
+            <div class="settings-note">Overlay uses your selected sensors and displays them in an always-on-top transparent window. Changes apply immediately.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
         <label class="settings-label"><i class="bi bi-thermometer-half settings-label-icon" aria-hidden="true"></i><span>Temperature Unit</span></label>
         <select id="temperatureUnitSelect" class="detection-select">
           <option value="c">Celsius (°C)</option>
@@ -182,6 +288,7 @@
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-list-check settings-label-icon" aria-hidden="true"></i><span>Sensor Selection</span></label>
         <div id="sensorOptions" class="visibility-options"></div>
+        <div class="settings-note">Use the checkboxes above to show or hide groups, and drag individual sensors to reorder them.</div>
         <div class="web-monitor-actions settings-inline-gap-sm">
           <button id="resetSensorNamesBtn" class="test-btn" type="button">Reset Custom Sensor Names</button>
         </div>
@@ -329,6 +436,10 @@
         <button id="discordPresenceToggleBtn" class="header-control-btn discord-toggle-btn disabled" title="Discord Rich Presence">
           <i class="bi bi-discord" aria-hidden="true"></i>
           <span class="discord-toggle-text">Discord: Off</span>
+        </button>
+        <button id="overlayToggleBtn" class="header-control-btn overlay-toggle-btn disabled" title="Show Overlay">
+          <i class="bi bi-display" aria-hidden="true"></i>
+          <span class="overlay-toggle-text">Overlay: Off</span>
         </button>
         <button id="monitoringModeBtn" class="header-control-btn monitoring-mode-btn icon-only" title="Open Settings"><i class="bi bi-gear" aria-hidden="true"></i></button>
         <!-- Low Overhead Mode removed -->

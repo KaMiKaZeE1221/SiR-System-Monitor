@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SiR Overlay</title>
+  <style>
+    :root {
+      --overlay-bg: rgba(0, 0, 0, 0.7);
+      --overlay-text: #e0e0e0;
+      --overlay-value: #ffffff;
+      --overlay-font: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      --overlay-weight: 500;
+      --overlay-radius: 10px;
+      --overlay-padding: 12px;
+      --overlay-gap: 10px;
+      --overlay-border: rgba(255,255,255,0.12);
+      --overlay-opacity: 0.7;
+      --overlay-blur: 18px;
+      --overlay-header-height: 28px;
+      --overlay-font-scale: 1;
+      --overlay-unit-scale: 1;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100%;
+      min-width: 0;
+      font-family: var(--overlay-font);
+      color: var(--overlay-text);
+      background: transparent;
+      overflow: hidden;
+      user-select: none;
+    }
+    body {
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+      padding: 0;
+    }
+    .overlay-shell {
+      width: fit-content;
+      max-width: none;
+      background: rgba(0, 0, 0, 0.0);
+      overflow: hidden;
+      display: inline-flex;
+      flex-direction: column;
+      min-width: 280px;
+      font-family: var(--overlay-font);
+      font-weight: var(--overlay-weight);
+    }
+    .overlay-content {
+      padding: 12px;
+      background: var(--overlay-bg);
+      display: grid;
+      gap: var(--overlay-gap);
+      overflow-y: visible;
+      overflow-x: visible;
+      width: fit-content;
+      max-width: none;
+    }
+    .overlay-style-horizontal .overlay-content {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      overflow-y: visible;
+    }
+    .overlay-style-grouped-line .overlay-content {
+      background: var(--overlay-bg);
+      padding: 14px;
+    }
+    .overlay-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      font-size: calc(13px * var(--overlay-font-scale));
+      line-height: 1.2;
+      color: var(--overlay-text);
+      min-width: 0;
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
+    }
+    .overlay-item-card {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
+    }
+    .overlay-style-category .overlay-item {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      margin-bottom: 6px;
+    }
+    .overlay-style-category .overlay-item:last-child {
+      margin-bottom: 0;
+    }
+    .overlay-style-horizontal .overlay-item {
+      flex: 0 1 160px;
+      min-width: 160px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 12px;
+    }
+    .overlay-style-horizontal .overlay-item-card {
+      background: rgba(255,255,255,0.08);
+    }
+    .overlay-group {
+      display: grid;
+      gap: 6px;
+    }
+    .overlay-group-line {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: var(--overlay-gap);
+      align-items: center;
+      font-size: calc(12px * var(--overlay-font-scale));
+      padding: 4px 0;
+      min-height: 24px;
+      overflow: visible;
+      white-space: nowrap;
+    }
+    .overlay-group-title {
+      font-size: calc(11px * var(--overlay-font-scale));
+      font-weight: 700;
+      color: var(--overlay-text);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-right: 8px;
+      white-space: nowrap;
+      font-family: var(--overlay-font);
+    }
+    .overlay-group-values {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: max(4px, calc(var(--overlay-gap) * 0.6));
+      color: var(--overlay-value);
+      opacity: 0.95;
+      line-height: 1.3;
+      overflow: visible;
+      width: auto;
+      max-width: none;
+      font-family: var(--overlay-font);
+    }
+    .overlay-group-line-item {
+      white-space: nowrap;
+      color: var(--overlay-value);
+      opacity: 0.95;
+      font-family: var(--overlay-font);
+      font-size: calc(12px * var(--overlay-unit-scale));
+    }
+
+    .overlay-group-category {
+      padding: 10px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.10);
+    }
+    .overlay-group-box {
+      padding: 8px 0;
+    }
+    .overlay-style-card .overlay-content {
+      padding: 14px;
+    }
+    .overlay-style-category .overlay-content {
+      padding: 14px;
+    }
+    .overlay-label {
+      flex: 1 1 auto;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      opacity: 0.92;
+    }
+    .overlay-value {
+      flex: 0 0 auto;
+      font-weight: 700;
+      text-align: right;
+      white-space: nowrap;
+      color: var(--overlay-value);
+      font-size: calc(13px * var(--overlay-unit-scale));
+    }
+    .overlay-message {
+      color: var(--overlay-text);
+      opacity: 0.84;
+      font-size: calc(12px * var(--overlay-font-scale));
+    }
+    .font-small { --overlay-font-scale: 0.88; }
+    .font-medium { --overlay-font-scale: 1; }
+    .font-large { --overlay-font-scale: 1.18; }
+    .font-xlarge { --overlay-font-scale: 1.32; }
+    .font-xxlarge { --overlay-font-scale: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="overlay-shell" id="overlayShell">
+    <div id="overlayContent" class="overlay-content">
+      <div id="overlayMessage" class="overlay-message">Waiting for sensor data…</div>
+    </div>
+  </div>
+  <script src="overlay.js"></script>
+</body>
+</html>
