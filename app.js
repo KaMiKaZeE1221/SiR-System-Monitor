@@ -83,6 +83,7 @@ const WINDOW_ORDER_KEY = 'windowOrder';
 const WINDOW_SIZE_KEY = 'windowSize';
 const MONITORING_MODE_KEY = 'monitoringMode';
 const SUMMARY_MODE_KEY = 'summaryMode';
+const DEBUG_MODE_KEY = 'debugMode';
 const VIEW_MODE_KEY = 'viewMode';
 const GRAPH_EXPANDED_KEY = 'graphExpandedSensors';
 const WEB_MONITOR_SETTINGS_KEY = 'webMonitorSettings';
@@ -103,6 +104,10 @@ const OVERLAY_STYLE_KEY = 'overlayStyle';
 const OVERLAY_SHOW_UNITS_KEY = 'overlayShowUnits';
 const OVERLAY_MONITOR_KEY = 'overlayMonitorId';
 const OVERLAY_HOTKEY_KEY = 'overlayHotkey';
+const OVERLAY_DRAG_UNLOCK_KEY = 'overlayDragUnlock';
+const OVERLAY_CUSTOM_X_KEY = 'overlayCustomX';
+const OVERLAY_CUSTOM_Y_KEY = 'overlayCustomY';
+const OVERLAY_CUSTOM_POSITION_ENABLED_KEY = 'overlayCustomPositionEnabled';
 const SENSOR_OVERLAY_SELECTION_KEY = 'overlaySensorSelection';
 const SETUP_GUIDE_SUPPRESS_KEY = 'setupGuideSuppress';
 const APP_BEHAVIOR_SETTINGS_KEY = 'appBehaviorSettings';
@@ -138,6 +143,7 @@ const VIEW_MODE_LABELS = {
 };
 const VIEW_MODE_GROUP_ICONS = {
   standard: {
+    fps: 'bi-graph-up',
     cpu: 'bi-cpu-fill',
     gpu: 'bi-gpu-card',
     ram: 'bi-memory',
@@ -148,6 +154,7 @@ const VIEW_MODE_GROUP_ICONS = {
     other: 'bi-tools'
   },
   compact: {
+    fps: 'bi-speedometer2',
     cpu: 'bi-speedometer2',
     gpu: 'bi-badge-8k',
     ram: 'bi-diagram-3',
@@ -158,6 +165,7 @@ const VIEW_MODE_GROUP_ICONS = {
     other: 'bi-stars'
   },
   wide: {
+    fps: 'bi-graph-up-arrow',
     cpu: 'bi-cpu',
     gpu: 'bi-gpu-card',
     ram: 'bi-memory',
@@ -168,6 +176,7 @@ const VIEW_MODE_GROUP_ICONS = {
     other: 'bi-sliders'
   },
   terminal: {
+    fps: 'bi-activity',
     cpu: 'bi-terminal-fill',
     gpu: 'bi-pc-display-horizontal',
     ram: 'bi-diagram-2-fill',
@@ -179,6 +188,7 @@ const VIEW_MODE_GROUP_ICONS = {
   }
 };
 const GROUP_CARD_IDS = {
+  fps: 'fpsGroup',
   cpu: 'cpuGroup',
   gpu: 'gpuGroup',
   ram: 'ramGroup',
@@ -187,6 +197,17 @@ const GROUP_CARD_IDS = {
   network: 'networkGroup',
   drives: 'drivesGroup',
   other: 'externalGroup'
+};
+const GROUP_VISIBILITY_KEYS = {
+  fps: 'showFps',
+  cpu: 'showCpu',
+  gpu: 'showGpu',
+  ram: 'showRam',
+  psu: 'showPsu',
+  fans: 'showFans',
+  network: 'showNetwork',
+  drives: 'showDrives',
+  other: 'showExternal'
 };
 const CARD_GROUP_IDS = Object.fromEntries(Object.entries(GROUP_CARD_IDS).map(([group, cardId]) => [cardId, group]));
 const SENSOR_HISTORY_WINDOW_MS = 60000;
@@ -203,6 +224,16 @@ let summaryModeEnabled = (function() {
     return false;
   }
 })();
+let debugModeEnabled = (function() {
+  try {
+    const raw = localStorage.getItem(DEBUG_MODE_KEY);
+    if (raw === null) return false;
+    return JSON.parse(raw) === true;
+  } catch (e) {
+    return false;
+  }
+})();
+let lastDebugExternalData = null;
 // Low Overhead mode removed
 let latestSelectedGroupedSensors = createEmptyGroupedBuckets();
 let liveSensorCatalogSignature = '';
@@ -532,13 +563,13 @@ function buildWebMonitorHtml() {
   </div>
 
   <script>
-    const groupOrder = ['cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'drives', 'other'];
-    const groupLabels = { cpu: 'CPU', gpu: 'GPU', ram: 'RAM', psu: 'PSU', fans: 'Fans', network: 'Network', drives: 'Drives', other: 'Other' };
+    const groupOrder = ['fps', 'cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'drives', 'other'];
+    const groupLabels = { fps: 'FPS', cpu: 'CPU', gpu: 'GPU', ram: 'RAM', psu: 'PSU', fans: 'Fans', network: 'Network', drives: 'Drives', other: 'Other' };
     const groupIconsByMode = {
-      standard: { cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-globe', drives: 'bi-device-hdd-fill', other: 'bi-tools' },
-      compact: { cpu: 'bi-speedometer2', gpu: 'bi-badge-8k', ram: 'bi-diagram-3', psu: 'bi-lightning-charge', fans: 'bi-wind', network: 'bi-wifi', drives: 'bi-hdd-stack', other: 'bi-stars' },
-      wide: { cpu: 'bi-cpu', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug', fans: 'bi-fan', network: 'bi-ethernet', drives: 'bi-device-hdd', other: 'bi-sliders' },
-      terminal: { cpu: 'bi-terminal-fill', gpu: 'bi-pc-display-horizontal', ram: 'bi-diagram-2-fill', psu: 'bi-battery-half', fans: 'bi-arrow-repeat', network: 'bi-router-fill', drives: 'bi-device-ssd-fill', other: 'bi-braces-asterisk' }
+      standard: { fps: 'bi-graph-up', cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-globe', drives: 'bi-device-hdd-fill', other: 'bi-tools' },
+      compact: { fps: 'bi-speedometer2', cpu: 'bi-speedometer2', gpu: 'bi-badge-8k', ram: 'bi-diagram-3', psu: 'bi-lightning-charge', fans: 'bi-wind', network: 'bi-wifi', drives: 'bi-hdd-stack', other: 'bi-stars' },
+      wide: { fps: 'bi-graph-up-arrow', cpu: 'bi-cpu', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug', fans: 'bi-fan', network: 'bi-ethernet', drives: 'bi-device-hdd', other: 'bi-sliders' },
+      terminal: { fps: 'bi-activity', cpu: 'bi-terminal-fill', gpu: 'bi-pc-display-horizontal', ram: 'bi-diagram-2-fill', psu: 'bi-battery-half', fans: 'bi-arrow-repeat', network: 'bi-router-fill', drives: 'bi-device-ssd-fill', other: 'bi-braces-asterisk' }
     };
     const fontScaleMap = { small: 0.92, medium: 1, large: 1.28, xlarge: 1.38, xxlarge: 1.5 };
     const fontFamilyMap = {
@@ -1072,7 +1103,18 @@ function publishWebMonitorPayload(mode, externalText) {
 
   const groups = {};
   const includeSummary = shouldCollectSummaryStats();
+  const isGroupVisible = (group) => {
+    const key = GROUP_VISIBILITY_KEYS[group];
+    if (!key) return true;
+    const raw = localStorage.getItem(key);
+    if (raw === null) return true;
+    return raw === 'true';
+  };
   SENSOR_GROUP_ORDER.forEach((group) => {
+    if (!isGroupVisible(group)) {
+      groups[group] = [];
+      return;
+    }
     groups[group] = (latestSelectedGroupedSensors[group] || []).map((sensor) => {
       const resolvedUnits = resolveDisplayUnits(sensor) || sensor.units || inferUnitsFromSensor(sensor);
       const numericValue = Number(sensor.value);
@@ -2278,6 +2320,28 @@ function applyFontBold(enabled) {
 function normalizeOverlayFontSize(size) {
   return ['small', 'medium', 'large', 'xlarge', 'xxlarge'].includes(size) ? size : 'medium';
 }
+const OVERLAY_FONT_SIZE_STEPS = ['small', 'medium', 'large', 'xlarge', 'xxlarge'];
+function overlayFontSizeToStep(size) {
+  const normalized = normalizeOverlayFontSize(size);
+  const idx = OVERLAY_FONT_SIZE_STEPS.indexOf(normalized);
+  return idx >= 0 ? idx : 1;
+}
+function overlayFontSizeFromStep(step) {
+  const n = Number(step);
+  if (!Number.isFinite(n)) return 'medium';
+  const clamped = Math.max(0, Math.min(OVERLAY_FONT_SIZE_STEPS.length - 1, Math.round(n)));
+  return OVERLAY_FONT_SIZE_STEPS[clamped];
+}
+function overlayFontSizeLabel(sizeKey) {
+  const map = {
+    small: 'Small',
+    medium: 'Medium',
+    large: 'Large',
+    xlarge: 'X-Large',
+    xxlarge: 'XX-Large'
+  };
+  return map[normalizeOverlayFontSize(sizeKey)] || 'Medium';
+}
 
 function normalizeOverlayFontFamily(family) {
   return Object.prototype.hasOwnProperty.call(FONT_FAMILY_MAP, family) ? family : 'segoe';
@@ -2339,21 +2403,46 @@ function normalizeOverlayScale(value) {
 function normalizeOverlayHotkey(value) {
   const hotkey = String(value || '').trim();
   if (!hotkey) return '';
-  
-  // Basic validation - should contain at least one modifier and one key
-  const parts = hotkey.split('+').map(p => p.trim());
-  if (parts.length < 2) return '';
-  
-  // Validate modifiers
-  const validModifiers = ['ctrl', 'alt', 'shift', 'cmd', 'command', 'meta'];
-  const modifiers = parts.slice(0, -1);
-  const key = parts[parts.length - 1];
+
+  const parts = hotkey.split('+').map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 1) return '';
+
+  const validModifiers = ['ctrl', 'alt', 'shift', 'meta', 'commandorcontrol', 'cmd', 'command', 'control'];
+  const modifiers = parts.slice(0, -1)
+    .map((mod) => {
+      const m = mod.toLowerCase();
+      if (m === 'cmd' || m === 'command') return 'Meta';
+      if (m === 'control') return 'Ctrl';
+      if (m === 'commandorcontrol') return 'Ctrl';
+      return mod.charAt(0).toUpperCase() + mod.slice(1).toLowerCase();
+    });
+  const keyRaw = parts[parts.length - 1];
+  const key = String(keyRaw || '').trim();
   
   if (!modifiers.every(mod => validModifiers.includes(mod.toLowerCase()))) return '';
   if (!key || key.length === 0) return '';
-  
-  // Normalize to standard format
-  return modifiers.map(mod => mod.charAt(0).toUpperCase() + mod.slice(1).toLowerCase()).join('+') + '+' + key.toUpperCase();
+  if (['ctrl', 'alt', 'shift', 'meta', 'command', 'cmd'].includes(key.toLowerCase())) return '';
+
+  const keyMap = {
+    esc: 'Escape',
+    escape: 'Escape',
+    return: 'Enter',
+    plus: '+',
+    spacebar: 'Space',
+    del: 'Delete',
+    ins: 'Insert',
+    pgup: 'PageUp',
+    pgdn: 'PageDown'
+  };
+  const lowerKey = key.toLowerCase();
+  let normalizedKey = keyMap[lowerKey] || key;
+  if (/^f([1-9]|1[0-9]|2[0-4])$/i.test(normalizedKey)) normalizedKey = normalizedKey.toUpperCase();
+  else if (/^num([0-9])$/i.test(normalizedKey)) normalizedKey = `num${normalizedKey.slice(-1)}`;
+  else if (normalizedKey.length === 1) normalizedKey = normalizedKey.toUpperCase();
+  else normalizedKey = normalizedKey.charAt(0).toUpperCase() + normalizedKey.slice(1);
+
+  const uniqueModifiers = [...new Set(modifiers)];
+  return uniqueModifiers.length > 0 ? `${uniqueModifiers.join('+')}+${normalizedKey}` : normalizedKey;
 }
 
 function normalizeOverlayStyle(value) {
@@ -2363,6 +2452,16 @@ function normalizeOverlayStyle(value) {
 
 function normalizeOverlayShowUnits(value) {
   return String(value || '').trim().toLowerCase() !== 'false';
+}
+
+function normalizeOverlayDragUnlock(value) {
+  return String(value || '').trim().toLowerCase() === 'true';
+}
+
+function normalizeOverlayCoordinate(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return Math.round(numeric);
 }
 
 function formatOverlaySensor(sensor) {
@@ -2434,6 +2533,11 @@ function calculateOverlayHeight(payload, settings) {
 
 function loadOverlaySettings() {
   const widthPreset = normalizeOverlayWidthPreset(localStorage.getItem(OVERLAY_WIDTH_PRESET_KEY));
+  const customX = normalizeOverlayCoordinate(localStorage.getItem(OVERLAY_CUSTOM_X_KEY));
+  const customY = normalizeOverlayCoordinate(localStorage.getItem(OVERLAY_CUSTOM_Y_KEY));
+  const customPositionEnabled = String(localStorage.getItem(OVERLAY_CUSTOM_POSITION_ENABLED_KEY) || '').trim().toLowerCase() === 'true'
+    && customX !== null
+    && customY !== null;
   return {
     enabled: localStorage.getItem(OVERLAY_ENABLED_KEY) === 'true',
     fontSize: normalizeOverlayFontSize(localStorage.getItem(OVERLAY_FONT_SIZE_KEY)),
@@ -2451,7 +2555,11 @@ function loadOverlaySettings() {
     style: normalizeOverlayStyle(localStorage.getItem(OVERLAY_STYLE_KEY)),
     showUnits: normalizeOverlayShowUnits(localStorage.getItem(OVERLAY_SHOW_UNITS_KEY)),
     displayId: localStorage.getItem(OVERLAY_MONITOR_KEY) || '',
-    hotkey: normalizeOverlayHotkey(localStorage.getItem(OVERLAY_HOTKEY_KEY))
+    hotkey: normalizeOverlayHotkey(localStorage.getItem(OVERLAY_HOTKEY_KEY)),
+    dragUnlock: normalizeOverlayDragUnlock(localStorage.getItem(OVERLAY_DRAG_UNLOCK_KEY)),
+    customPositionEnabled,
+    customX,
+    customY
   };
 }
 
@@ -2476,12 +2584,14 @@ function applyOverlaySettings() {
   const textColorInput = document.getElementById('overlayTextColor');
   const valueColorInput = document.getElementById('overlayValueColor');
   const bgColorInput = document.getElementById('overlayBackgroundColor');
-  const overlayFontSizeSelect = document.getElementById('overlayFontSizeSelect');
+  const overlayFontSizeSlider = document.getElementById('overlayFontSizeSlider');
+  const overlayFontSizeValue = document.getElementById('overlayFontSizeValue');
   const overlayFontFamilySelect = document.getElementById('overlayFontFamilySelect');
   const overlayPositionSelect = document.getElementById('overlayPositionSelect');
   const overlayStyleSelect = document.getElementById('overlayStyleSelect');
   const overlayGroupSpacingInput = document.getElementById('overlayGroupSpacing');
   const overlayShowUnitsToggle = document.getElementById('overlayShowUnitsToggle');
+  const overlayDragUnlockToggle = document.getElementById('overlayDragUnlockToggle');
   const overlayWidthSelect = document.getElementById('overlayWidthSelect');
   const overlayWidthInput = document.getElementById('overlayWidthInput');
   const overlayOpacityInput = document.getElementById('overlayOpacity');
@@ -2490,8 +2600,11 @@ function applyOverlaySettings() {
   if (overlayEnabledToggle) {
     overlayEnabledToggle.checked = settings.enabled;
   }
-  if (overlayFontSizeSelect) {
-    overlayFontSizeSelect.value = settings.fontSize;
+  if (overlayFontSizeSlider) {
+    overlayFontSizeSlider.value = String(overlayFontSizeToStep(settings.fontSize));
+  }
+  if (overlayFontSizeValue) {
+    overlayFontSizeValue.textContent = overlayFontSizeLabel(settings.fontSize);
   }
   if (overlayFontFamilySelect) {
     overlayFontFamilySelect.value = settings.fontFamily;
@@ -2520,6 +2633,9 @@ function applyOverlaySettings() {
   if (overlayShowUnitsToggle) {
     overlayShowUnitsToggle.checked = settings.showUnits;
   }
+  if (overlayDragUnlockToggle) {
+    overlayDragUnlockToggle.checked = settings.dragUnlock;
+  }
   if (overlayWidthInput) {
     overlayWidthInput.value = String(settings.width);
     overlayWidthInput.disabled = settings.widthPreset !== 'custom';
@@ -2540,6 +2656,7 @@ function applyOverlaySettings() {
 
   if (settings.enabled && ipcRenderer && ipcRenderer.invoke) {
     ipcRenderer.invoke('overlay:set-enabled', true).catch(() => {});
+    ipcRenderer.invoke('overlay:set-drag-enabled', settings.dragUnlock).catch(() => {});
   }
 }
 
@@ -2583,7 +2700,10 @@ function sendOverlayPayload(payload) {
 
 function refreshOverlayWindowState(enabled) {
   if (!ipcRenderer || typeof ipcRenderer.invoke !== 'function') return;
-  ipcRenderer.invoke('overlay:set-enabled', !!enabled).catch(() => {});
+  ipcRenderer.invoke('overlay:set-enabled', !!enabled).then(() => {
+    const dragUnlock = normalizeOverlayDragUnlock(localStorage.getItem(OVERLAY_DRAG_UNLOCK_KEY));
+    ipcRenderer.invoke('overlay:set-drag-enabled', dragUnlock).catch(() => {});
+  }).catch(() => {});
 }
 
 // NOTE: getOverlaySensorPayload is defined once above and used for overlay sensor payload generation.
@@ -2718,6 +2838,65 @@ function syncCardInteractionState() {
   });
 }
 
+function formatDebugValue(value, digits = 4) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'N/A';
+  return n.toFixed(digits);
+}
+
+function renderDebugPanel(externalData, modeLabel) {
+  const panel = document.getElementById('debugPanel');
+  if (!panel) return;
+
+  const external = externalData && typeof externalData === 'object' ? externalData : {};
+  const frameDebug = external.frameTimeDebug && typeof external.frameTimeDebug === 'object'
+    ? external.frameTimeDebug
+    : {};
+
+  const fps = Number(external.fps);
+  const frameTime = Number(external.frameTime);
+  const normalizedFrameTime = (Number.isFinite(frameTime) && frameTime > 0)
+    ? frameTime
+    : (Number.isFinite(fps) && fps > 0 ? (1000 / fps) : NaN);
+
+  panel.innerHTML = `
+    <div class="debug-grid">
+      <div class="debug-card">
+        <div class="debug-title">Current</div>
+        <div class="debug-row"><span>Mode</span><strong>${escapeHtml(String(modeLabel || 'N/A'))}</strong></div>
+        <div class="debug-row"><span>FPS</span><strong>${Number.isFinite(fps) ? fps.toFixed(2) : 'N/A'}</strong></div>
+        <div class="debug-row"><span>Frame Time (final ms)</span><strong>${Number.isFinite(normalizedFrameTime) ? normalizedFrameTime.toFixed(4) : 'N/A'}</strong></div>
+      </div>
+      <div class="debug-card">
+        <div class="debug-title">Frame Time Sources</div>
+        <div class="debug-row"><span>MAHM</span><strong>${formatDebugValue(frameDebug.mahm)}</strong></div>
+        <div class="debug-row"><span>RTSS Shared</span><strong>${formatDebugValue(frameDebug.rtssShared)}</strong></div>
+        <div class="debug-row"><span>RTSS OSD</span><strong>${formatDebugValue(frameDebug.rtssOsd)}</strong></div>
+        <div class="debug-row"><span>Selected Source</span><strong>${escapeHtml(String(frameDebug.selectedSource || 'none'))}</strong></div>
+      </div>
+    </div>
+  `;
+}
+
+function applyDebugMode(enabled) {
+  debugModeEnabled = !!enabled;
+  document.body.classList.toggle('debug-mode', debugModeEnabled);
+  localStorage.setItem(DEBUG_MODE_KEY, debugModeEnabled ? 'true' : 'false');
+
+  const button = document.getElementById('debugModeBtn');
+  if (button) {
+    button.innerHTML = debugModeEnabled
+      ? '<i class="bi bi-bug-fill" aria-hidden="true"></i><span>Exit Debug</span>'
+      : '<i class="bi bi-bug" aria-hidden="true"></i><span>Debug</span>';
+    button.classList.toggle('active', debugModeEnabled);
+  }
+
+  const panel = document.getElementById('debugPanel');
+  if (panel && debugModeEnabled) {
+    renderDebugPanel(lastDebugExternalData, localStorage.getItem('detectionMode') || 'msi');
+  }
+}
+
 function applySummaryMode(enabled) {
   summaryModeEnabled = !!enabled;
   document.body.classList.toggle('summary-mode', summaryModeEnabled);
@@ -2729,6 +2908,10 @@ function applySummaryMode(enabled) {
       ? '<i class="bi bi-grid-3x3-gap-fill" aria-hidden="true"></i><span>Exit Summary Mode</span>'
       : '<i class="bi bi-grid-1x2-fill" aria-hidden="true"></i><span>Summary Mode</span>';
     button.classList.toggle('active', summaryModeEnabled);
+  }
+
+  if (summaryModeEnabled && debugModeEnabled) {
+    applyDebugMode(false);
   }
 
   if (summaryModeEnabled) {
@@ -3246,6 +3429,7 @@ function renderAllDynamicGroups(selected, options = {}) {
   lastUiRenderAt = now;
   forceNextUiRender = false;
   pendingVisibilityRefresh = false;
+  renderDynamicGroup('fpsSensorsDynamic', selected.fps);
   renderDynamicGroup('cpuSensorsDynamic', selected.cpu);
   renderDynamicGroup('gpuSensorsDynamic', selected.gpu);
   renderDynamicGroup('ramSensorsDynamic', selected.ram);
@@ -4063,6 +4247,7 @@ const SettingsManager = {
 
     // Visibility checkboxes
     const visibilityCheckboxes = {
+      showFps: 'fpsGroup',
       showCpu: 'cpuGroup',
       showGpu: 'gpuGroup',
       showRam: 'ramGroup',
@@ -4073,26 +4258,11 @@ const SettingsManager = {
       showExternal: 'externalGroup'
     };
     
-    // Detection mode dropdown
-    const detectionSelect = document.getElementById('detectionMode');
-    if (detectionSelect) {
-      const savedMode = localStorage.getItem('detectionMode') || 'msi';
-      const normalizedMode = savedMode === 'msi' ? 'msi' : 'msi';
-      detectionSelect.value = 'msi';
-      if (savedMode !== normalizedMode) {
-        localStorage.setItem('detectionMode', normalizedMode);
-      }
-      detectionSelect.addEventListener('change', (e) => {
-        localStorage.setItem('detectionMode', 'msi');
-        if (e.target.value !== 'msi') {
-          e.target.value = 'msi';
-        }
-      });
-    }
+    localStorage.setItem('detectionMode', 'msi');
 
-    const openSetupGuideBtn = document.getElementById('openSetupGuideBtn');
-    if (openSetupGuideBtn) {
-      openSetupGuideBtn.addEventListener('click', () => {
+    const setupGuideHeaderBtn = document.getElementById('setupGuideHeaderBtn');
+    if (setupGuideHeaderBtn) {
+      setupGuideHeaderBtn.addEventListener('click', () => {
         openSetupGuideModal();
       });
     }
@@ -4271,7 +4441,8 @@ const SettingsManager = {
     }
 
     const overlayEnabledToggle = document.getElementById('overlayEnabledToggle');
-    const overlayFontSizeSelect = document.getElementById('overlayFontSizeSelect');
+    const overlayFontSizeSlider = document.getElementById('overlayFontSizeSlider');
+    const overlayFontSizeValue = document.getElementById('overlayFontSizeValue');
     const overlayFontFamilySelect = document.getElementById('overlayFontFamilySelect');
     const overlayPositionSelect = document.getElementById('overlayPositionSelect');
     const overlayStyleSelect = document.getElementById('overlayStyleSelect');
@@ -4283,6 +4454,7 @@ const SettingsManager = {
     const overlayWidthSelect = document.getElementById('overlayWidthSelect');
     const overlayWidthInput = document.getElementById('overlayWidthInput');
     const overlayOpacityInput = document.getElementById('overlayOpacity');
+    const overlayDragUnlockToggle = document.getElementById('overlayDragUnlockToggle');
 
     if (overlayEnabledToggle) {
       overlayEnabledToggle.checked = localStorage.getItem(OVERLAY_ENABLED_KEY) === 'true';
@@ -4294,10 +4466,14 @@ const SettingsManager = {
       });
     }
 
-    if (overlayFontSizeSelect) {
-      overlayFontSizeSelect.value = normalizeOverlayFontSize(localStorage.getItem(OVERLAY_FONT_SIZE_KEY));
-      overlayFontSizeSelect.addEventListener('change', (e) => {
-        saveOverlaySetting(OVERLAY_FONT_SIZE_KEY, normalizeOverlayFontSize(e.target.value));
+    if (overlayFontSizeSlider) {
+      const currentFontSize = normalizeOverlayFontSize(localStorage.getItem(OVERLAY_FONT_SIZE_KEY));
+      overlayFontSizeSlider.value = String(overlayFontSizeToStep(currentFontSize));
+      if (overlayFontSizeValue) overlayFontSizeValue.textContent = overlayFontSizeLabel(currentFontSize);
+      overlayFontSizeSlider.addEventListener('input', (e) => {
+        const nextSize = overlayFontSizeFromStep(e.target.value);
+        if (overlayFontSizeValue) overlayFontSizeValue.textContent = overlayFontSizeLabel(nextSize);
+        saveOverlaySetting(OVERLAY_FONT_SIZE_KEY, nextSize);
         refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
       });
     }
@@ -4362,6 +4538,7 @@ const SettingsManager = {
       overlayPositionSelect.addEventListener('change', (e) => {
         const position = normalizeOverlayPosition(e.target.value);
         saveOverlaySetting(OVERLAY_POSITION_KEY, position);
+        saveOverlaySetting(OVERLAY_CUSTOM_POSITION_ENABLED_KEY, 'false');
         refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
       });
     }
@@ -4404,7 +4581,17 @@ const SettingsManager = {
         refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
       });
     }
-
+    if (overlayDragUnlockToggle) {
+      overlayDragUnlockToggle.checked = normalizeOverlayDragUnlock(localStorage.getItem(OVERLAY_DRAG_UNLOCK_KEY));
+      overlayDragUnlockToggle.addEventListener('change', (e) => {
+        const enabled = !!e.target.checked;
+        saveOverlaySetting(OVERLAY_DRAG_UNLOCK_KEY, enabled ? 'true' : 'false');
+        if (ipcRenderer && typeof ipcRenderer.invoke === 'function') {
+          ipcRenderer.invoke('overlay:set-drag-enabled', enabled).catch(() => {});
+        }
+        refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
+      });
+    }
     if (overlayWidthInput) {
       overlayWidthInput.value = String(normalizeOverlayWidth(localStorage.getItem(OVERLAY_WIDTH_KEY), normalizeOverlayWidthPreset(localStorage.getItem(OVERLAY_WIDTH_PRESET_KEY))));
       overlayWidthInput.addEventListener('input', (e) => {
@@ -4443,7 +4630,11 @@ const SettingsManager = {
 
     const overlayHotkeyInput = document.getElementById('overlayHotkey');
     if (overlayHotkeyInput) {
-      overlayHotkeyInput.value = String(normalizeOverlayHotkey(localStorage.getItem(OVERLAY_HOTKEY_KEY)));
+      const initialHotkey = String(normalizeOverlayHotkey(localStorage.getItem(OVERLAY_HOTKEY_KEY)));
+      overlayHotkeyInput.value = initialHotkey;
+      if (initialHotkey && ipcRenderer && ipcRenderer.invoke) {
+        ipcRenderer.invoke('overlay:update-hotkey', initialHotkey).catch(() => {});
+      }
       
       // Prevent default input behavior and capture key combinations
       overlayHotkeyInput.addEventListener('keydown', (e) => {
@@ -4455,14 +4646,22 @@ const SettingsManager = {
         if (e.shiftKey) modifiers.push('Shift');
         if (e.metaKey) modifiers.push('Meta');
         
-        // Don't allow modifier-only hotkeys
-        if (modifiers.length === 0) return;
+        if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
         
-        // Get the key name
-        let key = e.key;
+        let key = '';
+        if (/^Key[A-Z]$/.test(e.code)) key = e.code.slice(3);
+        else if (/^Digit[0-9]$/.test(e.code)) key = e.code.slice(5);
+        else if (/^Numpad[0-9]$/.test(e.code)) key = `num${e.code.slice(6)}`;
+        else if (/^F([1-9]|1[0-9]|2[0-4])$/.test(e.code)) key = e.code;
+        else if (e.code === 'NumpadAdd') key = 'numadd';
+        else if (e.code === 'NumpadSubtract') key = 'numsub';
+        else if (e.code === 'NumpadMultiply') key = 'nummult';
+        else if (e.code === 'NumpadDivide') key = 'numdiv';
+        else if (e.code === 'NumpadDecimal') key = 'numdec';
+        else if (e.code === 'Space') key = 'Space';
+        else key = e.key;
         if (key === ' ') key = 'Space';
-        else if (key.length === 1) key = key.toUpperCase();
-        
+
         const hotkey = [...modifiers, key].join('+');
         const normalized = normalizeOverlayHotkey(hotkey);
         
@@ -4564,6 +4763,20 @@ const SettingsManager = {
 
       summaryButton.addEventListener('click', () => {
         applySummaryMode(!summaryModeEnabled);
+      });
+    }
+
+    const debugButton = document.getElementById('debugModeBtn');
+    if (debugButton) {
+      const storedDebugMode = localStorage.getItem(DEBUG_MODE_KEY);
+      const savedDebugMode = storedDebugMode === null ? false : storedDebugMode === 'true';
+      applyDebugMode(savedDebugMode);
+
+      debugButton.addEventListener('click', () => {
+        if (!debugModeEnabled && summaryModeEnabled) {
+          applySummaryMode(false);
+        }
+        applyDebugMode(!debugModeEnabled);
       });
     }
 
@@ -4754,6 +4967,25 @@ const SettingsManager = {
         saveOverlaySetting(OVERLAY_ENABLED_KEY, enabled ? 'true' : 'false');
         updateOverlayToggleButton(enabled);
       }
+    });
+
+    ipcRenderer.on('overlay:position-changed', (_event, payload) => {
+      const x = normalizeOverlayCoordinate(payload && payload.x);
+      const y = normalizeOverlayCoordinate(payload && payload.y);
+      if (x === null || y === null) return;
+      saveOverlaySetting(OVERLAY_CUSTOM_X_KEY, String(x));
+      saveOverlaySetting(OVERLAY_CUSTOM_Y_KEY, String(y));
+      saveOverlaySetting(OVERLAY_CUSTOM_POSITION_ENABLED_KEY, 'true');
+    });
+
+    ipcRenderer.on('overlay:hotkey-toggle-request', () => {
+      const overlayEnabledToggle = document.getElementById('overlayEnabledToggle');
+      const currentEnabled = localStorage.getItem(OVERLAY_ENABLED_KEY) === 'true';
+      const newEnabled = !currentEnabled;
+      saveOverlaySetting(OVERLAY_ENABLED_KEY, newEnabled ? 'true' : 'false');
+      if (overlayEnabledToggle) overlayEnabledToggle.checked = newEnabled;
+      updateOverlayToggleButton(newEnabled);
+      refreshOverlayWindowState(newEnabled);
     });
 
     getAppBehaviorSettings().then((settings) => {
@@ -5342,6 +5574,10 @@ async function updateStats(forceRender = false) {
     }
 
     if (!data) {
+      lastDebugExternalData = null;
+      if (debugModeEnabled) {
+        renderDebugPanel(null, mode);
+      }
       const now = Date.now();
       if ((now - lastSuccessfulSensorReadAt) > SENSOR_READ_STALE_HOLD_MS) {
         latestSelectedGroupedSensors = createEmptyGroupedBuckets();
@@ -5354,6 +5590,10 @@ async function updateStats(forceRender = false) {
 
     // External sensor data (MSI Afterburner/RTSS)
     if (data.external && typeof data.external === 'object') {
+      lastDebugExternalData = data.external;
+      if (debugModeEnabled) {
+        renderDebugPanel(data.external, mode);
+      }
       const externalInfo = [];
       const externalFps = Number(data.external.fps);
       const externalFrameTimeRaw = Number(data.external.frameTime);
@@ -5402,6 +5642,10 @@ async function updateStats(forceRender = false) {
       const externalText = externalInfo.length > 0 ? externalInfo.join(' | ') : 'No data';
       publishWebMonitorPayload(mode, externalText);
     } else {
+      lastDebugExternalData = null;
+      if (debugModeEnabled) {
+        renderDebugPanel(null, mode);
+      }
       const now = Date.now();
       if ((now - lastSuccessfulSensorReadAt) > SENSOR_READ_STALE_HOLD_MS) {
         latestSelectedGroupedSensors = createEmptyGroupedBuckets();

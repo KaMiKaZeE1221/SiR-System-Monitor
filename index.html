@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -77,86 +77,100 @@
           <input type="checkbox" id="overlayEnabledToggle">
           <span>Enable Overlay</span>
         </label>
-        <div class="settings-field-grid">
-          <div>
-            <label class="settings-label" for="overlayFontSizeSelect">Font Size</label>
-            <select id="overlayFontSizeSelect" class="detection-select">
-              <option value="small">Small</option>
-              <option value="medium">Medium</option>
-              <option value="large">Large</option>
-              <option value="xlarge">X-Large</option>
-              <option value="xxlarge">XX-Large</option>
-            </select>
-          </div>
-          <div>
-            <label class="settings-label" for="overlayFontFamilySelect">Font</label>
-            <select id="overlayFontFamilySelect" class="detection-select">
-              <option value="segoe">Segoe UI</option>
-              <option value="arial">Arial</option>
-              <option value="verdana">Verdana</option>
-              <option value="tahoma">Tahoma</option>
-              <option value="georgia">Georgia</option>
-              <option value="calibri">Calibri</option>
-              <option value="trebuchet">Trebuchet MS</option>
-              <option value="cambria">Cambria</option>
-              <option value="garamond">Garamond</option>
-              <option value="consolas">Consolas</option>
-              <option value="monospace">Monospace</option>
-            </select>
-          </div>
-        </div>
-        <div class="overlay-checkbox">
-          <input type="checkbox" id="overlayFontBoldToggle">
-          <span>Bold Font</span>
-        </div>
         <div class="settings-group">
           <div class="settings-group-title">Overlay Settings</div>
           <div class="overlay-section">
-            <div class="overlay-settings-grid">
-              <div class="overlay-section-row">
-                <label class="settings-label overlay-field-label" for="overlayPositionSelect">Position</label>
-                <select id="overlayPositionSelect" class="detection-select full-width">
-                  <option value="top-left">Top Left</option>
-                  <option value="top-right">Top Right</option>
-                </select>
+            <div class="overlay-settings-groups">
+              <div class="overlay-settings-cluster">
+                <div class="overlay-cluster-title">Dropdowns</div>
+                <div class="overlay-settings-grid">
+                  <div class="overlay-section-row">
+                    <label class="settings-label overlay-field-label" for="overlayFontFamilySelect">Font Style</label>
+                    <select id="overlayFontFamilySelect" class="detection-select full-width">
+                      <option value="segoe">Segoe UI</option>
+                      <option value="arial">Arial</option>
+                      <option value="verdana">Verdana</option>
+                      <option value="tahoma">Tahoma</option>
+                      <option value="georgia">Georgia</option>
+                      <option value="calibri">Calibri</option>
+                      <option value="trebuchet">Trebuchet MS</option>
+                      <option value="cambria">Cambria</option>
+                      <option value="garamond">Garamond</option>
+                      <option value="consolas">Consolas</option>
+                      <option value="monospace">Monospace</option>
+                    </select>
+                  </div>
+                  <div class="overlay-section-row">
+                    <label class="settings-label overlay-field-label" for="overlayPositionSelect">Position</label>
+                    <select id="overlayPositionSelect" class="detection-select full-width">
+                      <option value="top-left">Top Left</option>
+                      <option value="top-right">Top Right</option>
+                    </select>
+                  </div>
+                  <div class="overlay-section-row">
+                    <label class="settings-label overlay-field-label" for="overlayStyleSelect">Style</label>
+                    <select id="overlayStyleSelect" class="detection-select full-width">
+                      <option value="compact">Compact</option>
+                      <option value="grouped">Grouped</option>
+                      <option value="grouped-line">Grouped line</option>
+                      <option value="category">Category</option>
+                    </select>
+                  </div>
+                  <div class="overlay-section-row">
+                    <label class="settings-label overlay-field-label" for="overlayMonitorSelect">Display</label>
+                    <select id="overlayMonitorSelect" class="detection-select full-width">
+                      <option value="">Loading…</option>
+                    </select>
+                  </div>
+                </div>
               </div>
-              <div class="overlay-section-row">
-                <label class="settings-label overlay-field-label" for="overlayStyleSelect">Style</label>
-                <select id="overlayStyleSelect" class="detection-select full-width">
-                  <option value="compact">Compact</option>
-                  <option value="grouped">Grouped</option>
-                  <option value="grouped-line">Grouped line</option>
-                  <option value="category">Category</option>
-                </select>
+
+              <div class="overlay-settings-cluster">
+                <div class="overlay-cluster-title">Sliders</div>
+                <div class="overlay-settings-grid">
+                  <div class="overlay-section-row">
+                    <label class="settings-label overlay-field-label" for="overlayFontSizeSlider">Font Size <span id="overlayFontSizeValue">Medium</span></label>
+                    <input type="range" id="overlayFontSizeSlider" min="0" max="4" value="1" step="1" class="full-width">
+                  </div>
+                  <div class="overlay-section-row">
+                    <label class="settings-label overlay-field-label" for="overlayGroupSpacing">Group spacing</label>
+                    <input type="range" id="overlayGroupSpacing" min="0" max="32" value="0" step="1" class="full-width">
+                  </div>
+                  <div class="overlay-section-row">
+                    <label class="settings-label overlay-field-label" for="overlayScale">Unit Scale</label>
+                    <input type="range" id="overlayScale" min="50" max="200" value="100" step="5" class="full-width">
+                  </div>
+                  <div class="overlay-section-row">
+                    <label class="settings-label overlay-field-label" for="overlayOpacity">Background opacity</label>
+                    <input type="range" id="overlayOpacity" min="0" max="100" value="70" step="1" class="full-width">
+                  </div>
+                </div>
               </div>
-              <div class="overlay-section-row">
-                <label class="settings-label overlay-field-label" for="overlayGroupSpacing">Group spacing</label>
-                <input type="range" id="overlayGroupSpacing" min="0" max="32" value="0" step="1" class="full-width">
-              </div>
-              <div class="overlay-section-row">
-                <label class="settings-label overlay-field-label" for="overlayScale">Unit Scale</label>
-                <input type="range" id="overlayScale" min="50" max="200" value="100" step="5" class="full-width">
-              </div>
-              <div class="overlay-section-row">
-                <label class="settings-label overlay-field-label" for="overlayHotkey">Toggle Hotkey (WIP)</label>
-                <input type="text" id="overlayHotkey" placeholder="Ctrl+Shift+O" title="Format: Modifier+Key (e.g., Ctrl+Shift+O, Alt+F12)" class="detection-select full-width">
-              </div>
-              <div class="overlay-section-row">
-                <label class="settings-label overlay-field-label" for="overlayMonitorSelect">Display</label>
-                <select id="overlayMonitorSelect" class="detection-select full-width">
-                  <option value="">Loading…</option>
-                </select>
-              </div>
-              <div class="overlay-section-row">
-                <label class="settings-label overlay-field-label" for="overlayOpacity">Background opacity</label>
-                <input type="range" id="overlayOpacity" min="0" max="100" value="70" step="1" class="full-width">
-              </div>
-              <div class="overlay-checkbox-row settings-checkbox-row">
-                <input type="checkbox" id="overlayShowUnitsToggle">
-                <span>Show units</span>
+
+              <div class="overlay-settings-cluster">
+                <div class="overlay-cluster-title">Other</div>
+                <div class="overlay-settings-grid overlay-settings-grid-other">
+                  <div class="overlay-section-row">
+                    <label class="settings-label overlay-field-label" for="overlayHotkey">Toggle Hotkey</label>
+                    <input type="text" id="overlayHotkey" placeholder="Ctrl+Shift+O" title="Format: Modifier+Key (e.g., Ctrl+Shift+O, Alt+F12)" class="detection-select full-width">
+                  </div>
+                  <div class="overlay-other-toggles">
+                    <label class="overlay-other-toggle" for="overlayFontBoldToggle">
+                      <input type="checkbox" id="overlayFontBoldToggle">
+                      <span>Bold font</span>
+                    </label>
+                    <label class="overlay-other-toggle" for="overlayShowUnitsToggle">
+                      <input type="checkbox" id="overlayShowUnitsToggle">
+                      <span>Show units</span>
+                    </label>
+                    <label class="overlay-other-toggle" for="overlayDragUnlockToggle">
+                      <input type="checkbox" id="overlayDragUnlockToggle">
+                      <span>Unlock drag</span>
+                    </label>
+                  </div>
+                </div>
               </div>
             </div>
-
             <div class="overlay-colors-grid">
               <label class="color-picker-row">
                 <span>Text Color</span>
@@ -180,8 +194,8 @@
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-thermometer-half settings-label-icon" aria-hidden="true"></i><span>Temperature Unit</span></label>
         <select id="temperatureUnitSelect" class="detection-select">
-          <option value="c">Celsius (°C)</option>
-          <option value="f">Fahrenheit (°F)</option>
+          <option value="c">Celsius (Â°C)</option>
+          <option value="f">Fahrenheit (Â°F)</option>
         </select>
       </div>
 
@@ -251,6 +265,10 @@
         <label class="settings-label"><i class="bi bi-eye-fill settings-label-icon" aria-hidden="true"></i><span>Visible Sensors</span></label>
         <div class="visibility-options">
           <label class="checkbox-label">
+            <input type="checkbox" id="showFps" checked>
+            <span>FPS</span>
+          </label>
+          <label class="checkbox-label">
             <input type="checkbox" id="showCpu" checked>
             <span>CPU</span>
           </label>
@@ -313,18 +331,8 @@
       <div class="settings-group-title">Data Sources</div>
 
       <div class="settings-section">
-        <label class="settings-label"><i class="bi bi-cpu settings-label-icon" aria-hidden="true"></i><span>Detection Mode</span></label>
-        <select id="detectionMode" class="detection-select">
-          <option value="msi">Shared Memory Mode</option>
-        </select>
-        <div class="settings-note">Uses RTSS/AIDA/HWiNFO shared memory providers.</div>
-        <div class="web-monitor-actions settings-inline-gap-sm">
-          <button id="openSetupGuideBtn" class="test-btn" type="button">View Setup Guide</button>
-        </div>
-      </div>
-
-      <div class="settings-section">
         <label class="settings-label"><i class="bi bi-hdd-stack-fill settings-label-icon" aria-hidden="true"></i><span>Shared Memory Sources</span></label>
+        <div class="settings-note">SiR uses Shared Memory mode with RTSS/AIDA64/HWiNFO/LHM providers.</div>
         <div class="visibility-options">
           <label class="checkbox-label">
             <input type="checkbox" id="providerRTSS" checked>
@@ -441,6 +449,7 @@
           <i class="bi bi-display" aria-hidden="true"></i>
           <span class="overlay-toggle-text">Overlay: Off</span>
         </button>
+        <button id="setupGuideHeaderBtn" class="header-control-btn monitoring-mode-btn icon-only" title="Open Setup Guide"><i class="bi bi-book" aria-hidden="true"></i></button>
         <button id="monitoringModeBtn" class="header-control-btn monitoring-mode-btn icon-only" title="Open Settings"><i class="bi bi-gear" aria-hidden="true"></i></button>
         <!-- Low Overhead Mode removed -->
         <div class="status-indicator" id="liveStatusIndicator">
@@ -451,6 +460,12 @@
     </div>
 
     <div class="stats-container" id="statsContainer">
+      <!-- FPS Group -->
+      <div class="sensor-group" id="fpsGroup">
+        <div class="sensor-group-title"><i class="bi bi-graph-up group-icon" aria-hidden="true"></i><span>FPS</span></div>
+        <div id="fpsSensorsDynamic" class="sensor-scroll"></div>
+      </div>
+
       <!-- CPU Group -->
       <div class="sensor-group" id="cpuGroup">
         <div class="sensor-group-title"><i class="bi bi-cpu-fill group-icon" aria-hidden="true"></i><span>CPU</span></div>
@@ -505,7 +520,7 @@
     <div class="setup-guide-dialog" role="document">
       <div class="setup-guide-header">
         <h2 id="setupGuideTitle">Setup Guide</h2>
-        <button type="button" class="setup-guide-close" data-close-setup-guide aria-label="Close setup guide">×</button>
+        <button type="button" class="setup-guide-close" data-close-setup-guide aria-label="Close setup guide">&times;</button>
       </div>
       <div class="setup-guide-body">
         <label class="checkbox-label setup-guide-checkbox">
@@ -514,42 +529,61 @@
         </label>
 
         <div class="setup-guide-highlight">
-          <strong>Quick summary:</strong> RTSS is mainly used for <strong>FPS</strong> and <strong>Frame Time</strong>. Most hardware sensors should come from <strong>AIDA64 shared memory</strong>.
+          <strong>Quick start:</strong> enable the provider(s) you use, pick visible groups, then fine-tune with Sensor Selection and Overlay Settings.
         </div>
 
         <section class="setup-guide-section">
-          <h3>1) AIDA64 setup (required)</h3>
+          <h3>1) Choose your sensor provider(s)</h3>
           <ul>
-            <li>Open AIDA64 and go to <strong>File → Preferences → External Applications</strong>.</li>
-            <li>Enable <strong>Shared Memory</strong>.</li>
-            <li>Select the sensor items you want exported/detected by this app.</li>
-            <li>Keep AIDA64 running while this monitor app is open.</li>
+            <li>SiR reads sensors from shared memory providers: <strong>RTSS/MSI</strong>, <strong>AIDA64</strong>, and <strong>HWiNFO/LHM</strong>.</li>
+            <li>In <strong>Settings → Data Sources → Shared Memory Sources</strong>, keep only the providers you actually use enabled.</li>
+            <li>Provider apps must be running while SiR is open.</li>
           </ul>
         </section>
 
         <section class="setup-guide-section">
-          <h3>2) RTSS / MSI Afterburner (optional)</h3>
+          <h3>2) Provider setup details</h3>
           <ul>
-            <li>Use RTSS primarily for <strong>FPS</strong> and <strong>Frame Time</strong>.</li>
-            <li>If FPS/Frame Time are missing, confirm RTSS is running and shared memory/OSD is enabled.</li>
+            <li><strong>AIDA64:</strong> File → Preferences → External Applications → enable <strong>Shared Memory</strong>.</li>
+            <li><strong>HWiNFO/LHM:</strong> enable shared-memory sensor output in their settings.</li>
+            <li><strong>RTSS/MSI:</strong> best for live <strong>FPS</strong> and <strong>Frame Time</strong> telemetry.</li>
           </ul>
         </section>
 
         <section class="setup-guide-section">
-          <h3>3) In this app</h3>
+          <h3>3) Build your layout in SiR</h3>
           <ul>
-            <li>Leave Detection Mode on <strong>Shared Memory Mode</strong>.</li>
-            <li>In <strong>Shared Memory Sources</strong>, enable AIDA64 (and any other provider you use).</li>
-            <li>Use <strong>Sensor Selection</strong> to show/hide and reorder sensors.</li>
+            <li>Use <strong>Visible Sensors</strong> to show/hide whole groups (FPS, CPU, GPU, Memory, PSU, Fans, Network, Drives, Other).</li>
+            <li>Use <strong>Sensor Selection</strong> for per-sensor visibility, overlay inclusion, and drag-to-reorder.</li>
+            <li>Use <strong>Summary Mode</strong> for a compact overall snapshot.</li>
           </ul>
         </section>
 
         <section class="setup-guide-section">
-          <h3>4) If sensors are missing</h3>
+          <h3>4) Overlay setup</h3>
           <ul>
-            <li>Re-check that AIDA64 Shared Memory is enabled.</li>
-            <li>Confirm the exact sensors are selected in AIDA64 for external export.</li>
-            <li>Verify the corresponding source toggle is enabled in this app.</li>
+            <li>Enable overlay in <strong>Appearance → On-Screen Overlay</strong>.</li>
+            <li>Configure style, position, monitor, font size slider, spacing, unit scale, colors, and background opacity.</li>
+            <li>Set a global <strong>Toggle Hotkey</strong> to quickly show/hide overlay in game or desktop use.</li>
+          </ul>
+        </section>
+
+        <section class="setup-guide-section">
+          <h3>5) Web Monitor and sharing</h3>
+          <ul>
+            <li>Enable <strong>Web Monitor</strong> in Connectivity, then apply host/port settings.</li>
+            <li>Use <strong>127.0.0.1</strong> for local-only access. Use <strong>0.0.0.0</strong> to listen on all interfaces (LAN), and note this can also allow WAN/public access if firewall rules, router port forwarding, or cloud/public networking expose the port.</li>
+            <li>Open the provided URL from another device on the same network if LAN sharing is enabled.</li>
+          </ul>
+        </section>
+
+        <section class="setup-guide-section">
+          <h3>6) If sensors are missing, stale, or frozen</h3>
+          <ul>
+            <li>Confirm the right provider toggle is enabled in SiR.</li>
+            <li>Re-check provider shared-memory options and restart the provider app.</li>
+            <li>For FPS/Frame Time issues, verify RTSS/MSI is running and actively updating.</li>
+            <li>If needed, restart SiR after provider configuration changes.</li>
           </ul>
         </section>
       </div>
@@ -563,7 +597,7 @@
     <div class="setup-guide-dialog" role="document">
       <div class="setup-guide-header">
         <h2 id="updateAvailableTitle">Update Available</h2>
-        <button type="button" class="setup-guide-close" id="closeUpdateModalBtn" aria-label="Close update dialog">×</button>
+        <button type="button" class="setup-guide-close" id="closeUpdateModalBtn" aria-label="Close update dialog">&times;</button>
       </div>
       <div class="setup-guide-body">
         <div id="updateModalMessage" class="setup-guide-highlight">A new app update is available.</div>
@@ -582,7 +616,7 @@
     <div class="setup-guide-dialog" role="document">
       <div class="setup-guide-header">
         <h2 id="importSettingsTitle">Import Settings</h2>
-        <button type="button" class="setup-guide-close" aria-label="Close import dialog">×</button>
+        <button type="button" class="setup-guide-close" aria-label="Close import dialog">&times;</button>
       </div>
       <div class="setup-guide-body import-body">
         <!-- populated dynamically -->
@@ -598,3 +632,4 @@
   <script src="app.js"></script>
 </body>
 </html>
+

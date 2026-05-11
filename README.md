@@ -68,7 +68,7 @@ Settings are grouped in the sidebar:
   - Color theme
   - Style preset
   - Font size/family and text options
-  - Temperature unit selector (ï¿½C / ï¿½F)
+  - Temperature unit selector (°C / °F)
   - Custom colors (font, sensor names, sensor values, icon, graph, sensor block headers, outline, background)
   - Reset to theme defaults
   - On-Screen Overlay settings

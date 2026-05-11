@@ -1,19 +1,22 @@
 # Changelog
 
-## 1.2.1a - 2026-05-11
+> Note: Entries for older builds are estimated from development history and may not map 1:1 to exact historic commit dates.
+
+## 1.2.2 - 2026-05-11
 
 ### Added
-- Added overlay position unlock mode (`Unlock overlay position`) so the overlay can be dragged and repositioned.
+- Added overlay position unlock mode (`Unlock overlay position`) so the overlay can be temporarily dragged and repositioned.
 - Added persisted custom overlay coordinates so dragged overlay position is restored.
 
 ### Changed
 - Reorganized the Overlay Settings `Other` section into a cleaner layout (hotkey row + compact toggle cards).
+- Restored and expanded README structure with full Table of Contents and current feature documentation.
 - Updated setup/network guidance to clarify `0.0.0.0` can allow WAN/public exposure depending on firewall/router/public networking.
 
 ### Fixed
 - Fixed setup/update/import modal close glyph rendering to display a proper `×` instead of mojibake.
 - Fixed overlay grouped-line vertical text alignment so value text better matches label baseline.
-- Fixed packaging scope by excluding `V1.2.1/**` from build inputs to prevent prior release artifacts being bundled.
+
 
 ## 1.2.1 - 2026-05-11
 
@@ -46,6 +49,10 @@
 - Fixed installer build failure caused by invalid `beforePack` hook wiring.
 - Fixed installer detail panel scripting pipeline so NSIS detail output hooks are correctly injected during packaging.
 - Fixed overlay sensor row alignment when `Font Size` and `Unit Scale` differ, so names and values stay visually aligned.
+
+### Removed
+- Removed debug toggle/button and debug panel from the main UI.
+- Removed AFMF compatibility toggle from overlay settings after review.
 
 ## 1.2.0 - 2026-05-7
 
@@ -88,11 +95,15 @@
 - Reworked style selection from a text-based cycle action into direct buttons for `Classic`, `Neon`, `Minimal`, and `Terminal`.
 - Improved dropdown/select styling to better match the app theme and remain readable against the dark UI.
 - Adjusted Sensor Selection category layout to a single-column flow to avoid overlap issues while expanding groups.
-- Adjusted Discord re-connect and activity interval down to 5 seconds from 15 seconds, this should help it re-register in the event of a disconnect or toggle.
+- Adjusted Discord recoonect and activity interval down to 5 seconds from 15 seconds, this should help it re-register in the event of a disconnect or toggle.
 
 ### Removed
-- Removed the `Glass` theme and its related code paths as it caused performance issues.
+- Removed the `Glass` theme and its related code paths.
 - Removed the temporary settings overview strip from the redesigned sidebar after review.
+
+### Packaging
+- Built Windows release artifacts for `1.1.9` under `V1.1.9` (NSIS installer, portable executable, blockmap, and `latest.yml`).
+
 
 
 ## 1.1.8 - 2026-04-04

@@ -50,6 +50,7 @@ class RTSSReader {
       this.aidaReadRetryDelayMs = 15;
       this.lastAidaSnapshot = null;
       this.lastAidaSnapshotAt = 0;
+      this.lastRtssAppTimes = new Map();
     } catch (e) {
       this.initialized = false;
     }
@@ -973,7 +974,11 @@ class RTSSReader {
 
       if (!texts.length) return null;
 
-      const preferred = texts.find((entry) => entry.owner && entry.owner.toLowerCase().includes('overlayeditor')) || texts[0];
+      const preferred = (
+        texts.find((entry) => /\b(?:frame\s*time|frametime|framerate|fps)\b/i.test(String(entry.text || ''))) ||
+        texts.find((entry) => entry.owner && entry.owner.toLowerCase().includes('overlayeditor')) ||
+        texts[0]
+      );
       const parsed = this.parseSensorTextFromOSD(preferred.text);
       const osdLineEntries = this.extractOSDLineEntries(preferred.text);
       const osdCatalog = this.buildCatalogFromOSDLines(osdLineEntries);
@@ -1150,6 +1155,21 @@ class RTSSReader {
             break;
         }
 
+        // Fallback matching for localized or custom source IDs/names that still carry FPS/frame time.
+        if (result.fps <= 0 && (lowerName.includes('fps') || lowerName.includes('framerate') || lowerUnits === 'fps')) {
+          result.fps = value;
+        }
+        if (
+          result.frameTime <= 0 && (
+            lowerName.includes('frametime') ||
+            lowerName.includes('frame time') ||
+            lowerName.includes('frame-time') ||
+            lowerUnits === 'ms'
+          )
+        ) {
+          result.frameTime = value;
+        }
+
         if ((result.psuTemp === null) && lowerName.includes('psu') && lowerName.includes('temp')) {
           result.psuTemp = value;
         }
@@ -1168,19 +1188,18 @@ class RTSSReader {
     if (!this.initialized) return null;
 
     try {
-      let tempBuf = this.copySharedMemory('RTSSSharedMemoryV2', 4096);
-      if (!tempBuf) {
-        tempBuf = this.copySharedMemory('RTSSSharedMemory', 4096);
-      }
-      if (!tempBuf) {
-        return null;
-      }
+      const mappingName = this.copySharedMemory('RTSSSharedMemoryV2', 4096) ? 'RTSSSharedMemoryV2' : 'RTSSSharedMemory';
+      const header = this.readRTSSHeader(mappingName);
+      if (!header) return null;
 
-      const dv = new DataView(tempBuf.buffer, tempBuf.byteOffset, 4096);
-      const version = dv.getUint32(4, true);
-      const time0 = dv.getUint32(8, true);
-      const time1 = dv.getUint32(12, true);
-      const frames = dv.getUint32(16, true);
+      const appArrEnd = header.dwAppArrOffset + (header.dwAppArrSize * header.dwAppEntrySize);
+      const minSize = Math.max(4096, appArrEnd);
+      const safeSize = Math.min(Math.max(minSize, 4096), 4 * 1024 * 1024);
+      const tempBuf = this.copySharedMemory(mappingName, safeSize);
+      if (!tempBuf) return null;
+
+      const dv = new DataView(tempBuf.buffer, tempBuf.byteOffset, tempBuf.length);
+      const version = header.version;
 
       const data = {
         fps: 0,
@@ -1189,12 +1208,96 @@ class RTSSReader {
         rtssVersion: version
       };
 
-      if (frames > 0 && time1 > time0) {
-        const timeDiffMs = (time1 - time0) / 1000;
-        if (timeDiffMs > 0) {
-          data.fps = Math.round((frames * 1000) / timeDiffMs);
-          data.frameTime = timeDiffMs / frames;
+      if (!header.dwAppEntrySize || !header.dwAppArrSize) {
+        return data;
+      }
+
+      // RTSS app entry layout (SDK):
+      // DWORD pid @ +0
+      // CHAR  name[MAX_PATH] @ +4
+      // DWORD flags @ +(4 + MAX_PATH)
+      // DWORD time0 @ +(4 + MAX_PATH + 4)
+      // DWORD time1 @ +(4 + MAX_PATH + 8)
+      // DWORD frames @ +(4 + MAX_PATH + 12)
+      // DWORD frameTimeUs @ +(4 + MAX_PATH + 16)
+      const maxPath = 260;
+      const time0Offset = 4 + maxPath + 4;
+      const time1Offset = 4 + maxPath + 8;
+      const framesOffset = 4 + maxPath + 12;
+      const frameTimeOffset = 4 + maxPath + 16;
+
+      const candidates = [];
+
+      for (let i = 0; i < header.dwAppArrSize; i++) {
+        const base = header.dwAppArrOffset + (i * header.dwAppEntrySize);
+        if (base + frameTimeOffset + 4 > tempBuf.length) break;
+
+        const pid = dv.getUint32(base + 0, true);
+        const appName = this.readCString(tempBuf, base + 4, maxPath);
+        const time0 = dv.getUint32(base + time0Offset, true);
+        const time1 = dv.getUint32(base + time1Offset, true);
+        const frames = dv.getUint32(base + framesOffset, true);
+        const frameTimeUs = dv.getUint32(base + frameTimeOffset, true);
+
+        let fps = 0;
+        let frameTimeMs = 0;
+
+        if (frameTimeUs > 0 && Number.isFinite(frameTimeUs)) {
+          frameTimeMs = frameTimeUs / 1000;
+          fps = frameTimeMs > 0 ? (1000 / frameTimeMs) : 0;
+        } else if (frames > 0 && time1 > time0) {
+          const timeDiffMs = time1 - time0;
+          if (timeDiffMs > 0) {
+            fps = (frames * 1000) / timeDiffMs;
+            frameTimeMs = timeDiffMs / frames;
+          }
         }
+
+        if (fps <= 0 && frameTimeMs <= 0) continue;
+
+        const candidate = {
+          key: `${pid}:${appName || ''}`,
+          time1,
+          fps,
+          frameTime: frameTimeMs,
+          pid,
+          appName
+        };
+        candidates.push(candidate);
+      }
+
+      let best = null;
+      for (const candidate of candidates) {
+        const prevTime1 = this.lastRtssAppTimes.get(candidate.key) || 0;
+        const delta = candidate.time1 > prevTime1 ? (candidate.time1 - prevTime1) : 0;
+        candidate.deltaTime1 = delta;
+      }
+
+      const activelyUpdating = candidates.filter((entry) => entry.deltaTime1 > 0);
+      if (activelyUpdating.length > 0) {
+        best = activelyUpdating.reduce((acc, cur) => {
+          if (!acc) return cur;
+          if (cur.deltaTime1 !== acc.deltaTime1) return cur.deltaTime1 > acc.deltaTime1 ? cur : acc;
+          return cur.time1 > acc.time1 ? cur : acc;
+        }, null);
+      } else if (candidates.length > 0) {
+        best = candidates.reduce((acc, cur) => {
+          if (!acc) return cur;
+          if (cur.time1 !== acc.time1) return cur.time1 > acc.time1 ? cur : acc;
+          return cur.fps > acc.fps ? cur : acc;
+        }, null);
+      }
+
+      for (const candidate of candidates) {
+        this.lastRtssAppTimes.set(candidate.key, candidate.time1);
+      }
+      if (this.lastRtssAppTimes.size > 512) {
+        this.lastRtssAppTimes.clear();
+      }
+
+      if (best) {
+        data.fps = best.fps;
+        data.frameTime = best.frameTime;
       }
 
       return data;
@@ -1217,12 +1320,13 @@ class RTSSReader {
       const useHWiNFO = providers.hwinfo !== false;
 
       const rtssData = useRTSS ? this.readRTSSSharedMemory() : null;
+      const rtssOsdData = useRTSS ? this.readRTSSOSDData() : null;
       const mahmData = useRTSS ? this.readMAHMSharedMemory() : null;
       const aidaData = useAIDA64 ? this.readAIDA64SharedMemory() : null;
       const hwinfoData = useHWiNFO ? this.readHWiNFOSharedMemory() : null;
       const lhmData = useHWiNFO ? this.readLHMSharedMemory() : null;
 
-      if (!rtssData && !mahmData && !aidaData && !hwinfoData && !lhmData) return null;
+      if (!rtssData && !rtssOsdData && !mahmData && !aidaData && !hwinfoData && !lhmData) return null;
 
       const firstAvailable = (...vals) => {
         for (const v of vals) {
@@ -1264,21 +1368,47 @@ class RTSSReader {
 
         const mergedFallbackCatalog = providerCatalog;
         const mergedFallbackAvailable = this.flattenGroupedCatalog(mergedFallbackCatalog);
-        const mergedFps = firstAvailable(mahmData && mahmData.fps > 0 ? mahmData.fps : null, rtssData ? rtssData.fps : 0) || 0;
-        let rawMergedFrameTime = firstAvailable(rtssData && rtssData.frameTime > 0 ? rtssData.frameTime : null, mahmData && mahmData.frameTime > 0 ? mahmData.frameTime : null) || 0;
-        
-        // If MAHM frameTime is very small (likely in microseconds), convert to milliseconds
-        if (rawMergedFrameTime > 0 && rawMergedFrameTime < 1 && mahmData && mahmData.frameTime > 0) {
-          rawMergedFrameTime = mahmData.frameTime / 1000;
+        const mergedFps = firstAvailable(
+          mahmData && mahmData.fps > 0 ? mahmData.fps : null,
+          rtssData && rtssData.fps > 0 ? rtssData.fps : null,
+          rtssOsdData && rtssOsdData.fps > 0 ? rtssOsdData.fps : null,
+          0
+        ) || 0;
+
+        // Frame-time preference:
+        // 1) MAHM (true frametime sensor when available)
+        // 2) RTSS OSD-parsed frametime
+        // 3) Fallback to 1000/FPS
+        //
+        // Intentionally do not trust RTSS shared-memory frametime here because
+        // it may present as a long-window average that appears "frozen".
+        const frameTimeCandidate = firstAvailable(
+          mahmData && mahmData.frameTime > 0 ? { value: mahmData.frameTime, source: 'mahm' } : null,
+          rtssOsdData && rtssOsdData.frameTime > 0 ? { value: rtssOsdData.frameTime, source: 'rtss-osd' } : null
+        );
+        let rawMergedFrameTime = frameTimeCandidate ? frameTimeCandidate.value : 0;
+
+        // Normalize likely unit mismatches into milliseconds.
+        // MAHM can occasionally be exposed in microseconds.
+        if (rawMergedFrameTime > 1000 && frameTimeCandidate && frameTimeCandidate.source === 'mahm') {
+          rawMergedFrameTime /= 1000;
         }
-        
-        const mergedFrameTime = (rawMergedFrameTime > 0)
-          ? rawMergedFrameTime
-          : (mergedFps > 0 ? (1000 / mergedFps) : 0);
+
+        // Use FPS-derived frame time as the primary exported value when FPS is live.
+        // Some provider frametime sensors can latch/freeze; FPS has proven reliable.
+        const mergedFrameTime = (mergedFps > 0)
+          ? (1000 / mergedFps)
+          : (rawMergedFrameTime > 0 ? rawMergedFrameTime : 0);
 
       return {
           fps: mergedFps,
           frameTime: mergedFrameTime,
+        frameTimeDebug: {
+          mahm: mahmData ? mahmData.frameTime : null,
+          rtssShared: rtssData ? rtssData.frameTime : null,
+          rtssOsd: rtssOsdData ? rtssOsdData.frameTime : null,
+          selectedSource: mergedFps > 0 ? 'fps-derived' : (frameTimeCandidate ? frameTimeCandidate.source : null)
+        },
         cpuTemp: firstAvailable(mahmData ? mahmData.cpuTemp : null, aidaData ? aidaData.cpuTemp : null, hwinfoData ? hwinfoData.cpuTemp : null, lhmData ? lhmData.cpuTemp : null),
         cpuLoad: firstAvailable(mahmData ? mahmData.cpuLoad : null, aidaData ? aidaData.cpuLoad : null, hwinfoData ? hwinfoData.cpuLoad : null, lhmData ? lhmData.cpuLoad : null),
         cpuPower: firstAvailable(mahmData ? mahmData.cpuPower : null, aidaData ? aidaData.cpuPower : null, hwinfoData ? hwinfoData.cpuPower : null, lhmData ? lhmData.cpuPower : null),

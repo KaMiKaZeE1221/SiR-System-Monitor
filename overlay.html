@@ -11,10 +11,12 @@
       --overlay-value: #ffffff;
       --overlay-font: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       --overlay-weight: 500;
-      --overlay-radius: 10px;
-      --overlay-padding: 12px;
+      --overlay-radius: 14px;
+      --overlay-padding: 10px;
       --overlay-gap: 10px;
       --overlay-border: rgba(255,255,255,0.12);
+      --overlay-surface-alpha: 0.06;
+      --overlay-surface-border-alpha: 0.12;
       --overlay-opacity: 0.7;
       --overlay-blur: 18px;
       --overlay-header-height: 28px;
@@ -48,9 +50,10 @@
       min-width: 280px;
       font-family: var(--overlay-font);
       font-weight: var(--overlay-weight);
+      border-radius: var(--overlay-radius);
     }
     .overlay-content {
-      padding: 12px;
+      padding: var(--overlay-padding);
       background: var(--overlay-bg);
       display: grid;
       gap: var(--overlay-gap);
@@ -58,6 +61,13 @@
       overflow-x: visible;
       width: fit-content;
       max-width: none;
+      border-radius: var(--overlay-radius);
+      border: 1px solid var(--overlay-border);
+    }
+    .overlay-shell.overlay-transparent-bg .overlay-content {
+      background: transparent !important;
+      border-color: transparent !important;
+      box-shadow: none !important;
     }
     .overlay-style-horizontal .overlay-content {
       display: flex;
@@ -67,13 +77,13 @@
     }
     .overlay-style-grouped-line .overlay-content {
       background: var(--overlay-bg);
-      padding: 14px;
+      padding: 8px 10px 10px;
     }
     .overlay-item {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: center;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      column-gap: 12px;
+      align-items: baseline;
       font-size: calc(13px * var(--overlay-font-scale));
       line-height: 1.2;
       color: var(--overlay-text);
@@ -85,15 +95,15 @@
     .overlay-item-card {
       padding: 10px 12px;
       border-radius: 12px;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,var(--overlay-surface-alpha));
+      border: 1px solid rgba(255,255,255,var(--overlay-surface-border-alpha));
       box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
     }
     .overlay-style-category .overlay-item {
       padding: 10px 12px;
       border-radius: 12px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,calc(var(--overlay-surface-alpha) * 0.66));
+      border: 1px solid rgba(255,255,255,calc(var(--overlay-surface-border-alpha) * 0.66));
       margin-bottom: 6px;
     }
     .overlay-style-category .overlay-item:last-child {
@@ -103,12 +113,12 @@
       flex: 0 1 160px;
       min-width: 160px;
       padding: 10px 12px;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(255,255,255,calc(var(--overlay-surface-alpha) * 0.83));
+      border: 1px solid rgba(255,255,255,calc(var(--overlay-surface-border-alpha) * 0.83));
       border-radius: 12px;
     }
     .overlay-style-horizontal .overlay-item-card {
-      background: rgba(255,255,255,0.08);
+      background: rgba(255,255,255,calc(var(--overlay-surface-alpha) * 1.2));
     }
     .overlay-group {
       display: grid;
@@ -118,9 +128,9 @@
       display: flex;
       flex-wrap: nowrap;
       gap: var(--overlay-gap);
-      align-items: center;
+      align-items: baseline;
       font-size: calc(12px * var(--overlay-font-scale));
-      padding: 4px 0;
+      padding: 0;
       min-height: 24px;
       overflow: visible;
       white-space: nowrap;
@@ -138,7 +148,8 @@
     .overlay-group-values {
       display: flex;
       flex-wrap: nowrap;
-      gap: max(4px, calc(var(--overlay-gap) * 0.6));
+      align-items: baseline;
+      gap: max(4px, calc(var(--overlay-gap) * 0.35));
       color: var(--overlay-value);
       opacity: 0.95;
       line-height: 1.3;
@@ -146,6 +157,10 @@
       width: auto;
       max-width: none;
       font-family: var(--overlay-font);
+    }
+    .overlay-group-line-sep {
+      opacity: 0.6;
+      margin: 0 2px;
     }
     .overlay-group-line-item {
       white-space: nowrap;
@@ -158,8 +173,8 @@
     .overlay-group-category {
       padding: 10px;
       border-radius: 16px;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(255,255,255,calc(var(--overlay-surface-alpha) * 0.83));
+      border: 1px solid rgba(255,255,255,calc(var(--overlay-surface-border-alpha) * 0.83));
     }
     .overlay-group-box {
       padding: 8px 0;
@@ -180,6 +195,8 @@
     }
     .overlay-value {
       flex: 0 0 auto;
+      justify-self: end;
+      align-self: baseline;
       font-weight: 700;
       text-align: right;
       white-space: nowrap;

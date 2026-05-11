@@ -585,6 +585,29 @@ function createWindow() {
 }
 
 let overlayWindow = null;
+let overlayHotkeySetting = '';
+let overlayDragUnlockEnabled = false;
+let overlayDragSession = null;
+const OVERLAY_DRAG_SNAP_PX = 8;
+
+function applyOverlayCompatibility() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+  if (typeof overlayWindow.setVisibleOnAllWorkspaces === 'function') {
+    overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
+}
+
+function applyOverlayInteractionMode() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  try {
+    overlayWindow.setIgnoreMouseEvents(!overlayDragUnlockEnabled, { forward: true });
+  } catch (_error) {
+    try {
+      overlayWindow.setIgnoreMouseEvents(!overlayDragUnlockEnabled);
+    } catch (_ignored) {}
+  }
+}
 
 function createOverlayWindow() {
   if (overlayWindow && !overlayWindow.isDestroyed()) {
@@ -600,7 +623,7 @@ function createOverlayWindow() {
     skipTaskbar: true,
     resizable: false,
     movable: false,
-    focusable: true,
+    focusable: false,
     hasShadow: false,
     autoHideMenuBar: true,
     webPreferences: {
@@ -612,7 +635,7 @@ function createOverlayWindow() {
 
   overlayWindow.loadFile('overlay.html');
   overlayWindow.setMenuBarVisibility(false);
-  overlayWindow.setIgnoreMouseEvents(true);
+  applyOverlayInteractionMode();
   overlayWindow.setAlwaysOnTop(true, 'screen-saver');
   if (typeof overlayWindow.setVisibleOnAllWorkspaces === 'function') {
     overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -648,25 +671,25 @@ function destroyOverlayWindow() {
 ipcMain.handle('overlay:set-enabled', (_event, enabled) => {
   if (enabled) {
     createOverlayWindow();
-    // Register hotkey when overlay is enabled
-    const hotkey = localStorage.getItem('overlayHotkey');
-    if (hotkey) {
-      registerOverlayHotkey(hotkey);
-    }
+    applyOverlayInteractionMode();
   } else {
     destroyOverlayWindow();
-    // Unregister hotkey when overlay is disabled
-    unregisterOverlayHotkey();
   }
+  // Keep hotkey registered even when overlay is hidden so it can toggle back on.
+  if (overlayHotkeySetting) registerOverlayHotkey(overlayHotkeySetting);
   return !!enabled;
 });
 
+ipcMain.handle('overlay:set-drag-enabled', (_event, enabled) => {
+  overlayDragUnlockEnabled = !!enabled;
+  applyOverlayInteractionMode();
+  return true;
+});
+
 ipcMain.handle('overlay:update-hotkey', (_event, hotkey) => {
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    registerOverlayHotkey(hotkey);
-  } else {
-    unregisterOverlayHotkey();
-  }
+  overlayHotkeySetting = String(hotkey || '').trim();
+  if (overlayHotkeySetting) registerOverlayHotkey(overlayHotkeySetting);
+  else unregisterOverlayHotkey();
   return true;
 });
 
@@ -685,33 +708,112 @@ function registerOverlayHotkey(hotkey) {
   
   if (hotkey && hotkey.trim()) {
     try {
-      // Convert from our format to Electron format
-      const electronHotkey = hotkey
-        .replace(/Ctrl/g, 'CommandOrControl')
-        .replace(/Cmd/g, 'CommandOrControl')
-        .replace(/Command/g, 'CommandOrControl')
-        .replace(/Meta/g, 'CommandOrControl');
-      
-      const success = globalShortcut.register(electronHotkey, () => {
-        // Toggle overlay when hotkey is pressed
+      const rawParts = String(hotkey).split('+').map((part) => part.trim()).filter(Boolean);
+      if (rawParts.length < 1) return;
+
+      const key = rawParts[rawParts.length - 1];
+      const modifierParts = rawParts.slice(0, -1).map((part) => part.toLowerCase());
+      const modifiers = [];
+
+      if (modifierParts.includes('ctrl') || modifierParts.includes('control')) modifiers.push('CommandOrControl');
+      if (modifierParts.includes('alt')) modifiers.push('Alt');
+      if (modifierParts.includes('shift')) modifiers.push('Shift');
+      if (modifierParts.includes('meta') || modifierParts.includes('cmd') || modifierParts.includes('command')) modifiers.push('Super');
+
+      if (!key) return;
+      const normalizedKeyMap = {
+        escape: 'Esc',
+        enter: 'Enter',
+        tab: 'Tab',
+        backspace: 'Backspace',
+        delete: 'Delete',
+        insert: 'Insert',
+        home: 'Home',
+        end: 'End',
+        pageup: 'PageUp',
+        pagedown: 'PageDown',
+        up: 'Up',
+        down: 'Down',
+        left: 'Left',
+        right: 'Right',
+        space: 'Space',
+        numadd: 'numadd',
+        numsub: 'numsub',
+        nummult: 'nummult',
+        numdiv: 'numdiv',
+        numdec: 'numdec'
+      };
+      const keyLower = String(key).toLowerCase();
+      let normalizedKey = normalizedKeyMap[keyLower] || key;
+      if (/^f([1-9]|1[0-9]|2[0-4])$/i.test(normalizedKey)) normalizedKey = normalizedKey.toUpperCase();
+      if (String(normalizedKey).length === 1) normalizedKey = String(normalizedKey).toUpperCase();
+
+      const keyCandidates = (() => {
+        const candidates = [normalizedKey];
+        const m = String(normalizedKey).match(/^num([0-9])$/i);
+        if (m) {
+          candidates.push(`Numpad${m[1]}`);
+          candidates.push(m[1]);
+          const arrowByNum = {
+            8: ['NumpadUp', 'Up'],
+            2: ['NumpadDown', 'Down'],
+            4: ['NumpadLeft', 'Left'],
+            6: ['NumpadRight', 'Right'],
+            7: ['NumpadHome', 'Home'],
+            9: ['NumpadPageUp', 'PageUp'],
+            1: ['NumpadEnd', 'End'],
+            3: ['NumpadPageDown', 'PageDown'],
+            0: ['NumpadInsert', 'Insert'],
+            5: ['NumpadClear', 'Clear']
+          };
+          const mapped = arrowByNum[Number(m[1])];
+          if (mapped) candidates.push(...mapped);
+        }
+        if (String(normalizedKey).toLowerCase() === 'numadd') candidates.push('+');
+        if (String(normalizedKey).toLowerCase() === 'numsub') candidates.push('-');
+        if (String(normalizedKey).toLowerCase() === 'numdiv') candidates.push('/');
+        if (String(normalizedKey).toLowerCase() === 'nummult') candidates.push('*');
+        return [...new Set(candidates)];
+      })();
+
+      const callback = () => {
         const isEnabled = overlayWindow && !overlayWindow.isDestroyed();
-        if (isEnabled) {
-          destroyOverlayWindow();
-        } else {
-          createOverlayWindow();
-        }
-        
-        // Update the UI toggle button
+        const nextEnabled = !isEnabled;
+        if (nextEnabled) createOverlayWindow();
+        else destroyOverlayWindow();
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('overlay:toggle-state-changed', !isEnabled);
+          mainWindow.webContents.send('overlay:toggle-state-changed', nextEnabled);
         }
-      });
-      
-      if (success) {
-        currentOverlayHotkey = electronHotkey;
-        console.log('Registered overlay hotkey:', electronHotkey);
+      };
+
+      const modifierSets = (() => {
+        const sets = [modifiers];
+        if (process.platform === 'win32' && modifiers.includes('CommandOrControl')) {
+          sets.push(modifiers.map((m) => (m === 'CommandOrControl' ? 'Control' : m)));
+        }
+        return sets.map((set) => [...new Set(set)]);
+      })();
+
+      let registeredAccelerator = '';
+      for (const modSet of modifierSets) {
+        for (const keyVariant of keyCandidates) {
+          const electronHotkey = [...new Set([...modSet, keyVariant])].join('+');
+          const success = globalShortcut.register(electronHotkey, callback);
+          if (success) {
+            registeredAccelerator = electronHotkey;
+            break;
+          }
+        }
+        if (registeredAccelerator) {
+          break;
+        }
+      }
+
+      if (registeredAccelerator) {
+        currentOverlayHotkey = registeredAccelerator;
+        console.log('Registered overlay hotkey:', registeredAccelerator);
       } else {
-        console.warn('Failed to register overlay hotkey:', electronHotkey);
+        console.warn('Failed to register overlay hotkey:', hotkey);
       }
     } catch (error) {
       console.error('Error registering overlay hotkey:', error);
@@ -730,15 +832,26 @@ function unregisterOverlayHotkey() {
 ipcMain.on('overlay:update', (_event, payload) => {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
   try {
+    applyOverlayCompatibility();
     overlayWindow.webContents.send('overlay:update', payload);
     const bounds = overlayWindow.getBounds();
     const targetWidth = payload.width || bounds.width;
     const targetHeight = payload.height || bounds.height;
 
-    if (payload.position) {
+    const settings = payload.settings || {};
+    const hasCustomPosition = settings.customPositionEnabled === true
+      && Number.isFinite(Number(settings.customX))
+      && Number.isFinite(Number(settings.customY));
+
+    if (hasCustomPosition) {
+      const x = Math.round(Number(settings.customX));
+      const y = Math.round(Number(settings.customY));
+      overlayWindow.setBounds({ x, y, width: targetWidth, height: targetHeight });
+      applyOverlayCompatibility();
+    } else if (payload.position) {
       const display = getOverlayDisplay(payload.settings?.displayId).workArea;
-      const margin = 4;
-      const topMargin = 0; // Reduced top margin
+      const margin = 1;
+      const topMargin = 0;
       const position = String(payload.position || 'top-right');
       let x = display.x + margin;
       let y = display.y + margin;
@@ -764,7 +877,7 @@ ipcMain.on('overlay:update', (_event, payload) => {
       }
 
       overlayWindow.setBounds({ x, y, width: targetWidth, height: targetHeight });
-      overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+      applyOverlayCompatibility();
     } else if (targetHeight !== bounds.height) {
       overlayWindow.setSize(targetWidth, targetHeight);
     }
@@ -776,13 +889,24 @@ ipcMain.on('overlay:update', (_event, payload) => {
 ipcMain.on('overlay:resize', (_event, payload) => {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
   try {
+    applyOverlayCompatibility();
     const bounds = overlayWindow.getBounds();
     const targetWidth = Number.isFinite(payload.width) ? payload.width : bounds.width;
     const targetHeight = Number.isFinite(payload.height) ? payload.height : bounds.height;
-    if (payload.position) {
+    const settings = payload.settings || {};
+    const hasCustomPosition = settings.customPositionEnabled === true
+      && Number.isFinite(Number(settings.customX))
+      && Number.isFinite(Number(settings.customY));
+
+    if (hasCustomPosition) {
+      const x = Math.round(Number(settings.customX));
+      const y = Math.round(Number(settings.customY));
+      overlayWindow.setBounds({ x, y, width: targetWidth, height: targetHeight });
+      applyOverlayCompatibility();
+    } else if (payload.position) {
       const display = getOverlayDisplay(payload.settings?.displayId).workArea;
-      const margin = 4;
-      const topMargin = 0; // Reduced top margin
+      const margin = 1;
+      const topMargin = 0;
       const position = String(payload.position || 'top-right');
       let x = display.x + margin;
       let y = display.y + margin;
@@ -808,12 +932,58 @@ ipcMain.on('overlay:resize', (_event, payload) => {
       }
 
       overlayWindow.setBounds({ x, y, width: targetWidth, height: targetHeight });
-      overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+      applyOverlayCompatibility();
     } else if (targetWidth !== bounds.width || targetHeight !== bounds.height) {
       overlayWindow.setSize(targetWidth, targetHeight);
     }
   } catch (e) {
     console.error('Failed to resize overlay window:', e);
+  }
+});
+
+ipcMain.on('overlay:drag-begin', (_event, payload) => {
+  if (!overlayDragUnlockEnabled || !overlayWindow || overlayWindow.isDestroyed()) return;
+  const startMouseX = Number(payload?.screenX);
+  const startMouseY = Number(payload?.screenY);
+  if (!Number.isFinite(startMouseX) || !Number.isFinite(startMouseY)) return;
+  const bounds = overlayWindow.getBounds();
+  overlayDragSession = {
+    startMouseX,
+    startMouseY,
+    startX: bounds.x,
+    startY: bounds.y
+  };
+});
+
+ipcMain.on('overlay:drag-move', (_event, payload) => {
+  if (!overlayDragUnlockEnabled || !overlayDragSession || !overlayWindow || overlayWindow.isDestroyed()) return;
+  const moveMouseX = Number(payload?.screenX);
+  const moveMouseY = Number(payload?.screenY);
+  if (!Number.isFinite(moveMouseX) || !Number.isFinite(moveMouseY)) return;
+  const dx = Math.round(moveMouseX - overlayDragSession.startMouseX);
+  const dy = Math.round(moveMouseY - overlayDragSession.startMouseY);
+  const currentBounds = overlayWindow.getBounds();
+  const nextX = overlayDragSession.startX + dx;
+  const nextY = overlayDragSession.startY + dy;
+  const snappedX = Math.round(nextX / OVERLAY_DRAG_SNAP_PX) * OVERLAY_DRAG_SNAP_PX;
+  const snappedY = Math.round(nextY / OVERLAY_DRAG_SNAP_PX) * OVERLAY_DRAG_SNAP_PX;
+  overlayWindow.setBounds({
+    x: snappedX,
+    y: snappedY,
+    width: currentBounds.width,
+    height: currentBounds.height
+  });
+});
+
+ipcMain.on('overlay:drag-end', () => {
+  if (!overlayDragSession || !overlayWindow || overlayWindow.isDestroyed()) {
+    overlayDragSession = null;
+    return;
+  }
+  const bounds = overlayWindow.getBounds();
+  overlayDragSession = null;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('overlay:position-changed', { x: bounds.x, y: bounds.y });
   }
 });
 

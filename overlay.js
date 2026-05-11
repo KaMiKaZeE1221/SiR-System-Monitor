@@ -10,6 +10,7 @@ const OVERLAY_BG_COLOR_KEY = 'overlayBackgroundColor';
 const OVERLAY_OPACITY_KEY = 'overlayOpacity';
 const OVERLAY_SCALE_KEY = 'overlayScale';
 const OVERLAY_STYLE_KEY = 'overlayStyle';
+const OVERLAY_DRAG_UNLOCK_KEY = 'overlayDragUnlock';
 
 const overlayShell = document.getElementById('overlayShell');
 const overlayContent = document.getElementById('overlayContent');
@@ -73,7 +74,8 @@ function loadOverlaySettings() {
     backgroundColor: normalizeOverlayColor(localStorage.getItem(OVERLAY_BG_COLOR_KEY), '#000000'),
     opacity: normalizeOverlayOpacity(localStorage.getItem(OVERLAY_OPACITY_KEY)),
     scale: normalizeOverlayScale(localStorage.getItem(OVERLAY_SCALE_KEY)),
-    style: normalizeOverlayStyle(localStorage.getItem(OVERLAY_STYLE_KEY))
+    style: normalizeOverlayStyle(localStorage.getItem(OVERLAY_STYLE_KEY)),
+    dragUnlock: String(localStorage.getItem(OVERLAY_DRAG_UNLOCK_KEY) || '').trim().toLowerCase() === 'true'
   };
 }
 
@@ -108,19 +110,28 @@ function applyOverlayAppearance(settings = loadOverlaySettings()) {
   overlayShell.style.setProperty('--overlay-unit-scale', settings.scale / 100);
 
   const bgRgb = hexToRgb(settings.backgroundColor);
-  const bgRgba = bgRgb ? `rgba(${bgRgb.r}, ${bgRgb.g}, ${bgRgb.b}, ${settings.opacity / 100})` : `rgba(0,0,0,${settings.opacity / 100})`;
+  const normalizedOpacity = Math.max(0, Math.min(100, Number(settings.opacity) || 0));
+  const overlayAlpha = normalizedOpacity / 100;
+  const bgRgba = bgRgb ? `rgba(${bgRgb.r}, ${bgRgb.g}, ${bgRgb.b}, ${overlayAlpha})` : `rgba(0,0,0,${overlayAlpha})`;
   overlayShell.style.setProperty('--overlay-bg', bgRgba);
-  if (settings.opacity > 0) {
+  overlayShell.style.setProperty('--overlay-border', `rgba(255,255,255,${Math.min(0.14, overlayAlpha * 0.2)})`);
+  overlayShell.style.setProperty('--overlay-surface-alpha', String(Math.max(0, overlayAlpha * 0.09)));
+  overlayShell.style.setProperty('--overlay-surface-border-alpha', String(Math.max(0, overlayAlpha * 0.16)));
+  if (normalizedOpacity > 0) {
+    overlayShell.classList.remove('overlay-transparent-bg');
     overlayShell.style.background = bgRgba;
   } else {
+    overlayShell.classList.add('overlay-transparent-bg');
     overlayShell.style.background = 'transparent';
   }
-  overlayShell.style.borderColor = `rgba(255,255,255,${Math.min(0.14, settings.opacity / 100)})`;
+  overlayShell.style.borderColor = `rgba(255,255,255,${Math.min(0.14, overlayAlpha * 0.2)})`;
+  overlayShell.style.cursor = settings.dragUnlock ? 'move' : 'default';
 }
 
 function normalizeOverlayGroupLabel(group) {
   const raw = String(group || '').trim();
   if (!raw) return 'General';
+  if (raw.toLowerCase() === 'network') return 'NET';
   return raw
     .replace(/[-_]+/g, ' ')
     .replace(/(^|\s)([a-z])/g, (match, prefix, letter) => `${prefix}${letter.toUpperCase()}`);
@@ -176,7 +187,7 @@ function renderOverlay(payload) {
             }
           }
           return `<span class="overlay-group-line-item">${escapeHtml(display)}</span>`;
-        }).join('');
+        }).join('<span class="overlay-group-line-sep">|</span>');
 
         return `
           <div class="overlay-group overlay-group-line">
@@ -215,6 +226,10 @@ const overlayResizeState = {
   lastPosition: null
 };
 
+const overlayDragState = {
+  active: false
+};
+
 function requestOverlayResize(settings) {
   if (!overlayShell || !overlayContent) return;
 
@@ -243,10 +258,12 @@ function requestOverlayResize(settings) {
       maxWidth = Math.max(maxWidth, contentWidth, shellWidth);
     }
 
-    const width = Math.max(280, Math.ceil(maxWidth + 48));
+    const rawWidth = Math.max(300, Math.ceil(maxWidth + 64));
+    const width = Math.ceil(rawWidth / 8) * 8;
     const contentHeight = Math.max(overlayContent.scrollHeight, overlayContent.offsetHeight, overlayContent.clientHeight);
     const shellHeight = Math.max(overlayShell.scrollHeight, overlayShell.offsetHeight, overlayShell.clientHeight);
-    const height = Math.max(80, Math.ceil(Math.max(contentHeight, shellHeight) + 24));
+    const rawHeight = Math.max(80, Math.ceil(Math.max(contentHeight, shellHeight) + 18));
+    const height = Math.ceil(rawHeight / 4) * 4;
     return { width, height };
   };
 
@@ -255,7 +272,7 @@ function requestOverlayResize(settings) {
     if (!dims) return;
 
     const position = String(settings.position || '');
-    const sizeChanged = Math.abs(dims.width - overlayResizeState.lastWidth) > 6 || Math.abs(dims.height - overlayResizeState.lastHeight) > 6;
+    const sizeChanged = Math.abs(dims.width - overlayResizeState.lastWidth) > 8 || Math.abs(dims.height - overlayResizeState.lastHeight) > 3;
     const positionChanged = position !== String(overlayResizeState.lastPosition || '');
 
     if (!sizeChanged && !positionChanged) {
@@ -281,7 +298,7 @@ function requestOverlayResize(settings) {
   overlayResizeState.timeoutId = window.setTimeout(() => {
     requestAnimationFrame(sendResize);
     overlayResizeState.timeoutId = null;
-  }, 80);
+  }, 60);
 }
 
 function escapeHtml(text) {
@@ -297,6 +314,28 @@ ipcRenderer.on('overlay:update', (_event, payload) => {
   renderOverlay(payload);
 });
 
+if (overlayShell) {
+  overlayShell.addEventListener('mousedown', (event) => {
+    const settings = loadOverlaySettings();
+    if (!settings.dragUnlock) return;
+    if (event.button !== 0) return;
+    overlayDragState.active = true;
+    ipcRenderer.send('overlay:drag-begin', { screenX: event.screenX, screenY: event.screenY });
+    event.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (event) => {
+    if (!overlayDragState.active) return;
+    ipcRenderer.send('overlay:drag-move', { screenX: event.screenX, screenY: event.screenY });
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!overlayDragState.active) return;
+    overlayDragState.active = false;
+    ipcRenderer.send('overlay:drag-end');
+  });
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   applyOverlayAppearance();
   if (loadOverlaySettings().enabled === false) {
@@ -305,7 +344,7 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 window.addEventListener('storage', (event) => {
-  if ([OVERLAY_FONT_SIZE_KEY, OVERLAY_FONT_FAMILY_KEY, OVERLAY_FONT_BOLD_KEY, OVERLAY_TEXT_COLOR_KEY, OVERLAY_VALUE_COLOR_KEY, OVERLAY_BG_COLOR_KEY, OVERLAY_OPACITY_KEY, OVERLAY_SCALE_KEY, OVERLAY_STYLE_KEY].includes(event.key)) {
+  if ([OVERLAY_FONT_SIZE_KEY, OVERLAY_FONT_FAMILY_KEY, OVERLAY_FONT_BOLD_KEY, OVERLAY_TEXT_COLOR_KEY, OVERLAY_VALUE_COLOR_KEY, OVERLAY_BG_COLOR_KEY, OVERLAY_OPACITY_KEY, OVERLAY_SCALE_KEY, OVERLAY_STYLE_KEY, OVERLAY_DRAG_UNLOCK_KEY].includes(event.key)) {
     applyOverlayAppearance();
   }
 });

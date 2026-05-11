@@ -1,6 +1,6 @@
 {
   "name": "sir-system-monitor",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "description": "Electron app for monitoring system statistics",
   "author": "SiR_KaMiKaZeE",
   "repository": {
@@ -12,6 +12,7 @@
     "start": "electron .",
     "build": "electron-builder --dir",
     "dist": "electron-builder",
+    "dist:win": "node scripts/patch-nsis-details.js && electron-builder --win nsis portable",
     "minify": "node scripts/minify-all.js"
   },
   "devDependencies": {
@@ -56,11 +57,14 @@
       "! dist_extract/**",
       "!V1.1.8a/**",
       "!V1.1.9/**",
+      "!V1.2.0/**",
+      "!V1.2.1/**",
+      "!V1.2.1a/**",
       "!scripts/build-installer.js",
       "!scripts/run-electron-builder.js"
     ],
     "directories": {
-      "output": "V1.2.0"
+      "output": "V1.2.2"
     },
     "icon": "SiR_SM_Circle.ico",
     "win": {
@@ -71,7 +75,7 @@
       ]
     },
     "portable": {
-      "artifactName": "SiR-System-Monitor-Portable-1.2.0.${ext}"
+      "artifactName": "SiR-System-Monitor-Portable-1.2.2.${ext}"
     },
     "publish": [
       {
@@ -81,8 +85,9 @@
       }
     ],
     "nsis": {
-      "artifactName": "SiR-System-Monitor-Setup-1.2.0.${ext}",
+      "artifactName": "SiR-System-Monitor-Setup-1.2.2.${ext}",
       "license": "build/LICENSE.txt",
+      "include": "build/installer.nsh",
       "oneClick": false,
       "perMachine": false,
       "selectPerMachineByDefault": true,
