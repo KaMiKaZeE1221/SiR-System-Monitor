@@ -71,7 +71,7 @@ Settings are grouped in the sidebar:
   - Color theme
   - Style preset
   - Font size/family and text options
-  - Temperature unit selector (°C / °F)
+  - Temperature unit selector (Â°C / Â°F)
   - Custom colors (font, sensor names, sensor values, icon, graph, sensor block headers, outline, background)
   - Reset to theme defaults
   - On-Screen Overlay settings
@@ -195,7 +195,7 @@ Current behavior is manual (user-driven):
 
 ## Screenshots
 
-More screenshots on Imgur
+More screenshots on Imgur (Screenshots maybe outdated)
 https://imgur.com/a/pkG1Cyb
 
 <img width="1920" height="1032" alt="Standard_View" src="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/blob/main/Screenshots/SiR_System_Monitor_Orange.png" />
