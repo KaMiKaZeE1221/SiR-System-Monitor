@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.1a - 2026-05-11
+
+### Added
+- Added overlay position unlock mode (`Unlock overlay position`) so the overlay can be dragged and repositioned.
+- Added persisted custom overlay coordinates so dragged overlay position is restored.
+
+### Changed
+- Reorganized the Overlay Settings `Other` section into a cleaner layout (hotkey row + compact toggle cards).
+- Updated setup/network guidance to clarify `0.0.0.0` can allow WAN/public exposure depending on firewall/router/public networking.
+
+### Fixed
+- Fixed setup/update/import modal close glyph rendering to display a proper `×` instead of mojibake.
+- Fixed overlay grouped-line vertical text alignment so value text better matches label baseline.
+- Fixed packaging scope by excluding `V1.2.1/**` from build inputs to prevent prior release artifacts being bundled.
+
 ## 1.2.1 - 2026-05-11
 
 ### Added
