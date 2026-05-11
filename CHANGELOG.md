@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.2.1 - 2026-05-11
+
+### Added
+- Added a dedicated `FPS` sensor group card in the main dashboard, including FPS and Frame Time as first-class sensors.
+- Added `FPS` visibility toggle under Visible Sensors so the FPS panel can be shown/hidden like CPU/GPU/RAM groups.
+- Added robust global overlay hotkey support with broader key capture and accelerator fallbacks (including harder combinations and numpad variants).
+- Added `NET` short label behavior for Network group title in overlay grouped-line mode.
+- Added NSIS installer detail patch workflow and `dist:win` build path to improve installer detail output reliability.
+
+### Changed
+- Reworked RTSS shared-memory parsing to read real app entries and select actively updating sources, improving FPS/Frame Time correctness.
+- Updated frame-time merge behavior to avoid stale/latching provider values and prefer live-derived values when needed.
+- Improved grouped-line overlay readability with separators between values and adjusted spacing to reduce value collisions.
+- Tightened overlay screen-edge positioning (top/left) to reduce offset from display edges.
+- Refined overlay hotkey registration paths and startup registration behavior.
+- Reorganized Overlay Settings UI:
+  - Replaced overlay font-size dropdown with a slider.
+  - Moved overlay font style controls into Overlay Settings.
+  - Improved option alignment and consistency across overlay controls.
+- Removed the Detection Mode dropdown from Settings (shared-memory mode is now implicit/fixed).
+- Added a dedicated header Setup Guide button next to the Settings gear for faster access.
+- Refreshed Setup Guide copy and visual styling to match the current UI language and layout.
+
+### Fixed
+- Fixed frame-time freezing behavior after RTSS launch in debug/live paths.
+- Fixed provider/source handling so FPS and Frame Time paths behave consistently with source selection.
+- Fixed overlay toggle hotkey state synchronization and re-enable behavior.
+- Fixed multiple key-capture normalization issues that caused unreliable hotkey registration.
+- Fixed installer build failure caused by invalid `beforePack` hook wiring.
+- Fixed installer detail panel scripting pipeline so NSIS detail output hooks are correctly injected during packaging.
+- Fixed overlay sensor row alignment when `Font Size` and `Unit Scale` differ, so names and values stay visually aligned.
+
 ## 1.2.0 - 2026-05-7
 
 ### Added New Features
