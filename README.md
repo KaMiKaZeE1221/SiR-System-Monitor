@@ -28,6 +28,7 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
   - PSU
   - Fans
   - Network
+  - Ping
   - Drives
   - Other
 - FPS group includes FPS and Frame Time as a dedicated first-class panel.
@@ -47,6 +48,8 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
   - Global overlay toggle hotkey
   - Position, style, display/monitor selection
   - Font size slider, unit scale, group spacing, opacity, color controls
+  - Per-category line limits (advanced section)
+  - Ping host targeting for latency statistics
 - Supports an in-app setup guide (book icon in header).
 - Exposes a browser-accessible monitor page and JSON endpoint.
 
@@ -68,12 +71,13 @@ Settings are grouped in the sidebar:
   - Color theme
   - Style preset
   - Font size/family and text options
-  - Temperature unit selector (°C / °F)
+  - Temperature unit selector (ï¿½C / ï¿½F)
   - Custom colors (font, sensor names, sensor values, icon, graph, sensor block headers, outline, background)
   - Reset to theme defaults
   - On-Screen Overlay settings
 - Monitoring
   - Refresh rate (1000-5000 ms)
+  - Ping host target for latency sampling
   - Visible sensor groups (including FPS)
   - Sensor Selection panel
     - per-sensor enabled state
@@ -99,6 +103,7 @@ All settings are persisted locally.
 SiR System Monitor provides an in-app Export and Import flow to back up your current settings or restore them from a JSON file.
 
 - Export: produces a JSON file containing your active settings including theme, style preset, temperature unit, custom colors, appearance options, sensor selection and ordering, connectivity settings (web monitor host/port), and updater preferences.
+  - Also includes overlay and ping additions such as per-category overlay line limits, advanced overlay limits panel state, and ping host target.
 - Import: opens a preview modal showing which settings will change. You can choose **Apply Now** to apply settings immediately without a full reload, or **Apply & Reload** to apply settings and restart the renderer.
 
 Usage:
