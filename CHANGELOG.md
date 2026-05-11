@@ -1,6 +1,50 @@
 # Changelog
 
-> Note: Entries for older builds are estimated from development history and may not map 1:1 to exact historic commit dates.
+## 1.2.3 - 2026-05-12
+
+### Added
+- Added a dedicated `Ping` sensor group (main UI + overlay) with live metrics:
+  - Current
+  - Average
+  - Minimum
+  - Maximum
+  - Packet Loss
+- Added `Latency Host` setting to configure the target used for ping sampling.
+- Added per-category overlay line-limit controls (FPS/CPU/GPU/RAM/PSU/Fans/Network/Ping/Drives/Other).
+- Added an `Advanced` toggle to show/hide per-category overlay line-limit controls.
+- Added broad tooltip coverage across settings and key header controls to improve discoverability.
+- Added top-level collapsible dropdowns for main settings categories:
+  - Appearance
+  - Monitoring
+  - Backup / Restore
+  - Data Sources
+  - Connectivity
+  - App Behavior
+
+### Changed
+- Renamed `Latency` presentation labels to `Ping` across the main UI and overlay.
+- Reworked overlay grouped-line rendering to support per-category line limits.
+- Refined overlay grouped-line layout/alignment so single-line and multi-line group displays are consistently aligned.
+- Reworked settings visual hierarchy from a heavy accordion stack toward a cleaner tree-like structure.
+- Improved settings spacing and transition behavior for smoother expansion/collapse at both group and section levels.
+- Enhanced hover styling for select dropdowns with accent glow feedback.
+- Improved overlay per-category limit layout and responsiveness for better readability.
+- Increased main dashboard panel width-resize granularity (finer horizontal resizing steps).
+- Added panel width snapping with tuned step sizing for cleaner drag control.
+- Reworked Setup Guide modal into icon-based dropdown sections for cleaner onboarding flow.
+- Updated README documentation for Ping group support and overlay/ping settings additions.
+- Finalized panel width resize behavior so cards reflow neighbors (no overlap) while keeping finer drag control.
+
+### Fixed
+- Fixed overlay grouped-line misalignment when line limits were set to 1.
+- Fixed settings panel overlap/crowding issues in per-category overlay limit controls.
+- Fixed sensor order drift when providers (notably AIDA) expose sensors late by preserving saved order entries instead of pruning missing sensors immediately.
+
+### Backup / Export
+- Updated settings export coverage to include newer overlay and ping-related settings, including:
+  - per-category overlay line limits
+  - advanced line-limit panel expanded/collapsed state
+  - ping host target setting
 
 ## 1.2.2 - 2026-05-11
 
