@@ -63,6 +63,23 @@ function normalizeOverlayStyle(value) {
   return valid.includes(String(value || '').trim()) ? String(value).trim() : 'compact';
 }
 
+function normalizeGroupLineLimit(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 8;
+  return Math.max(1, Math.min(40, Math.round(numeric)));
+}
+
+function normalizeOverlayGroupLineLimits(raw) {
+  const groups = ['fps', 'cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'latency', 'drives', 'other'];
+  const defaults = {};
+  groups.forEach((group) => { defaults[group] = 8; });
+  const input = (raw && typeof raw === 'object') ? raw : {};
+  groups.forEach((group) => {
+    defaults[group] = normalizeGroupLineLimit(input[group]);
+  });
+  return defaults;
+}
+
 function loadOverlaySettings() {
   return {
     enabled: localStorage.getItem(OVERLAY_ENABLED_KEY) === 'true',
@@ -75,6 +92,13 @@ function loadOverlaySettings() {
     opacity: normalizeOverlayOpacity(localStorage.getItem(OVERLAY_OPACITY_KEY)),
     scale: normalizeOverlayScale(localStorage.getItem(OVERLAY_SCALE_KEY)),
     style: normalizeOverlayStyle(localStorage.getItem(OVERLAY_STYLE_KEY)),
+    groupLineLimits: normalizeOverlayGroupLineLimits((() => {
+      try {
+        return JSON.parse(localStorage.getItem('overlayGroupLineLimits') || '{}');
+      } catch (e) {
+        return {};
+      }
+    })()),
     dragUnlock: String(localStorage.getItem(OVERLAY_DRAG_UNLOCK_KEY) || '').trim().toLowerCase() === 'true'
   };
 }
@@ -132,6 +156,7 @@ function normalizeOverlayGroupLabel(group) {
   const raw = String(group || '').trim();
   if (!raw) return 'General';
   if (raw.toLowerCase() === 'network') return 'NET';
+  if (raw.toLowerCase() === 'latency') return 'PING';
   return raw
     .replace(/[-_]+/g, ' ')
     .replace(/(^|\s)([a-z])/g, (match, prefix, letter) => `${prefix}${letter.toUpperCase()}`);
@@ -167,15 +192,17 @@ function renderOverlay(payload) {
 
   if (settings.style === 'grouped' || settings.style === 'category' || settings.style === 'grouped-line') {
     const grouped = sensors.reduce((acc, sensor) => {
+      const groupKey = String(sensor.group || sensor.category || 'other').trim().toLowerCase() || 'other';
       const groupLabel = normalizeOverlayGroupLabel(sensor.group || sensor.category);
-      if (!acc[groupLabel]) acc[groupLabel] = [];
-      acc[groupLabel].push(sensor);
+      if (!acc[groupLabel]) acc[groupLabel] = { key: groupKey, sensors: [] };
+      acc[groupLabel].sensors.push(sensor);
       return acc;
     }, {});
 
     if (settings.style === 'grouped-line') {
       const html = Object.keys(grouped).map((groupLabel) => {
-        const items = grouped[groupLabel].map((sensor) => {
+        const groupEntry = grouped[groupLabel] || { key: 'other', sensors: [] };
+        const renderedItems = groupEntry.sensors.map((sensor) => {
           const value = String(sensor.displayValue ?? sensor.value ?? '--').trim();
           const showUnits = settings.showUnits !== false;
           let display = value;
@@ -187,12 +214,21 @@ function renderOverlay(payload) {
             }
           }
           return `<span class="overlay-group-line-item">${escapeHtml(display)}</span>`;
-        }).join('<span class="overlay-group-line-sep">|</span>');
+        });
+        const perGroupLimits = normalizeOverlayGroupLineLimits(settings.groupLineLimits);
+        const lineLimit = normalizeGroupLineLimit(perGroupLimits[groupEntry.key] ?? 8);
+        const chunkSize = Math.max(1, Math.ceil(renderedItems.length / lineLimit));
+        const chunks = [];
+        for (let i = 0; i < renderedItems.length; i += chunkSize) {
+          chunks.push(renderedItems.slice(i, i + chunkSize).join('<span class="overlay-group-line-sep">|</span>'));
+          if (chunks.length >= lineLimit) break;
+        }
+        const values = chunks.map((chunk) => `<span class="overlay-group-values">${chunk}</span>`).join('');
 
         return `
           <div class="overlay-group overlay-group-line">
             <span class="overlay-group-title">${escapeHtml(groupLabel)}</span>
-            <span class="overlay-group-values">${items}</span>
+            ${values}
           </div>`;
       }).join('');
 
@@ -202,7 +238,7 @@ function renderOverlay(payload) {
     }
 
     const html = Object.keys(grouped).map((groupLabel) => {
-      const items = grouped[groupLabel].map((sensor) => renderOverlayItem(sensor, settings)).join('');
+      const items = (grouped[groupLabel].sensors || []).map((sensor) => renderOverlayItem(sensor, settings)).join('');
       return `
         <div class="overlay-group ${settings.style === 'category' ? 'overlay-group-category' : 'overlay-group-box'}">
           <div class="overlay-group-title">${escapeHtml(groupLabel)}</div>

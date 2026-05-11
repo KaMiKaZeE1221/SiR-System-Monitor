@@ -144,6 +144,22 @@
                     <label class="settings-label overlay-field-label" for="overlayOpacity">Background opacity</label>
                     <input type="range" id="overlayOpacity" min="0" max="100" value="70" step="1" class="full-width">
                   </div>
+                  <div class="overlay-section-row overlay-line-limits-row">
+                    <label class="settings-label overlay-field-label">Per-Category Line Limits</label>
+                    <button type="button" id="overlayLineLimitsToggle" class="test-btn overlay-advanced-toggle">Advanced: Show</button>
+                    <div class="overlay-line-limit-grid is-collapsed" id="overlayLineLimitGrid">
+                      <label class="overlay-line-limit-row" for="overlayLineLimit_fps"><span class="overlay-line-limit-label">FPS</span><input type="number" id="overlayLineLimit_fps" class="detection-select" min="1" max="40" value="8"></label>
+                      <label class="overlay-line-limit-row" for="overlayLineLimit_cpu"><span class="overlay-line-limit-label">CPU</span><input type="number" id="overlayLineLimit_cpu" class="detection-select" min="1" max="40" value="8"></label>
+                      <label class="overlay-line-limit-row" for="overlayLineLimit_gpu"><span class="overlay-line-limit-label">GPU</span><input type="number" id="overlayLineLimit_gpu" class="detection-select" min="1" max="40" value="8"></label>
+                      <label class="overlay-line-limit-row" for="overlayLineLimit_ram"><span class="overlay-line-limit-label">RAM</span><input type="number" id="overlayLineLimit_ram" class="detection-select" min="1" max="40" value="8"></label>
+                      <label class="overlay-line-limit-row" for="overlayLineLimit_psu"><span class="overlay-line-limit-label">PSU</span><input type="number" id="overlayLineLimit_psu" class="detection-select" min="1" max="40" value="8"></label>
+                      <label class="overlay-line-limit-row" for="overlayLineLimit_fans"><span class="overlay-line-limit-label">Fans</span><input type="number" id="overlayLineLimit_fans" class="detection-select" min="1" max="40" value="8"></label>
+                      <label class="overlay-line-limit-row" for="overlayLineLimit_network"><span class="overlay-line-limit-label">Network</span><input type="number" id="overlayLineLimit_network" class="detection-select" min="1" max="40" value="8"></label>
+                      <label class="overlay-line-limit-row" for="overlayLineLimit_latency"><span class="overlay-line-limit-label">Ping</span><input type="number" id="overlayLineLimit_latency" class="detection-select" min="1" max="40" value="8"></label>
+                      <label class="overlay-line-limit-row" for="overlayLineLimit_drives"><span class="overlay-line-limit-label">Drives</span><input type="number" id="overlayLineLimit_drives" class="detection-select" min="1" max="40" value="8"></label>
+                      <label class="overlay-line-limit-row" for="overlayLineLimit_other"><span class="overlay-line-limit-label">Other</span><input type="number" id="overlayLineLimit_other" class="detection-select" min="1" max="40" value="8"></label>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -262,6 +278,12 @@
       </div>
 
       <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-broadcast-pin settings-label-icon" aria-hidden="true"></i><span>Latency Host</span></label>
+        <input type="text" id="latencyHost" class="detection-select" value="1.1.1.1" placeholder="Host/IP to ping (e.g. 1.1.1.1)">
+        <div class="settings-note">Used for latency stats: current, average, minimum, maximum, and packet loss.</div>
+      </div>
+
+      <div class="settings-section">
         <label class="settings-label"><i class="bi bi-eye-fill settings-label-icon" aria-hidden="true"></i><span>Visible Sensors</span></label>
         <div class="visibility-options">
           <label class="checkbox-label">
@@ -291,6 +313,10 @@
           <label class="checkbox-label">
             <input type="checkbox" id="showNetwork" checked>
             <span>Network</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="showLatency" checked>
+            <span>Ping</span>
           </label>
           <label class="checkbox-label">
             <input type="checkbox" id="showDrives" checked>
@@ -502,6 +528,12 @@
         <div id="networkSensorsDynamic" class="sensor-scroll"></div>
       </div>
 
+      <!-- Latency Group -->
+      <div class="sensor-group" id="latencyGroup">
+        <div class="sensor-group-title"><i class="bi bi-broadcast-pin group-icon" aria-hidden="true"></i><span>Ping</span></div>
+        <div id="latencySensorsDynamic" class="sensor-scroll"></div>
+      </div>
+
       <!-- Drives Group -->
       <div class="sensor-group" id="drivesGroup">
         <div class="sensor-group-title"><i class="bi bi-device-hdd-fill group-icon" aria-hidden="true"></i><span>Drives</span></div>
@@ -532,60 +564,72 @@
           <strong>Quick start:</strong> enable the provider(s) you use, pick visible groups, then fine-tune with Sensor Selection and Overlay Settings.
         </div>
 
-        <section class="setup-guide-section">
-          <h3>1) Choose your sensor provider(s)</h3>
-          <ul>
-            <li>SiR reads sensors from shared memory providers: <strong>RTSS/MSI</strong>, <strong>AIDA64</strong>, and <strong>HWiNFO/LHM</strong>.</li>
-            <li>In <strong>Settings → Data Sources → Shared Memory Sources</strong>, keep only the providers you actually use enabled.</li>
-            <li>Provider apps must be running while SiR is open.</li>
-          </ul>
-        </section>
+        <details class="setup-guide-dropdown" open>
+          <summary><i class="bi bi-hdd-stack-fill" aria-hidden="true"></i><span>1) Choose Sensor Providers</span></summary>
+          <div class="setup-guide-dropdown-body">
+            <ul>
+              <li>SiR reads sensors from shared memory providers: <strong>RTSS/MSI</strong>, <strong>AIDA64</strong>, and <strong>HWiNFO/LHM</strong>.</li>
+              <li>In <strong>Settings → Data Sources → Shared Memory Sources</strong>, keep only the providers you actually use enabled.</li>
+              <li>Provider apps must be running while SiR is open.</li>
+            </ul>
+          </div>
+        </details>
 
-        <section class="setup-guide-section">
-          <h3>2) Provider setup details</h3>
-          <ul>
-            <li><strong>AIDA64:</strong> File → Preferences → External Applications → enable <strong>Shared Memory</strong>.</li>
-            <li><strong>HWiNFO/LHM:</strong> enable shared-memory sensor output in their settings.</li>
-            <li><strong>RTSS/MSI:</strong> best for live <strong>FPS</strong> and <strong>Frame Time</strong> telemetry.</li>
-          </ul>
-        </section>
+        <details class="setup-guide-dropdown">
+          <summary><i class="bi bi-sliders2-vertical" aria-hidden="true"></i><span>2) Provider Setup Details</span></summary>
+          <div class="setup-guide-dropdown-body">
+            <ul>
+              <li><strong>AIDA64:</strong> File → Preferences → External Applications → enable <strong>Shared Memory</strong>.</li>
+              <li><strong>HWiNFO/LHM:</strong> enable shared-memory sensor output in their settings.</li>
+              <li><strong>RTSS/MSI:</strong> best for live <strong>FPS</strong> and <strong>Frame Time</strong> telemetry.</li>
+            </ul>
+          </div>
+        </details>
 
-        <section class="setup-guide-section">
-          <h3>3) Build your layout in SiR</h3>
-          <ul>
-            <li>Use <strong>Visible Sensors</strong> to show/hide whole groups (FPS, CPU, GPU, Memory, PSU, Fans, Network, Drives, Other).</li>
-            <li>Use <strong>Sensor Selection</strong> for per-sensor visibility, overlay inclusion, and drag-to-reorder.</li>
-            <li>Use <strong>Summary Mode</strong> for a compact overall snapshot.</li>
-          </ul>
-        </section>
+        <details class="setup-guide-dropdown">
+          <summary><i class="bi bi-grid-1x2-fill" aria-hidden="true"></i><span>3) Build Your Layout</span></summary>
+          <div class="setup-guide-dropdown-body">
+            <ul>
+              <li>Use <strong>Visible Sensors</strong> to show/hide whole groups (FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, Other).</li>
+              <li>Use <strong>Sensor Selection</strong> for per-sensor visibility, overlay inclusion, and drag-to-reorder.</li>
+              <li>Use <strong>Summary Mode</strong> for a compact overall snapshot.</li>
+            </ul>
+          </div>
+        </details>
 
-        <section class="setup-guide-section">
-          <h3>4) Overlay setup</h3>
-          <ul>
-            <li>Enable overlay in <strong>Appearance → On-Screen Overlay</strong>.</li>
-            <li>Configure style, position, monitor, font size slider, spacing, unit scale, colors, and background opacity.</li>
-            <li>Set a global <strong>Toggle Hotkey</strong> to quickly show/hide overlay in game or desktop use.</li>
-          </ul>
-        </section>
+        <details class="setup-guide-dropdown">
+          <summary><i class="bi bi-pc-display-horizontal" aria-hidden="true"></i><span>4) Overlay Setup</span></summary>
+          <div class="setup-guide-dropdown-body">
+            <ul>
+              <li>Enable overlay in <strong>Appearance → On-Screen Overlay</strong>.</li>
+              <li>Configure style, position, monitor, font size slider, spacing, unit scale, colors, and background opacity.</li>
+              <li>Set a global <strong>Toggle Hotkey</strong> to quickly show/hide overlay in game or desktop use.</li>
+            </ul>
+          </div>
+        </details>
 
-        <section class="setup-guide-section">
-          <h3>5) Web Monitor and sharing</h3>
-          <ul>
-            <li>Enable <strong>Web Monitor</strong> in Connectivity, then apply host/port settings.</li>
-            <li>Use <strong>127.0.0.1</strong> for local-only access. Use <strong>0.0.0.0</strong> to listen on all interfaces (LAN), and note this can also allow WAN/public access if firewall rules, router port forwarding, or cloud/public networking expose the port.</li>
-            <li>Open the provided URL from another device on the same network if LAN sharing is enabled.</li>
-          </ul>
-        </section>
+        <details class="setup-guide-dropdown">
+          <summary><i class="bi bi-globe" aria-hidden="true"></i><span>5) Web Monitor & Sharing</span></summary>
+          <div class="setup-guide-dropdown-body">
+            <ul>
+              <li>Enable <strong>Web Monitor</strong> in Connectivity, then apply host/port settings.</li>
+              <li>Use <strong>127.0.0.1</strong> for local-only access. Use <strong>0.0.0.0</strong> to listen on all interfaces (LAN), and note this can also allow WAN/public access if firewall rules, router port forwarding, or cloud/public networking expose the port.</li>
+              <li>Open the provided URL from another device on the same network if LAN sharing is enabled.</li>
+            </ul>
+          </div>
+        </details>
 
-        <section class="setup-guide-section">
-          <h3>6) If sensors are missing, stale, or frozen</h3>
-          <ul>
-            <li>Confirm the right provider toggle is enabled in SiR.</li>
-            <li>Re-check provider shared-memory options and restart the provider app.</li>
-            <li>For FPS/Frame Time issues, verify RTSS/MSI is running and actively updating.</li>
-            <li>If needed, restart SiR after provider configuration changes.</li>
-          </ul>
-        </section>
+        <details class="setup-guide-dropdown">
+          <summary><i class="bi bi-life-preserver" aria-hidden="true"></i><span>6) Troubleshooting Missing/Stale Sensors</span></summary>
+          <div class="setup-guide-dropdown-body">
+            <ul>
+              <li>Confirm the right provider toggle is enabled in SiR.</li>
+              <li>Re-check provider shared-memory options and restart the provider app.</li>
+              <li>For FPS/Frame Time issues, verify RTSS/MSI is running and actively updating.</li>
+              <li>If needed, restart SiR after provider configuration changes.</li>
+            </ul>
+          </div>
+        </details>
       </div>
       <div class="setup-guide-footer">
         <button type="button" class="test-btn" data-close-setup-guide>Got it</button>

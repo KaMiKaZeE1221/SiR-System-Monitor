@@ -3,6 +3,7 @@ const http = require('http');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
 const { shell, ipcRenderer } = require('electron');
 
 const APP_PACKAGE = (() => {
@@ -112,7 +113,10 @@ const SENSOR_OVERLAY_SELECTION_KEY = 'overlaySensorSelection';
 const SETUP_GUIDE_SUPPRESS_KEY = 'setupGuideSuppress';
 const APP_BEHAVIOR_SETTINGS_KEY = 'appBehaviorSettings';
 const SIDEBAR_WIDTH_KEY = 'sidebarWidth';
-const SENSOR_GROUP_ORDER = ['fps', 'cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'drives', 'other'];
+const OVERLAY_GROUP_LINE_LIMITS_KEY = 'overlayGroupLineLimits';
+const OVERLAY_LINE_LIMITS_EXPANDED_KEY = 'overlayLineLimitsExpanded';
+const LATENCY_HOST_KEY = 'latencyHost';
+const SENSOR_GROUP_ORDER = ['fps', 'cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'latency', 'drives', 'other'];
 const SENSOR_GROUP_LABELS = {
   fps: 'FPS',
   cpu: 'CPU',
@@ -121,6 +125,7 @@ const SENSOR_GROUP_LABELS = {
   psu: 'PSU',
   fans: 'Fans',
   network: 'Network',
+  latency: 'Ping',
   drives: 'Drives',
   other: 'Other'
 };
@@ -131,6 +136,7 @@ const SENSOR_GROUP_ICONS = {
   psu: 'bi-plug-fill',
   fans: 'bi-fan',
   network: 'bi-globe',
+  latency: 'bi-broadcast-pin',
   drives: 'bi-device-hdd-fill',
   fps: 'bi-graph-up',
   other: 'bi-tools'
@@ -150,6 +156,7 @@ const VIEW_MODE_GROUP_ICONS = {
     psu: 'bi-plug-fill',
     fans: 'bi-fan',
     network: 'bi-globe',
+    latency: 'bi-broadcast-pin',
     drives: 'bi-device-hdd-fill',
     other: 'bi-tools'
   },
@@ -161,6 +168,7 @@ const VIEW_MODE_GROUP_ICONS = {
     psu: 'bi-lightning-charge',
     fans: 'bi-wind',
     network: 'bi-wifi',
+    latency: 'bi-broadcast',
     drives: 'bi-hdd-stack',
     other: 'bi-stars'
   },
@@ -172,6 +180,7 @@ const VIEW_MODE_GROUP_ICONS = {
     psu: 'bi-plug',
     fans: 'bi-fan',
     network: 'bi-ethernet',
+    latency: 'bi-broadcast',
     drives: 'bi-device-hdd',
     other: 'bi-sliders'
   },
@@ -183,6 +192,7 @@ const VIEW_MODE_GROUP_ICONS = {
     psu: 'bi-battery-half',
     fans: 'bi-arrow-repeat',
     network: 'bi-router-fill',
+    latency: 'bi-activity',
     drives: 'bi-device-ssd-fill',
     other: 'bi-braces-asterisk'
   }
@@ -195,6 +205,7 @@ const GROUP_CARD_IDS = {
   psu: 'psuGroup',
   fans: 'fansGroup',
   network: 'networkGroup',
+  latency: 'latencyGroup',
   drives: 'drivesGroup',
   other: 'externalGroup'
 };
@@ -206,6 +217,7 @@ const GROUP_VISIBILITY_KEYS = {
   psu: 'showPsu',
   fans: 'showFans',
   network: 'showNetwork',
+  latency: 'showLatency',
   drives: 'showDrives',
   other: 'showExternal'
 };
@@ -254,6 +266,113 @@ let webMonitorRuntime = {
   host: '127.0.0.1',
   port: 17381
 };
+const latencyState = {
+  host: '1.1.1.1',
+  samples: [],
+  maxSamples: 120,
+  total: 0,
+  lost: 0,
+  current: null,
+  min: null,
+  max: null,
+  avg: null,
+  lastProbeAt: 0,
+  probing: false
+};
+
+function normalizeGroupLineLimit(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 8;
+  return Math.max(1, Math.min(40, Math.round(numeric)));
+}
+
+function normalizeOverlayGroupLineLimits(raw) {
+  const defaults = {};
+  SENSOR_GROUP_ORDER.forEach((group) => {
+    defaults[group] = 8;
+  });
+  let parsed = raw;
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      parsed = {};
+    }
+  }
+  const input = (parsed && typeof parsed === 'object') ? parsed : {};
+  SENSOR_GROUP_ORDER.forEach((group) => {
+    defaults[group] = normalizeGroupLineLimit(input[group]);
+  });
+  return defaults;
+}
+
+function getOverlayGroupLineLimits() {
+  return normalizeOverlayGroupLineLimits(localStorage.getItem(OVERLAY_GROUP_LINE_LIMITS_KEY));
+}
+
+function normalizeLatencyHost(value) {
+  const raw = String(value || '').trim();
+  return raw || '1.1.1.1';
+}
+
+function parsePingLatencyMs(text) {
+  const source = String(text || '');
+  const patterns = [
+    /time[=<]\s*(\d+(?:\.\d+)?)\s*ms/i,
+    /Average\s*=\s*(\d+)\s*ms/i
+  ];
+  for (const pattern of patterns) {
+    const match = source.match(pattern);
+    if (match) {
+      const parsed = Number(match[1]);
+      if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+    }
+  }
+  return null;
+}
+
+function probeLatency(host) {
+  return new Promise((resolve) => {
+    execFile('ping', ['-n', '1', '-w', '1000', host], { windowsHide: true, timeout: 2500 }, (error, stdout = '', stderr = '') => {
+      const ms = parsePingLatencyMs(`${stdout}\n${stderr}`);
+      if (Number.isFinite(ms)) {
+        resolve({ ok: true, ms });
+        return;
+      }
+      resolve({ ok: false, ms: null });
+    });
+  });
+}
+
+async function sampleLatencyIfNeeded() {
+  const host = normalizeLatencyHost(localStorage.getItem(LATENCY_HOST_KEY));
+  latencyState.host = host;
+  const now = Date.now();
+  if (latencyState.probing) return;
+  if ((now - latencyState.lastProbeAt) < Math.max(1000, updateInterval)) return;
+
+  latencyState.lastProbeAt = now;
+  latencyState.probing = true;
+  try {
+    const result = await probeLatency(host);
+    latencyState.total += 1;
+    if (result.ok && Number.isFinite(result.ms)) {
+      latencyState.current = result.ms;
+      latencyState.samples.push(result.ms);
+      if (latencyState.samples.length > latencyState.maxSamples) latencyState.samples.shift();
+      latencyState.min = latencyState.samples.length ? Math.min(...latencyState.samples) : null;
+      latencyState.max = latencyState.samples.length ? Math.max(...latencyState.samples) : null;
+      latencyState.avg = latencyState.samples.length
+        ? (latencyState.samples.reduce((sum, n) => sum + n, 0) / latencyState.samples.length)
+        : null;
+    } else {
+      latencyState.current = null;
+      latencyState.lost += 1;
+    }
+  } finally {
+    latencyState.probing = false;
+  }
+}
 
 function clampRefreshInterval(value) {
   const numeric = Number(value);
@@ -1471,7 +1590,7 @@ function renderSensorGraph(sensor) {
 }
 
 function createEmptyGroupedBuckets() {
-  return { fps: [], cpu: [], gpu: [], ram: [], psu: [], fans: [], network: [], drives: [], other: [] };
+  return { fps: [], cpu: [], gpu: [], ram: [], psu: [], fans: [], network: [], latency: [], drives: [], other: [] };
 }
 
 function loadSensorSelection() {
@@ -1572,13 +1691,10 @@ function ensureSensorOrderDefaults(groupedSensors) {
   Object.keys(groupedSensors || {}).forEach((group) => {
     const sensors = Array.isArray(groupedSensors[group]) ? groupedSensors[group] : [];
     const availableIds = sensors.map((sensor) => sensor.id).filter(Boolean);
-    const availableSet = new Set(availableIds);
-
     const existing = Array.isArray(sensorOrderByGroup[group]) ? sensorOrderByGroup[group] : [];
-    const filteredExisting = existing.filter((id) => availableSet.has(id));
-    const filteredSet = new Set(filteredExisting);
-    const missing = availableIds.filter((id) => !filteredSet.has(id));
-    const next = [...filteredExisting, ...missing];
+    const existingSet = new Set(existing);
+    const missing = availableIds.filter((id) => !existingSet.has(id));
+    const next = [...existing, ...missing];
 
     if (JSON.stringify(existing) !== JSON.stringify(next)) {
       sensorOrderByGroup[group] = next;
@@ -1920,6 +2036,55 @@ function setSettingsSectionExpanded(section, toggleButton, expanded) {
   toggleButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
 }
 
+function setSettingsGroupExpanded(group, toggleButton, expanded) {
+  group.classList.toggle('is-collapsed', !expanded);
+  toggleButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+}
+
+function setupSettingsGroupAccordion() {
+  const groups = Array.from(document.querySelectorAll('.sidebar .settings-group'));
+  if (!groups.length) return;
+
+  const savedState = loadSettingsAccordionState();
+
+  groups.forEach((group, index) => {
+    if (group.dataset.groupAccordionReady === 'true') return;
+
+    const titleEl = group.querySelector(':scope > .settings-group-title');
+    const groupTitle = titleEl ? titleEl.textContent.trim() : `Group ${index + 1}`;
+    const groupKeyBase = groupTitle.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || `group_${index + 1}`;
+    const groupKey = `group_${groupKeyBase}`;
+
+    const contentWrap = document.createElement('div');
+    contentWrap.className = 'settings-group-content';
+
+    const moveNodes = Array.from(group.children).filter((child) => child !== titleEl);
+    moveNodes.forEach((child) => contentWrap.appendChild(child));
+
+    if (titleEl) titleEl.remove();
+
+    const toggleButton = document.createElement('button');
+    toggleButton.type = 'button';
+    toggleButton.className = 'settings-group-toggle-btn';
+    toggleButton.innerHTML = `<span class="settings-group-toggle-title">${escapeHtml(groupTitle)}</span><span class="settings-group-toggle-icon" aria-hidden="true">▾</span>`;
+
+    const isExpanded = savedState[groupKey] !== undefined ? !!savedState[groupKey] : true;
+    setSettingsGroupExpanded(group, toggleButton, isExpanded);
+
+    toggleButton.addEventListener('click', () => {
+      const nextExpanded = group.classList.contains('is-collapsed');
+      setSettingsGroupExpanded(group, toggleButton, nextExpanded);
+      savedState[groupKey] = nextExpanded;
+      saveSettingsAccordionState(savedState);
+    });
+
+    group.dataset.groupAccordionReady = 'true';
+    group.dataset.groupKey = groupKey;
+    group.appendChild(toggleButton);
+    group.appendChild(contentWrap);
+  });
+}
+
 function setupSettingsAccordion() {
   const sections = Array.from(document.querySelectorAll('.sidebar .settings-section'));
   if (!sections.length) return;
@@ -2060,31 +2225,56 @@ function setupSidebarResize() {
 function applyWindowSizes() {
   const sizes = loadWindowSizes();
   const container = document.getElementById('statsContainer');
-  const columns = container
-    ? Math.max(1, getComputedStyle(container).gridTemplateColumns.split(' ').filter(Boolean).length)
+  const containerStyles = container ? getComputedStyle(container) : null;
+  const columns = containerStyles
+    ? Math.max(1, containerStyles.gridTemplateColumns.split(' ').filter(Boolean).length)
     : 1;
+  const gap = containerStyles ? (parseFloat(containerStyles.columnGap || containerStyles.gap || '14') || 14) : 14;
+  const containerWidth = container ? container.clientWidth : window.innerWidth;
+  const columnWidth = Math.max(220, (containerWidth - (gap * (columns - 1))) / columns);
+  let changed = false;
 
   const cards = document.querySelectorAll('.sensor-group');
   cards.forEach((card) => {
     const savedEntry = sizes[card.id];
     const savedHeight = Number(typeof savedEntry === 'object' ? savedEntry.height : savedEntry);
-    const savedSpan = Number(typeof savedEntry === 'object' ? savedEntry.span : 1);
+    const savedSpan = Number(typeof savedEntry === 'object' ? savedEntry.span : NaN);
+    const savedWidth = Number(typeof savedEntry === 'object' ? savedEntry.width : NaN);
 
     if (Number.isFinite(savedHeight) && savedHeight >= 220 && savedHeight <= 900) {
       card.style.height = `${savedHeight}px`;
     }
 
+    let nextSpan = NaN;
     if (Number.isFinite(savedSpan) && savedSpan >= 1) {
-      const normalizedSpan = Math.min(Math.max(1, Math.round(savedSpan)), columns);
-      card.style.gridColumn = `span ${normalizedSpan}`;
+      nextSpan = savedSpan;
+    } else if (Number.isFinite(savedWidth) && savedWidth >= 260) {
+      const inferredSpan = Math.round((savedWidth + gap) / (columnWidth + gap));
+      nextSpan = Math.min(Math.max(1, inferredSpan), columns);
+      sizes[card.id] = {
+        height: Number.isFinite(savedHeight) ? savedHeight : 360,
+        span: nextSpan
+      };
+      changed = true;
     }
+
+    if (Number.isFinite(nextSpan)) {
+      card.style.gridColumn = `span ${Math.min(Math.max(1, Math.round(nextSpan)), columns)}`;
+    } else {
+      card.style.gridColumn = '';
+    }
+    card.style.removeProperty('width');
+    card.style.removeProperty('justify-self');
   });
+
+  if (changed) saveWindowSizes(sizes);
 }
 
 function setupWindowResize() {
   const cards = Array.from(document.querySelectorAll('.sensor-group'));
   const sizeMap = loadWindowSizes();
   const heightSnap = 20;
+  const widthSnap = 30;
 
   const snapToStep = (value, step, min, max) => {
     const snapped = Math.round(value / step) * step;
@@ -2133,7 +2323,7 @@ function setupWindowResize() {
         const nextHeight = snapToStep(startHeight + delta, heightSnap, minHeight, maxHeight);
         card.style.height = `${Math.round(nextHeight)}px`;
 
-        const desiredWidth = Math.max(columnWidth, startWidth + deltaX);
+        const desiredWidth = snapToStep(Math.max(columnWidth, startWidth + deltaX), widthSnap, columnWidth, containerWidth);
         const rawSpan = Math.round((desiredWidth + gap) / (columnWidth + gap));
         const nextSpan = Math.min(Math.max(1, rawSpan || startSpan), columns);
         card.style.gridColumn = `span ${nextSpan}`;
@@ -2509,8 +2699,13 @@ function calculateOverlayHeight(payload, settings) {
 
     if (settings.style === 'grouped-line') {
       itemHeight = Math.round(32 * scale + 4);
-      rows = groupCount;
-      extraHeight = groupCount * 6;
+      const lineLimit = 8;
+      const lineRows = Object.values(groups).reduce((sum, sensorCount) => {
+        const countForGroup = Math.max(1, Number(sensorCount) || 0);
+        return sum + Math.min(lineLimit, countForGroup);
+      }, 0);
+      rows = Math.max(groupCount, lineRows);
+      extraHeight = rows * 6;
     } else if (settings.style === 'category') {
       itemHeight = Math.round(38 * scale + 8);
       rows = count + groupCount;
@@ -2554,6 +2749,7 @@ function loadOverlaySettings() {
     position: normalizeOverlayPosition(localStorage.getItem(OVERLAY_POSITION_KEY)),
     style: normalizeOverlayStyle(localStorage.getItem(OVERLAY_STYLE_KEY)),
     showUnits: normalizeOverlayShowUnits(localStorage.getItem(OVERLAY_SHOW_UNITS_KEY)),
+    groupLineLimits: getOverlayGroupLineLimits(),
     displayId: localStorage.getItem(OVERLAY_MONITOR_KEY) || '',
     hotkey: normalizeOverlayHotkey(localStorage.getItem(OVERLAY_HOTKEY_KEY)),
     dragUnlock: normalizeOverlayDragUnlock(localStorage.getItem(OVERLAY_DRAG_UNLOCK_KEY)),
@@ -3306,6 +3502,11 @@ function resolveDisplayUnits(sensor) {
     return normalized || '';
   }
 
+  if (group === 'latency') {
+    if (name.includes('loss')) return '%';
+    return 'ms';
+  }
+
   if (group === 'drives') {
     if (sensorId.includes('temp') || /thdd\d+/i.test(sensorId)) return '°C';
     if (name.includes('activity') || name.includes('utilization')) return '%';
@@ -3436,6 +3637,7 @@ function renderAllDynamicGroups(selected, options = {}) {
   renderDynamicGroup('psuSensorsDynamic', selected.psu);
   renderDynamicGroup('fansSensorsDynamic', selected.fans);
   renderDynamicGroup('networkSensorsDynamic', selected.network);
+  renderDynamicGroup('latencySensorsDynamic', selected.latency);
   renderDynamicGroup('drivesSensorsDynamic', selected.drives);
   renderDynamicGroup('externalSensorsDynamic', selected.other);
 }
@@ -3732,6 +3934,7 @@ function enrichGroupedSensorsWithRealtime(groupedSensors, externalData) {
 
   if (!base.other) base.other = [];
   if (!base.fps) base.fps = [];
+  if (!base.latency) base.latency = [];
 
   // Move any existing FPS/frame-time sensors into the dedicated FPS group.
   Object.keys(base).forEach((groupKey) => {
@@ -3809,6 +4012,15 @@ function enrichGroupedSensorsWithRealtime(groupedSensors, externalData) {
     const insertIndex = fpsIndexInFps >= 0 ? fpsIndexInFps + 1 : 0;
     base.fps.splice(insertIndex, 0, frameSensorEntry);
   }
+
+  const packetLossPct = latencyState.total > 0 ? ((latencyState.lost / latencyState.total) * 100) : 0;
+  base.latency = [
+    { id: 'latency_current', name: `Current (${latencyState.host})`, value: Number.isFinite(latencyState.current) ? latencyState.current : 0, units: 'ms', group: 'latency' },
+    { id: 'latency_average', name: `Average (${latencyState.host})`, value: Number.isFinite(latencyState.avg) ? latencyState.avg : 0, units: 'ms', group: 'latency' },
+    { id: 'latency_minimum', name: `Minimum (${latencyState.host})`, value: Number.isFinite(latencyState.min) ? latencyState.min : 0, units: 'ms', group: 'latency' },
+    { id: 'latency_maximum', name: `Maximum (${latencyState.host})`, value: Number.isFinite(latencyState.max) ? latencyState.max : 0, units: 'ms', group: 'latency' },
+    { id: 'latency_packet_loss', name: `Packet Loss (${latencyState.host})`, value: Number.isFinite(packetLossPct) ? packetLossPct : 0, units: '%', group: 'latency' }
+  ];
 
   return base;
 }
@@ -4150,6 +4362,7 @@ const ThemeManager = {
 const SettingsManager = {
   init() {
     sensorCustomNames = loadSensorCustomNames();
+    setupSettingsGroupAccordion();
     setupSettingsAccordion();
 
     const customFontColorInput = document.getElementById('customFontColor');
@@ -4245,6 +4458,57 @@ const SettingsManager = {
       restartUpdateTimer();
     });
 
+    const overlayGroupLineLimits = getOverlayGroupLineLimits();
+    SENSOR_GROUP_ORDER.forEach((group) => {
+      const input = document.getElementById(`overlayLineLimit_${group}`);
+      if (!input) return;
+      input.value = String(overlayGroupLineLimits[group] || 8);
+      input.addEventListener('input', (e) => {
+        const next = normalizeGroupLineLimit(e.target.value);
+        if (String(e.target.value) !== String(next)) {
+          e.target.value = String(next);
+        }
+        const current = getOverlayGroupLineLimits();
+        current[group] = next;
+        localStorage.setItem(OVERLAY_GROUP_LINE_LIMITS_KEY, JSON.stringify(current));
+        refreshOverlayWindowState(localStorage.getItem(OVERLAY_ENABLED_KEY) === 'true');
+      });
+    });
+
+    const overlayLineLimitsToggle = document.getElementById('overlayLineLimitsToggle');
+    const overlayLineLimitGrid = document.getElementById('overlayLineLimitGrid');
+    if (overlayLineLimitsToggle && overlayLineLimitGrid) {
+      const expanded = String(localStorage.getItem(OVERLAY_LINE_LIMITS_EXPANDED_KEY) || '').toLowerCase() === 'true';
+      overlayLineLimitGrid.classList.toggle('is-collapsed', !expanded);
+      overlayLineLimitsToggle.textContent = expanded ? 'Advanced: Hide' : 'Advanced: Show';
+      overlayLineLimitsToggle.addEventListener('click', () => {
+        const nextExpanded = overlayLineLimitGrid.classList.contains('is-collapsed');
+        overlayLineLimitGrid.classList.toggle('is-collapsed', !nextExpanded);
+        overlayLineLimitsToggle.textContent = nextExpanded ? 'Advanced: Hide' : 'Advanced: Show';
+        localStorage.setItem(OVERLAY_LINE_LIMITS_EXPANDED_KEY, nextExpanded ? 'true' : 'false');
+      });
+    }
+
+    const latencyHostInput = document.getElementById('latencyHost');
+    if (latencyHostInput) {
+      const host = normalizeLatencyHost(localStorage.getItem(LATENCY_HOST_KEY));
+      latencyHostInput.value = host;
+      localStorage.setItem(LATENCY_HOST_KEY, host);
+      latencyHostInput.addEventListener('change', (e) => {
+        const nextHost = normalizeLatencyHost(e.target.value);
+        e.target.value = nextHost;
+        localStorage.setItem(LATENCY_HOST_KEY, nextHost);
+        latencyState.host = nextHost;
+        latencyState.samples = [];
+        latencyState.total = 0;
+        latencyState.lost = 0;
+        latencyState.current = null;
+        latencyState.min = null;
+        latencyState.max = null;
+        latencyState.avg = null;
+      });
+    }
+
     // Visibility checkboxes
     const visibilityCheckboxes = {
       showFps: 'fpsGroup',
@@ -4254,6 +4518,7 @@ const SettingsManager = {
       showPsu: 'psuGroup',
       showFans: 'fansGroup',
       showNetwork: 'networkGroup',
+      showLatency: 'latencyGroup',
       showDrives: 'drivesGroup',
       showExternal: 'externalGroup'
     };
@@ -4304,7 +4569,10 @@ const SettingsManager = {
       OVERLAY_WIDTH_KEY,
       OVERLAY_POSITION_KEY,
       OVERLAY_STYLE_KEY,
-      OVERLAY_SHOW_UNITS_KEY
+      OVERLAY_SHOW_UNITS_KEY,
+      OVERLAY_GROUP_LINE_LIMITS_KEY,
+      OVERLAY_LINE_LIMITS_EXPANDED_KEY,
+      LATENCY_HOST_KEY
     ];
 
     if (exportSettingsBtn) {
@@ -5552,6 +5820,8 @@ async function updateStats(forceRender = false) {
   updateInProgress = true;
 
   try {
+    await sampleLatencyIfNeeded();
+
     const rawMode = localStorage.getItem('detectionMode') || 'msi';
     const mode = rawMode === 'msi' ? 'msi' : 'msi';
     if (rawMode !== mode) {
@@ -5693,6 +5963,95 @@ function restartUpdateTimer() {
   scheduleNextUpdateTick();
 }
 
+function applyUiTooltips() {
+  const tooltips = {
+    summaryModeBtn: 'Toggle summary mode (min/max focused view).',
+    webMonitorToggleBtn: 'Toggle browser web monitor on/off.',
+    discordPresenceToggleBtn: 'Toggle Discord Rich Presence integration.',
+    overlayToggleBtn: 'Quickly toggle the on-screen overlay.',
+    setupGuideHeaderBtn: 'Open setup and provider guidance.',
+    monitoringModeBtn: 'Open or close the settings sidebar.',
+    refreshRate: 'Set how often sensor data refreshes (milliseconds).',
+    groupLineLimit: 'Legacy control (kept for compatibility if present).',
+    latencyHost: 'Host/IP used for ping statistics.',
+    overlayEnabledToggle: 'Enable the always-on-top overlay window.',
+    overlayFontFamilySelect: 'Choose overlay font family.',
+    overlayPositionSelect: 'Choose overlay corner placement.',
+    overlayStyleSelect: 'Choose overlay rendering style.',
+    overlayMonitorSelect: 'Choose which display shows the overlay.',
+    overlayFontSizeSlider: 'Adjust overlay text size.',
+    overlayGroupSpacing: 'Adjust spacing between overlay groups.',
+    overlayScale: 'Scale sensor value/unit text size.',
+    overlayOpacity: 'Adjust overlay background opacity.',
+    overlayLineLimitsToggle: 'Show/hide per-category line-limit controls.',
+    overlayHotkey: 'Set keyboard shortcut to toggle overlay.',
+    overlayFontBoldToggle: 'Use bold overlay text.',
+    overlayShowUnitsToggle: 'Show or hide units in overlay values.',
+    overlayDragUnlockToggle: 'Allow dragging overlay while unlocked.',
+    overlayTextColor: 'Overlay label text color.',
+    overlayValueColor: 'Overlay value text color.',
+    overlayBackgroundColor: 'Overlay background color.',
+    temperatureUnitSelect: 'Choose temperature display unit.',
+    customFontColor: 'Main UI font color.',
+    customSensorNameColor: 'Sensor label color.',
+    customSensorValueColor: 'Sensor value color.',
+    customGraphColor: 'Graph line color.',
+    customBlockHeaderColor: 'Sensor-group header color.',
+    customIconColor: 'Sensor-group icon color.',
+    customOutlineColor: 'Border/outline color.',
+    customBackgroundColor: 'Background color.',
+    resetThemeColorsBtn: 'Reset custom colors to current theme defaults.',
+    showFps: 'Show/hide FPS group card.',
+    showCpu: 'Show/hide CPU group card.',
+    showGpu: 'Show/hide GPU group card.',
+    showRam: 'Show/hide RAM group card.',
+    showPsu: 'Show/hide PSU group card.',
+    showFans: 'Show/hide Fans group card.',
+    showNetwork: 'Show/hide Network group card.',
+    showLatency: 'Show/hide Ping group card.',
+    showDrives: 'Show/hide Drives group card.',
+    showExternal: 'Show/hide Other group card.',
+    resetSensorNamesBtn: 'Clear all custom sensor names.',
+    exportSettingsBtn: 'Export current app settings to a JSON file.',
+    importSettingsBtn: 'Import settings from a JSON file.',
+    providerRTSS: 'Enable RTSS/MSI shared-memory provider.',
+    providerAIDA64: 'Enable AIDA64 shared-memory provider.',
+    providerHWiNFO: 'Enable HWiNFO/LHM shared-memory provider.',
+    webMonitorEnabled: 'Enable the browser-accessible web monitor.',
+    webMonitorAutoStart: 'Auto-start web monitor when app launches.',
+    webMonitorHost: 'Host binding for web monitor server.',
+    webMonitorPort: 'Port for web monitor server.',
+    webMonitorApplyBtn: 'Apply and restart web monitor settings.',
+    webMonitorOpenBtn: 'Open web monitor in your default browser.',
+    discordPresenceSelect: 'Enable or disable Discord Rich Presence.',
+    launchAtStartup: 'Start app automatically with Windows.',
+    startMinimized: 'Launch app minimized.',
+    minimizeToTray: 'Minimize to system tray instead of taskbar.',
+    closeToTray: 'Close button hides to tray instead of exiting.',
+    checkForUpdatesBtn: 'Check GitHub releases for updates.',
+    openLatestReleaseBtn: 'Open latest release page in browser.'
+  };
+
+  Object.entries(tooltips).forEach(([id, text]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.title = text;
+    if (!el.getAttribute('aria-label')) {
+      el.setAttribute('aria-label', text);
+    }
+  });
+
+  const perCategoryTooltip = 'Set max overlay lines for this category in grouped-line style.';
+  ['fps', 'cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'latency', 'drives', 'other'].forEach((group) => {
+    const el = document.getElementById(`overlayLineLimit_${group}`);
+    if (!el) return;
+    el.title = perCategoryTooltip;
+    if (!el.getAttribute('aria-label')) {
+      el.setAttribute('aria-label', perCategoryTooltip);
+    }
+  });
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   document.title = APP_VERSION ? `SiR System Monitor v${APP_VERSION}` : 'SiR System Monitor';
@@ -5704,6 +6063,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupWindowResize();
   setupWindowDragAndDrop();
   setupSensorGraphInteractions();
+  applyUiTooltips();
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && pendingVisibilityRefresh) {
       invalidateRenderGroupCache();

@@ -1,6 +1,6 @@
 {
   "name": "sir-system-monitor",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Electron app for monitoring system statistics",
   "author": "SiR_KaMiKaZeE",
   "repository": {
@@ -60,11 +60,12 @@
       "!V1.2.0/**",
       "!V1.2.1/**",
       "!V1.2.1a/**",
+      "!V1.2.2/**",
       "!scripts/build-installer.js",
       "!scripts/run-electron-builder.js"
     ],
     "directories": {
-      "output": "V1.2.2"
+      "output": "V1.2.3"
     },
     "icon": "SiR_SM_Circle.ico",
     "win": {
@@ -75,7 +76,7 @@
       ]
     },
     "portable": {
-      "artifactName": "SiR-System-Monitor-Portable-1.2.2.${ext}"
+      "artifactName": "SiR-System-Monitor-Portable-1.2.3.${ext}"
     },
     "publish": [
       {
@@ -85,7 +86,7 @@
       }
     ],
     "nsis": {
-      "artifactName": "SiR-System-Monitor-Setup-1.2.2.${ext}",
+      "artifactName": "SiR-System-Monitor-Setup-1.2.3.${ext}",
       "license": "build/LICENSE.txt",
       "include": "build/installer.nsh",
       "oneClick": false,

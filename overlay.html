@@ -125,9 +125,10 @@
       gap: 6px;
     }
     .overlay-group-line {
-      display: flex;
-      flex-wrap: nowrap;
-      gap: var(--overlay-gap);
+      display: grid;
+      grid-template-columns: auto 1fr;
+      column-gap: var(--overlay-gap);
+      row-gap: 4px;
       align-items: baseline;
       font-size: calc(12px * var(--overlay-font-scale));
       padding: 0;
@@ -157,6 +158,8 @@
       width: auto;
       max-width: none;
       font-family: var(--overlay-font);
+      grid-column: 2;
+      margin-left: 0;
     }
     .overlay-group-line-sep {
       opacity: 0.6;
