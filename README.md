@@ -1,26 +1,28 @@
 # SiR System Monitor
 
-SiR System Monitor is a Windows Electron desktop app for real-time hardware telemetry with optional browser viewing.
+A Windows Electron desktop app for real-time hardware telemetry, overlay display, and optional browser-based monitoring.
 
-It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provides grouped live cards, sensor selection controls, summary mode, web monitor output, overlay support, appearance customization, and packaged installer/portable builds.
+## :books: Contents
+- [Overview](#computer-overview)
+- [Core Features](#sparkles-core-features)
+- [Requirements](#white_check_mark-requirements)
+- [Settings Overview](#gear-settings-overview)
+- [Backup and Restore](#floppy_disk-backup-and-restore)
+- [Data Sources](#test_tube-data-sources)
+- [Overlay Notes](#window-overlay-notes)
+- [Web Monitor](#globe_with_meridians-web-monitor)
+- [Updater](#arrows_counterclockwise-updater)
+- [Troubleshooting](#rescue_worker_helmet-troubleshooting)
+- [Tech Stack](#hammer_and_wrench-tech-stack)
+- [Screenshots](#framed_picture-screenshots)
 
-## Table of Contents
+## :computer: Overview
+SiR System Monitor is designed for users who want a fast, configurable view of system telemetry without needing to keep multiple monitoring apps in the foreground.
 
-- [What It Does](#what-it-does)
-- [Screenshots](#screenshots)
-- [Requirements](#requirements)
-- [Settings Overview](#settings-overview)
-- [Backup & Restore](#backup--restore---export--import)
-- [Sensor Sources](#sensor-sources)
-- [Sensor Naming & Grouping Notes](#sensor-naming--grouping-notes)
-- [Overlay Notes](#overlay-notes)
-- [Web Monitor](#web-monitor)
-- [Updater](#updater)
-- [Troubleshooting](#troubleshooting)
+The app reads shared-memory telemetry from RTSS, AIDA64, HWiNFO, and Libre Hardware Monitor (when available), then presents it through grouped live cards, configurable sensor visibility, summary mode, overlay output, and web sharing.
 
-## What It Does
-
-- Displays live hardware sensors grouped by:
+## :sparkles: Core Features
+- :bar_chart: Live grouped sensors:
   - FPS
   - CPU
   - GPU
@@ -31,205 +33,176 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
   - Ping
   - Drives
   - Other
-- FPS group includes FPS and Frame Time as a dedicated first-class panel.
-- Supports configurable refresh rate and sensor visibility.
-- Supports per-sensor selection, overlay inclusion, and drag-and-drop ordering.
-- Supports custom sensor names in Sensor Selection with inline rename editing.
-- Supports resetting all custom sensor names.
-- Supports Monitoring Mode and Summary Mode.
-- Supports appearance customization:
+- :dart: Dedicated FPS + Frame Time panel
+- :jigsaw: Per-sensor controls:
+  - Enable/disable
+  - Overlay include/exclude
+  - Drag-and-drop ordering
+  - Inline rename
+  - Reset custom names
+- :window: Monitoring Mode and Summary Mode
+- :art: Appearance customization:
   - Theme presets
-  - Style presets (Classic, Neon, Minimal, Terminal)
-  - Font size/family, bold text, monospace values
-  - Temperature unit toggle (Celsius/Fahrenheit)
-  - Custom colors for UI channels (font, sensor label/value, icon, graph, block header, outline, background)
-- Supports on-screen overlay customization:
-  - Enable/disable toggle
-  - Global overlay toggle hotkey
-  - Position, style, display/monitor selection
-  - Font size slider, unit scale, group spacing, opacity, color controls
-  - Per-category line limits (advanced section)
-  - Overlay category order customization (drag-and-drop + reset to defaults)
-  - Ping host targeting for latency statistics
-- Supports an in-app setup guide (book icon in header).
-- Exposes a browser-accessible monitor page and JSON endpoint.
+  - Style presets (`Classic`, `Neon`, `Minimal`, `Terminal`)
+  - Font family and size
+  - Bold text and monospace value options
+  - Temperature unit (`C` / `F`)
+  - Full UI color controls
+- :tools: Overlay customization:
+  - On/off toggle
+  - Global hotkey toggle
+  - Position and monitor selection
+  - Font size, scaling, spacing, opacity
+  - Per-category line limits
+  - Category reorder and reset
+- :globe_with_meridians: Web monitor UI and JSON endpoint
+- :blue_book: In-app setup guide
+- :package: Installer + portable build support
 
-## Requirements
+## :white_check_mark: Requirements
+- Windows 10 or newer
+- At least one sensor provider:
+  - RTSS / MSI Afterburner
+  - AIDA64 (Shared Memory enabled)
+  - HWiNFO (Shared Memory enabled)
+  - Libre Hardware Monitor (Shared Memory enabled)
 
-- OS: Windows 10+ (may work on earlier versions but not officially tested).
+## :gear: Settings Overview
+All settings are persisted locally and survive app restarts.
 
-## At least one of these is required to show sensors
+### :art: Appearance
+- Theme and style presets
+- Font and text options
+- Temperature unit
+- Custom colors:
+  - Font
+  - Sensor labels
+  - Sensor values
+  - Icon
+  - Graph
+  - Block headers
+  - Outline
+  - Background
+- Overlay settings
 
-- RTSS / MSI Afterburner (primarily for FPS/Frame Times)
-- AIDA64 with Shared Memory enabled
-- HWiNFO / LHM shared memory providers
+### :chart_with_upwards_trend: Monitoring
+- Refresh rate (`1000-5000 ms`)
+- Ping host target
+- Visible sensor groups
+- Sensor Selection controls
 
-## Settings Overview
+### :electric_plug: Data Sources
+- Provider toggles for shared-memory sources
 
-Settings are grouped in the sidebar:
+### :globe_with_meridians: Connectivity
+- Web monitor host/port
+- Open monitor URL action
+- Discord Rich Presence toggle
 
-- Appearance
-  - Color theme
-  - Style preset
-  - Font size/family and text options
-  - Temperature unit selector (�C / �F)
-  - Custom colors (font, sensor names, sensor values, icon, graph, sensor block headers, outline, background)
-  - Reset to theme defaults
-  - On-Screen Overlay settings
-- Monitoring
-  - Refresh rate (1000-5000 ms)
-  - Ping host target for latency sampling
-  - Visible sensor groups (including FPS)
-  - Sensor Selection panel
-    - per-sensor enabled state
-    - per-sensor overlay state
-    - drag-and-drop ordering
-    - inline rename button per sensor row
-    - reset custom sensor names button
-- Data Sources
-  - Shared memory provider toggles
-- Connectivity
-  - Web monitor enable, host/port, open URL
-  - Discord Rich Presence (enable / disable)
-- App Behavior
-  - Launch at startup
-  - Start minimized
-  - Minimize/close to tray
-  - Auto-check updates on startup
-  - Startup delay (0-300 seconds)
-  - App update controls
+### :brain: App Behavior
+- Launch at startup
+- Start minimized
+- Minimize/close to tray
+- Auto-check updates on startup
+- Startup delay (`0-300 seconds`)
+- Manual update controls
 
-All settings are persisted locally.
+## :floppy_disk: Backup and Restore
+Built-in **Export** and **Import** are available under `Settings -> Backup & Restore`.
 
-### Backup & Restore / Export & Import
+- Export creates a JSON snapshot of your current settings.
+- Import opens a preview before applying changes.
+- Apply options:
+  - `Apply Now`
+  - `Apply & Reload`
 
-SiR System Monitor provides an in-app Export and Import flow to back up your current settings or restore them from a JSON file.
+The export includes appearance preferences, monitoring options, provider toggles, web monitor settings, overlay configuration, and update-related behavior.
 
-- Export: produces a JSON file containing your active settings including theme, style preset, temperature unit, custom colors, appearance options, sensor selection and ordering, connectivity settings (web monitor host/port), and updater preferences.
-  - Also includes overlay and ping additions such as per-category overlay line limits, advanced overlay limits panel state, and ping host target.
-- Import: opens a preview modal showing which settings will change. You can choose **Apply Now** to apply settings immediately without a full reload, or **Apply & Reload** to apply settings and restart the renderer.
-
-Usage:
-
-1. Open Settings -> Backup & Restore.
-2. Click **Export** to save a JSON snapshot of the current settings.
-3. Click **Import** and select a previously exported JSON file to preview its values.
-4. Use **Apply Now** to apply the visible changes instantly, or **Apply & Reload** to apply and restart the UI for a fuller effect.
-
-Notes:
-
-- Exported files are portable between installs of the same app version family; major version upgrades may change settings semantics.
-
-### Discord Rich Presence
-
-- Presence is enabled by default.
-- To disable Rich Presence: open Settings -> Connectivity -> Discord Rich Presence -> select **Disabled**.
-
-## Sensor Sources
-
-Primary runtime path uses shared-memory integration:
-
+## :test_tube: Data Sources
+Primary runtime provider path:
 - RTSS
 - AIDA64
 - HWiNFO
-- LHM
+- Libre Hardware Monitor
 
+### :compass: Recommended first-time setup
+1. Enable only the providers you actively use in `Settings -> Data Sources`.
+2. Confirm shared-memory output is enabled in each provider app.
+3. Enable desired groups in `Monitoring -> Visible Sensors`.
+4. Configure per-sensor options in `Monitoring -> Sensor Selection`.
+5. Configure overlay behavior in `Appearance -> On-Screen Overlay`.
+6. Configure host/port in `Connectivity -> Web Monitor`.
+7. Configure startup and update behavior in `App Behavior`.
 
-### Recommended First-Time Setup
+### Provider tips
+- RTSS/MSI Afterburner is the most common source for FPS/frame-time telemetry.
+- HWiNFO and AIDA64 often expose overlapping sensors, so enabling only what you need helps keep the sensor list cleaner.
+- If a provider is closed or shared memory is disabled, its sensors will not populate.
 
-1. Enable only the providers you actively use in **Settings -> Data Sources**.
-2. In each provider app, verify shared-memory output is enabled:
-   - AIDA64: File -> Preferences -> External Applications -> Shared Memory
-   - HWiNFO/LHM: shared-memory sensor output enabled in their settings
-   - RTSS/MSI: keep RTSS running for FPS/Frame Time telemetry
-3. Open **Monitoring -> Visible Sensors** and enable the groups you want.
-4. Use **Monitoring -> Sensor Selection** to:
-   - Enable/disable individual sensors
-   - Select overlay-included sensors
-   - Reorder sensors via drag and drop
-   - Rename sensors inline for cleaner display labels
-5. Configure **Appearance -> On-Screen Overlay**:
-   - Choose style/position/display
-   - Set hotkey and visual options
-   - Use per-category line limits for grouped-line mode
-   - Reorder overlay categories (for example, GPU before FPS) using Overlay Category Order
-6. Configure **Connectivity -> Web Monitor**:
-   - 127.0.0.1 for local-only
-   - 0.0.0.0 for LAN access (ensure firewall allows the port)
-7. Configure **App Behavior**:
-   - Enable/disable auto-check updates on startup
-   - Set startup delay if providers need extra time after Windows login
-## Sensor Naming & Grouping Notes
-
-- The app applies display-label normalization for common provider naming quirks.
-- Custom names (from Sensor Selection rename) override normalized labels.
-- In grouped-line overlay style, `Network` is shortened to `NET`.
-
-## Overlay Notes
-
-- Overlay uses selected sensors and updates live.
-- Overlay can be toggled from:
+## :window: Overlay Notes
+- Uses your selected sensors and updates live.
+- Can be toggled from:
   - Header `Overlay: On/Off` button
   - Global overlay hotkey
-- Overlay category display order is user-configurable in Overlay Settings.
-- At minimum background opacity, overlay background/border surfaces are fully transparent.
-- When using different Font Size and Unit Scale values, sensor row baseline alignment is preserved.
+- Category order is user-configurable.
+- Grouped-line style shortens `Network` to `NET`.
+- Per-category line limits can reduce overlay clutter on smaller displays.
 
-## Web Monitor
-
+## :globe_with_meridians: Web Monitor
 When enabled:
+- UI: `http://<host>:<port>/`
+- JSON: `http://<host>:<port>/api/monitor`
 
-- UI endpoint: `http://<host>:<port>/`
-- JSON endpoint: `http://<host>:<port>/api/monitor`
-- When web monitor is active, the header shows `Sharing` status.
+Host guidance:
+- `127.0.0.1` for local-only access
+- `0.0.0.0` for WAN/LAN access (Allow WAN at your own risk!)
 
-Network binding guidance:
+Security note:
+- If you expose the monitor beyond localhost, use firewall rules and trusted networks only.
 
-- Use `127.0.0.1` for local-only access.
-- Use `0.0.0.0` to listen on all interfaces (LAN). This can also allow WAN/public access if firewall rules, router port forwarding, or public network exposure permit it.
+## :arrows_counterclockwise: Updater
+Current flow:
+1. Open `Settings -> App Behavior -> App Updates`.
+2. Click **Check for Updates**.
+3. If available, choose **Download Update**.
+4. After download, choose **Restart to Install**.
 
-## Updater
+If release metadata is missing, the app falls back to **Open Latest Release**.
 
-SiR System Monitor uses `electron-updater` with GitHub Releases as the update source.
+## :rescue_worker_helmet: Troubleshooting
+### :question: Missing sensors
+- Ensure provider apps are running.
+- Verify source toggles in `Settings -> Data Sources`.
+- Confirm shared-memory output is enabled in each provider.
 
-Current behavior is manual (user-driven):
+### :video_game: FPS / Frame Time not updating
+- Ensure RTSS/MSI Afterburner is running.
+- Keep RTSS provider enabled.
+- Check that another overlay/OSD tool is not conflicting with RTSS output.
 
-- In Settings -> App Behavior -> App Updates, click **Check for Updates**.
-- If no update exists, status shows: **No Updates Found**.
-- If an update exists, an in-app modal appears and lets the user choose **Download Update**.
-- After download completes, the app shows **Restart to Install**.
-- If updater metadata is missing on the release, the app falls back to **Open Latest Release**.
+### :globe_with_meridians: Browser monitor unreachable
+- Verify host/port in `Settings -> Connectivity`.
+- For WAN/LAN use, set host to `0.0.0.0` and allow firewall access.
+- Test local access first (`127.0.0.1`) before trying another device.
 
-## Troubleshooting
+### :zap: Performance concerns
+- Keep refresh rate at `1000 ms` or higher.
+- Disable unused providers and overlays.
+- Reduce visible sensor groups if rendering appears heavy.
 
-1. Missing sensors
+## :hammer_and_wrench: Tech Stack
+- Electron
+- Node.js
+- `electron-updater`
+- `systeminformation`
+- `koffi`
 
-- Ensure provider app is running (AIDA64/HWiNFO/RTSS as needed).
-- Check provider toggles in Settings -> Data Sources.
+## :framed_picture: Screenshots
+More screenshots: [Imgur Album](https://imgur.com/a/pkG1Cyb)
 
-2. FPS / Frame Time issues
-
-- Ensure RTSS/MSI is running and actively updating.
-- Keep RTSS provider enabled in Shared Memory Sources.
-
-3. Browser monitor not reachable
-
-- Verify host/port in Settings -> Connectivity.
-- If using other devices, use host `0.0.0.0` and allow firewall access.
-
-4. Performance / latency concerns
-
-- Keep refresh rate at 1000ms or higher.
-- Close unnecessary overlays/providers not in use.
-
-## Screenshots
-
-More screenshots on Imgur
-https://imgur.com/a/pkG1Cyb
-
-<img width="1920" height="1032" alt="Standard_View" src="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/blob/main/Screenshots/SiR_System_Monitor_Orange.png" />
-<img width="1920" height="1032" alt="Standard_View" src="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/blob/main/Screenshots/SiR_System_Monitor_Blue.png" />
-<img width="1920" height="1032" alt="Standard_View" src="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/blob/main/Screenshots/SiR_System_Monitor_Cyan.png" />
-<img width="1920" height="1032" alt="Standard_View" src="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/blob/main/Screenshots/SiR_System_Monitor_Green.png" />
-<img width="1920" height="1032" alt="Standard_View" src="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/blob/main/Screenshots/SiR_System_Monitor_Purple.png" />
-<img width="1920" height="1032" alt="Standard_View" src="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/blob/main/Screenshots/SiR_System_Monitor_Red.png" />
+![Orange Theme](./Screenshots/SiR_System_Monitor_Orange.png)
+![Blue Theme](./Screenshots/SiR_System_Monitor_Blue.png)
+![Cyan Theme](./Screenshots/SiR_System_Monitor_Cyan.png)
+![Green Theme](./Screenshots/SiR_System_Monitor_Green.png)
+![Purple Theme](./Screenshots/SiR_System_Monitor_Purple.png)
+![Red Theme](./Screenshots/SiR_System_Monitor_Red.png)
