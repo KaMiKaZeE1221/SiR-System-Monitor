@@ -49,6 +49,7 @@ It reads shared-memory data from RTSS/AIDA64/HWiNFO/LHM (when available), provid
   - Position, style, display/monitor selection
   - Font size slider, unit scale, group spacing, opacity, color controls
   - Per-category line limits (advanced section)
+  - Overlay category order customization (drag-and-drop + reset to defaults)
   - Ping host targeting for latency statistics
 - Supports an in-app setup guide (book icon in header).
 - Exposes a browser-accessible monitor page and JSON endpoint.
@@ -71,7 +72,7 @@ Settings are grouped in the sidebar:
   - Color theme
   - Style preset
   - Font size/family and text options
-  - Temperature unit selector (°C / °F)
+  - Temperature unit selector (�C / �F)
   - Custom colors (font, sensor names, sensor values, icon, graph, sensor block headers, outline, background)
   - Reset to theme defaults
   - On-Screen Overlay settings
@@ -94,6 +95,8 @@ Settings are grouped in the sidebar:
   - Launch at startup
   - Start minimized
   - Minimize/close to tray
+  - Auto-check updates on startup
+  - Startup delay (0-300 seconds)
   - App update controls
 
 All settings are persisted locally.
@@ -131,6 +134,31 @@ Primary runtime path uses shared-memory integration:
 - HWiNFO
 - LHM
 
+
+### Recommended First-Time Setup
+
+1. Enable only the providers you actively use in **Settings -> Data Sources**.
+2. In each provider app, verify shared-memory output is enabled:
+   - AIDA64: File -> Preferences -> External Applications -> Shared Memory
+   - HWiNFO/LHM: shared-memory sensor output enabled in their settings
+   - RTSS/MSI: keep RTSS running for FPS/Frame Time telemetry
+3. Open **Monitoring -> Visible Sensors** and enable the groups you want.
+4. Use **Monitoring -> Sensor Selection** to:
+   - Enable/disable individual sensors
+   - Select overlay-included sensors
+   - Reorder sensors via drag and drop
+   - Rename sensors inline for cleaner display labels
+5. Configure **Appearance -> On-Screen Overlay**:
+   - Choose style/position/display
+   - Set hotkey and visual options
+   - Use per-category line limits for grouped-line mode
+   - Reorder overlay categories (for example, GPU before FPS) using Overlay Category Order
+6. Configure **Connectivity -> Web Monitor**:
+   - 127.0.0.1 for local-only
+   - 0.0.0.0 for LAN access (ensure firewall allows the port)
+7. Configure **App Behavior**:
+   - Enable/disable auto-check updates on startup
+   - Set startup delay if providers need extra time after Windows login
 ## Sensor Naming & Grouping Notes
 
 - The app applies display-label normalization for common provider naming quirks.
@@ -143,6 +171,7 @@ Primary runtime path uses shared-memory integration:
 - Overlay can be toggled from:
   - Header `Overlay: On/Off` button
   - Global overlay hotkey
+- Overlay category display order is user-configurable in Overlay Settings.
 - At minimum background opacity, overlay background/border surfaces are fully transparent.
 - When using different Font Size and Unit Scale values, sensor row baseline alignment is preserved.
 
@@ -195,7 +224,7 @@ Current behavior is manual (user-driven):
 
 ## Screenshots
 
-More screenshots on Imgur (Screenshots maybe outdated)
+More screenshots on Imgur
 https://imgur.com/a/pkG1Cyb
 
 <img width="1920" height="1032" alt="Standard_View" src="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/blob/main/Screenshots/SiR_System_Monitor_Orange.png" />
