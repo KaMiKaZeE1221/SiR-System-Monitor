@@ -1,6 +1,31 @@
 # Changelog
 
-> Note: Entries for older builds are estimated from development history and may not map 1:1 to exact historic commit dates.
+## 1.2.4 - 2026-05-12
+
+### Added
+- Added an auto-check-for-updates toggle in settings so update checks can be enabled/disabled by preference.
+- Added configurable startup delay support with user-selected delay time before monitor initialization.
+- Expanded the Setup Guide with more in-depth onboarding content and clearer setup instructions.
+- Added `Overlay Category Order` controls in Overlay Settings with drag-and-drop ordering and reset-to-default support.
+
+### Changed
+- Updated webview ping labeling to use `Ping` terminology consistently instead of `Latency`.
+- Enhanced Setup Guide dropdown hover styling with glow feedback for better visual affordance.
+- Added an outer glow treatment to category windows and their contained settings sections for stronger visual grouping.
+- Improved settings sidebar header branding mark (larger icon with reduced internal empty space) for clearer visual balance.
+- Updated Overlay Settings structure to use the same full accordion section behavior as the rest of the settings UI.
+- Extended settings export/import coverage to include overlay category ordering preferences.
+- Added a focused desktop performance pass to reduce renderer CPU usage:
+  - cached overlay category order in-memory instead of repeated per-tick `localStorage` reads
+  - skipped web payload rebuild work while Web Monitor is not running
+  - precomputed sensor display labels/formatted values once per update cycle for reuse in render/signature paths
+  - cached active temperature unit in-memory for hot-path value normalization
+
+### Fixed
+- Fixed webview ping status icon rendering so it no longer appears as a plain green dot and now reflects the intended ping icon behavior.
+- Fixed Overlay Settings dropdown arrow/toggle behavior and partial container rendering mismatch in the On-Screen Overlay section.
+- Added clearer drag insertion indicators for overlay category reordering (before/after drop target lines) to make placement intent visible while dragging.
+- Fixed an app termination edge case where the overlay could remain active after the main app closed by explicitly shutting down overlay window/hotkey during quit/close lifecycle hooks.
 
 ## 1.2.3 - 2026-05-12
 
