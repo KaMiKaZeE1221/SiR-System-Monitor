@@ -176,6 +176,8 @@ function renderOverlayItem(sensor, settings) {
   }
   const classes = ['overlay-item'];
   if (settings.style === 'card') classes.push('overlay-item-card');
+  if (sensor.alertSeverity === 'warning') classes.push('overlay-item-alert-warning');
+  if (sensor.alertSeverity === 'critical') classes.push('overlay-item-alert-critical');
   return `<div class="${classes.join(' ')}"><span class="overlay-label">${escapeHtml(label)}</span><span class="overlay-value">${escapeHtml(display)}</span></div>`;
 }
 
@@ -213,8 +215,16 @@ function renderOverlay(payload) {
               display = `${value} ${String(sensor.displayUnits).trim()}`;
             }
           }
-          return `<span class="overlay-group-line-item">${escapeHtml(display)}</span>`;
+          const severityClass = sensor.alertSeverity === 'critical'
+            ? ' overlay-group-line-item-alert-critical'
+            : (sensor.alertSeverity === 'warning' ? ' overlay-group-line-item-alert-warning' : '');
+          return `<span class="overlay-group-line-item${severityClass}">${escapeHtml(display)}</span>`;
         });
+        const hasCritical = groupEntry.sensors.some((sensor) => sensor.alertSeverity === 'critical');
+        const hasWarning = !hasCritical && groupEntry.sensors.some((sensor) => sensor.alertSeverity === 'warning');
+        const groupAlertClass = hasCritical
+          ? ' overlay-group-alert-critical'
+          : (hasWarning ? ' overlay-group-alert-warning' : '');
         const perGroupLimits = normalizeOverlayGroupLineLimits(settings.groupLineLimits);
         const lineLimit = normalizeGroupLineLimit(perGroupLimits[groupEntry.key] ?? 8);
         const chunkSize = Math.max(1, Math.ceil(renderedItems.length / lineLimit));
@@ -226,7 +236,7 @@ function renderOverlay(payload) {
         const values = chunks.map((chunk) => `<span class="overlay-group-values">${chunk}</span>`).join('');
 
         return `
-          <div class="overlay-group overlay-group-line">
+          <div class="overlay-group overlay-group-line${groupAlertClass}">
             <span class="overlay-group-title">${escapeHtml(groupLabel)}</span>
             ${values}
           </div>`;

@@ -28,6 +28,8 @@ const DEFAULT_APP_BEHAVIOR_SETTINGS = {
   startMinimized: false,
   minimizeToTray: false,
   closeToTray: false,
+  autoCheckForUpdates: true,
+  startupDelaySeconds: 0,
   enableDiscordRichPresence: true
 };
 
@@ -354,11 +356,17 @@ function getBehaviorSettingsPath() {
 }
 
 function normalizeBehaviorSettings(settings) {
+  const startupDelaySeconds = Number.isFinite(Number(settings?.startupDelaySeconds))
+    ? Math.max(0, Math.min(60, Math.round(Number(settings.startupDelaySeconds))))
+    : 0;
+
   return {
     launchAtStartup: !!settings?.launchAtStartup,
     startMinimized: !!settings?.startMinimized,
     minimizeToTray: !!settings?.minimizeToTray,
     closeToTray: !!settings?.closeToTray,
+    autoCheckForUpdates: settings?.autoCheckForUpdates !== false,
+    startupDelaySeconds,
     enableDiscordRichPresence: typeof settings?.enableDiscordRichPresence === 'boolean'
       ? settings.enableDiscordRichPresence
       : true
@@ -503,16 +511,17 @@ function setDiscordActivity() {
     return;
   }
   try {
+    const appVersion = String(app.getVersion() || '').trim() || 'unknown';
     // Updated presence payload per provided example
     discordIpc.setActivity({
       details: 'Monitoring System Stats',
-      state: 'Active',
+      state: `v${appVersion}`,
       startTimestamp: Math.floor(Date.now() / 1000),
       largeImageKey: 'sir_sm_circle',
       largeImageText: 'Numbani',
       smallImageKey: 'sir_sm_circle',
-      smallImageText: `v${app.getVersion()}`,
-      partyMax: 5,
+      smallImageText: `v${appVersion}`,
+      partyMax: 5000,
       joinSecret: 'MTI4NzM0OjFpMmhuZToxMjMxMjM=',
       buttons: [
         { label: 'Project', url: 'https://github.com/KaMiKaZeE1221/SiR-System-Monitor' }
@@ -532,12 +541,13 @@ function syncTrayState() {
 }
 
 function createWindow() {
+  const startupDelayMs = Math.max(0, Math.min(60000, Number(appBehaviorSettings.startupDelaySeconds || 0) * 1000));
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 900,
     icon: path.join(__dirname, 'SiR_SM_Circle.ico'),
     autoHideMenuBar: true,
-    show: !appBehaviorSettings.startMinimized,
+    show: false,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -572,16 +582,26 @@ function createWindow() {
   });
 
   mainWindow.on('closed', () => {
+    shutdownOverlaySubsystem();
     mainWindow = null;
   });
 
-  if (appBehaviorSettings.startMinimized) {
-    mainWindow.once('ready-to-show', () => {
-      if (!mainWindow) return;
+  mainWindow.once('ready-to-show', () => {
+    const revealWindow = () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
       mainWindow.show();
-      mainWindow.minimize();
-    });
-  }
+      if (appBehaviorSettings.startMinimized) {
+        mainWindow.minimize();
+      }
+    };
+
+    if (startupDelayMs > 0) {
+      setTimeout(revealWindow, startupDelayMs);
+      return;
+    }
+
+    revealWindow();
+  });
 }
 
 let overlayWindow = null;
@@ -666,6 +686,12 @@ function destroyOverlayWindow() {
   } catch (e) {
     overlayWindow = null;
   }
+}
+
+function shutdownOverlaySubsystem() {
+  overlayDragSession = null;
+  destroyOverlayWindow();
+  unregisterOverlayHotkey();
 }
 
 ipcMain.handle('overlay:set-enabled', (_event, enabled) => {
@@ -1000,6 +1026,7 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   isQuitting = true;
+  shutdownOverlaySubsystem();
 });
 
 app.on('window-all-closed', () => {
@@ -1020,6 +1047,7 @@ app.on('activate', () => {
 });
 
 app.on('will-quit', () => {
+  shutdownOverlaySubsystem();
   clearDiscordIntervals();
   if (discordIpc) {
     try { discordIpc.clearActivity(); } catch (e) { /* ignore */ }

@@ -3,6 +3,7 @@ const http = require('http');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 const { shell, ipcRenderer } = require('electron');
 
@@ -60,6 +61,7 @@ let overlaySensorSelection = {};
 let sensorCategorySelection = {};
 let sensorCategoryCollapse = {};
 let sensorOrderByGroup = {};
+let overlayCategoryOrderCache = null;
 let sensorCatalogSignature = '';
 let updateInProgress = false;
 let rerunUpdateRequested = false;
@@ -76,9 +78,11 @@ const FONT_SIZE_KEY = 'fontSize';
 const FONT_FAMILY_KEY = 'fontFamily';
 const VALUE_FONT_MONOSPACE_KEY = 'valueFontMonospace';
 const FONT_BOLD_KEY = 'fontBold';
+const DISABLE_GLOW_EFFECTS_KEY = 'disableGlowEffects';
 const TEMPERATURE_UNIT_KEY = 'temperatureUnit';
 const PROVIDER_SELECTION_KEY = 'providerSelection';
 const SENSOR_CUSTOM_NAMES_KEY = 'sensorCustomNames';
+const SENSOR_ALERT_RULES_KEY = 'sensorAlertRules';
 const SETTINGS_ACCORDION_STATE_KEY = 'settingsAccordionState';
 const WINDOW_ORDER_KEY = 'windowOrder';
 const WINDOW_SIZE_KEY = 'windowSize';
@@ -112,10 +116,62 @@ const OVERLAY_CUSTOM_POSITION_ENABLED_KEY = 'overlayCustomPositionEnabled';
 const SENSOR_OVERLAY_SELECTION_KEY = 'overlaySensorSelection';
 const SETUP_GUIDE_SUPPRESS_KEY = 'setupGuideSuppress';
 const APP_BEHAVIOR_SETTINGS_KEY = 'appBehaviorSettings';
+const SETTINGS_PROFILES_KEY = 'settingsProfiles';
+const ACTIVE_SETTINGS_PROFILE_KEY = 'activeSettingsProfile';
 const SIDEBAR_WIDTH_KEY = 'sidebarWidth';
 const OVERLAY_GROUP_LINE_LIMITS_KEY = 'overlayGroupLineLimits';
 const OVERLAY_LINE_LIMITS_EXPANDED_KEY = 'overlayLineLimitsExpanded';
+const OVERLAY_CATEGORY_ORDER_KEY = 'overlayCategoryOrder';
 const LATENCY_HOST_KEY = 'latencyHost';
+const SETTINGS_SNAPSHOT_KEYS = [
+  SENSOR_ORDER_KEY,
+  SENSOR_SELECTION_KEY,
+  SENSOR_OVERLAY_SELECTION_KEY,
+  SENSOR_CATEGORY_SELECTION_KEY,
+  SENSOR_CUSTOM_NAMES_KEY,
+  'customColors',
+  VIEW_MODE_KEY,
+  'theme',
+  FONT_SIZE_KEY,
+  FONT_FAMILY_KEY,
+  VALUE_FONT_MONOSPACE_KEY,
+  FONT_BOLD_KEY,
+  DISABLE_GLOW_EFFECTS_KEY,
+  TEMPERATURE_UNIT_KEY,
+  SUMMARY_MODE_KEY,
+  'refreshRate',
+  OVERLAY_ENABLED_KEY,
+  OVERLAY_FONT_SIZE_KEY,
+  OVERLAY_FONT_FAMILY_KEY,
+  OVERLAY_FONT_BOLD_KEY,
+  OVERLAY_TEXT_COLOR_KEY,
+  OVERLAY_VALUE_COLOR_KEY,
+  OVERLAY_BG_COLOR_KEY,
+  OVERLAY_OPACITY_KEY,
+  OVERLAY_WIDTH_PRESET_KEY,
+  OVERLAY_WIDTH_KEY,
+  OVERLAY_POSITION_KEY,
+  OVERLAY_STYLE_KEY,
+  OVERLAY_SHOW_UNITS_KEY,
+  OVERLAY_GROUP_LINE_LIMITS_KEY,
+  OVERLAY_LINE_LIMITS_EXPANDED_KEY,
+  OVERLAY_CATEGORY_ORDER_KEY,
+  LATENCY_HOST_KEY,
+  PROVIDER_SELECTION_KEY,
+  WEB_MONITOR_SETTINGS_KEY,
+  APP_BEHAVIOR_SETTINGS_KEY,
+  SENSOR_ALERT_RULES_KEY,
+  'showFps',
+  'showCpu',
+  'showGpu',
+  'showRam',
+  'showPsu',
+  'showFans',
+  'showNetwork',
+  'showLatency',
+  'showDrives',
+  'showExternal'
+];
 const SENSOR_GROUP_ORDER = ['fps', 'cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'latency', 'drives', 'other'];
 const SENSOR_GROUP_LABELS = {
   fps: 'FPS',
@@ -140,12 +196,6 @@ const SENSOR_GROUP_ICONS = {
   drives: 'bi-device-hdd-fill',
   fps: 'bi-graph-up',
   other: 'bi-tools'
-};
-const VIEW_MODE_LABELS = {
-  standard: 'Classic',
-  compact: 'Neon',
-  wide: 'Minimal',
-  terminal: 'Terminal'
 };
 const VIEW_MODE_GROUP_ICONS = {
   standard: {
@@ -195,6 +245,54 @@ const VIEW_MODE_GROUP_ICONS = {
     latency: 'bi-activity',
     drives: 'bi-device-ssd-fill',
     other: 'bi-braces-asterisk'
+  },
+  rail: {
+    fps: 'bi-layout-sidebar-inset',
+    cpu: 'bi-cpu-fill',
+    gpu: 'bi-gpu-card',
+    ram: 'bi-memory',
+    psu: 'bi-plug-fill',
+    fans: 'bi-fan',
+    network: 'bi-globe2',
+    latency: 'bi-broadcast-pin',
+    drives: 'bi-device-hdd-fill',
+    other: 'bi-tools'
+  },
+  glass: {
+    fps: 'bi-droplet-half',
+    cpu: 'bi-cpu',
+    gpu: 'bi-gpu-card',
+    ram: 'bi-diagram-3',
+    psu: 'bi-lightning',
+    fans: 'bi-wind',
+    network: 'bi-wifi',
+    latency: 'bi-activity',
+    drives: 'bi-hdd-stack',
+    other: 'bi-stars'
+  },
+  split: {
+    fps: 'bi-grid-3x2-gap-fill',
+    cpu: 'bi-cpu-fill',
+    gpu: 'bi-gpu-card',
+    ram: 'bi-memory',
+    psu: 'bi-plug-fill',
+    fans: 'bi-fan',
+    network: 'bi-ethernet',
+    latency: 'bi-broadcast',
+    drives: 'bi-device-hdd',
+    other: 'bi-sliders'
+  },
+  status: {
+    fps: 'bi-shield-check',
+    cpu: 'bi-cpu-fill',
+    gpu: 'bi-gpu-card',
+    ram: 'bi-memory',
+    psu: 'bi-plug-fill',
+    fans: 'bi-fan',
+    network: 'bi-globe-americas',
+    latency: 'bi-activity',
+    drives: 'bi-device-hdd-fill',
+    other: 'bi-check2-circle'
   }
 };
 const GROUP_CARD_IDS = {
@@ -251,14 +349,15 @@ let latestSelectedGroupedSensors = createEmptyGroupedBuckets();
 let liveSensorCatalogSignature = '';
 let cachedOrderedSensorCatalog = createEmptyGroupedBuckets();
 let sensorCustomNames = {};
+let sensorAlertRules = {};
+let sensorAlertLastTriggeredAt = {};
+let activeSensorAlertState = {};
 let pendingVisibilityRefresh = false;
 let lastUiRenderAt = 0;
 let forceNextUiRender = true;
-const UI_RENDER_MIN_INTERVAL_MS = 1000;
+let currentTemperatureUnit = 'c';
 let webMonitorServer = null;
 let webMonitorSockets = new Set();
-let lastWebSummaryActivityAt = 0;
-const WEB_SUMMARY_ACTIVITY_TTL_MS = 4000;
 let webMonitorRuntime = {
   running: false,
   error: '',
@@ -393,7 +492,10 @@ const DEFAULT_WEB_MONITOR_SETTINGS = {
   enabled: false,
   autoStart: true,
   host: '127.0.0.1',
-  port: 17381
+  port: 17381,
+  requireAuth: false,
+  authToken: '',
+  readOnlyApiMode: false
 };
 
 const DEFAULT_APP_BEHAVIOR_SETTINGS = {
@@ -401,6 +503,8 @@ const DEFAULT_APP_BEHAVIOR_SETTINGS = {
   startMinimized: false,
   minimizeToTray: false,
   closeToTray: false,
+  autoCheckForUpdates: true,
+  startupDelaySeconds: 0,
   enableDiscordRichPresence: true
 };
 
@@ -441,7 +545,10 @@ function loadWebMonitorSettings() {
       enabled: parsed.enabled === true,
       autoStart: parsed.autoStart !== false,
       host: typeof parsed.host === 'string' && parsed.host.trim() ? parsed.host.trim() : DEFAULT_WEB_MONITOR_SETTINGS.host,
-      port: Number.isFinite(Number(parsed.port)) ? Number(parsed.port) : DEFAULT_WEB_MONITOR_SETTINGS.port
+      port: Number.isFinite(Number(parsed.port)) ? Number(parsed.port) : DEFAULT_WEB_MONITOR_SETTINGS.port,
+      requireAuth: parsed.requireAuth === true,
+      authToken: typeof parsed.authToken === 'string' ? parsed.authToken.trim() : '',
+      readOnlyApiMode: parsed.readOnlyApiMode === true
     };
   } catch (e) {
     return { ...DEFAULT_WEB_MONITOR_SETTINGS };
@@ -457,7 +564,10 @@ function normalizeWebMonitorSettings(input) {
     enabled: !!source.enabled,
     autoStart: source.autoStart !== false,
     host: normalizedHost,
-    port: normalizedPort
+    port: normalizedPort,
+    requireAuth: source.requireAuth === true,
+    authToken: typeof source.authToken === 'string' ? source.authToken.trim() : '',
+    readOnlyApiMode: source.readOnlyApiMode === true
   };
 }
 
@@ -467,11 +577,17 @@ function saveWebMonitorSettings(settings) {
 }
 
 function normalizeAppBehaviorSettings(input) {
+  const startupDelaySeconds = Number.isFinite(Number(input?.startupDelaySeconds))
+    ? Math.max(0, Math.min(60, Math.round(Number(input.startupDelaySeconds))))
+    : 0;
+
   return {
     launchAtStartup: !!input?.launchAtStartup,
     startMinimized: !!input?.startMinimized,
     minimizeToTray: !!input?.minimizeToTray,
     closeToTray: !!input?.closeToTray,
+    autoCheckForUpdates: input?.autoCheckForUpdates !== false,
+    startupDelaySeconds,
     enableDiscordRichPresence: typeof input?.enableDiscordRichPresence === 'boolean'
       ? input.enableDiscordRichPresence
       : true
@@ -549,25 +665,69 @@ function getWebMonitorUrls(host, port) {
   return [`http://${normalizedHost}:${port}`];
 }
 
-function buildWebMonitorHtml() {
-  let iconSrc = 'SiR_SM_Circle.ico';
+function buildWebMonitorOpenUrl(baseUrl, settings) {
+  if (!baseUrl) return '';
+  const normalized = normalizeWebMonitorSettings(settings || loadWebMonitorSettings());
+  if (!normalized.requireAuth || !normalized.authToken) return baseUrl;
   try {
+    const target = new URL(baseUrl);
+    target.searchParams.set('token', normalized.authToken);
+    return target.toString();
+  } catch (e) {
+    return baseUrl;
+  }
+}
+
+function generateWebMonitorToken() {
+  try {
+    return crypto.randomBytes(24).toString('hex');
+  } catch (e) {
+    return (Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)).slice(0, 48);
+  }
+}
+
+function escapeJsString(text) {
+  return String(text || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n');
+}
+
+function buildWebMonitorHtml(authToken = '') {
+  let headerLogoSrc = 'SiR_SM_Source_sq.png';
+  let faviconSrc = 'SiR_SM_Circle.ico';
+  let faviconMime = 'image/x-icon';
+  try {
+    const pngPath = path.join(__dirname, 'SiR_SM_Source_sq.png');
+    if (fs.existsSync(pngPath)) {
+      const buf = fs.readFileSync(pngPath);
+      headerLogoSrc = `data:image/png;base64,${buf.toString('base64')}`;
+    }
+
     const icoPath = path.join(__dirname, 'SiR_SM_Circle.ico');
     if (fs.existsSync(icoPath)) {
       const buf = fs.readFileSync(icoPath);
-      iconSrc = `data:image/x-icon;base64,${buf.toString('base64')}`;
+      faviconSrc = `data:image/x-icon;base64,${buf.toString('base64')}`;
+      faviconMime = 'image/x-icon';
+    } else if (fs.existsSync(pngPath)) {
+      const buf = fs.readFileSync(pngPath);
+      faviconSrc = `data:image/png;base64,${buf.toString('base64')}`;
+      faviconMime = 'image/png';
     }
   } catch (e) {
     // fallback to relative path
   }
 
+  const embeddedToken = escapeJsString(authToken);
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>SiR Monitor Web View</title>
-  <link rel="icon" type="image/x-icon" href="${iconSrc}" />
+  <link rel="icon" type="${faviconMime}" href="${faviconSrc}" />
+  <link rel="shortcut icon" type="${faviconMime}" href="${faviconSrc}" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
   <style>
     :root {
@@ -592,19 +752,24 @@ function buildWebMonitorHtml() {
       --accent-light: #4d9fff;
     }
     body { margin: 0; font-family: var(--font-family); background: var(--bg-primary); color: var(--text-primary); }
-    .wrap { max-width: 1400px; margin: 0 auto; padding: 10px; }
+    body.no-glow *, body.no-glow *::before, body.no-glow *::after { text-shadow: none !important; box-shadow: none !important; filter: none !important; }
+    .wrap { max-width: 100%; margin: 0 auto; padding: 10px; }
     .header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; }
     .header-right { display: inline-flex; align-items: center; gap: 8px; }
     .title { font-size: calc(22px * var(--font-scale)); font-weight: var(--font-weight-bold); color: var(--text-primary); }
     .meta { color: var(--text-secondary); font-size: calc(13px * var(--font-scale)); }
     .summary-toggle { border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); border-radius: 7px; padding: 6px 10px; cursor: pointer; font-size: calc(12px * var(--font-scale)); font-weight: var(--font-weight-bold); }
     .summary-toggle:hover { background: var(--border-color); color: var(--text-primary); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
     .card { border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); padding: 10px; overflow: hidden; display: flex; flex-direction: column; }
     .card h3 { margin: 0 0 10px; font-size: calc(13px * var(--font-scale)); letter-spacing: .08em; color: var(--block-header-color); text-transform: uppercase; font-weight: var(--font-weight-bold); display: flex; align-items: center; gap: 8px; }
     .group-icon { color: var(--icon-color); font-size: calc(14px * var(--font-scale)); line-height: 1; }
     .rows { overflow-y: auto; min-height: 0; flex: 1 1 auto; scrollbar-gutter: stable both-edges; padding-bottom: 12px; scroll-padding-bottom: 12px; }
     .row { display: block; border-bottom: 1px solid var(--border-color); padding: 6px 0; font-size: calc(13px * var(--font-scale)); }
+    .row.row-alert-warning { border-left: 2px solid #f7cf62; padding-left: 8px; }
+    .row.row-alert-critical { border-left: 2px solid #ff6b6b; padding-left: 8px; }
+    .row.row-alert-warning .label, .row.row-alert-warning .value { color: #f7cf62; }
+    .row.row-alert-critical .label, .row.row-alert-critical .value { color: #ff6b6b; }
     .row:last-child { border-bottom: none; }
     .row-main { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
     .label { color: var(--sensor-label-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--font-weight-regular); }
@@ -614,8 +779,8 @@ function buildWebMonitorHtml() {
     .graph { width: 100%; height: 58px; margin-top: 6px; display: block; }
     .graph-line { fill: none; stroke: var(--graph-color); stroke-width: 2; vector-effect: non-scaling-stroke; }
     .graph-meta { margin-top: 3px; display: flex; justify-content: space-between; gap: 6px; color: var(--text-secondary); font-size: calc(10px * var(--font-scale)); }
-    body.summary-mode .wrap { max-width: 1900px; }
-    body.summary-mode .grid { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
+    body.summary-mode .wrap { max-width: 100%; }
+    body.summary-mode .grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
     body.summary-mode .value { display: none; }
     body.summary-mode .row { display: grid; grid-template-columns: minmax(130px, 38%) 1fr; align-items: center; gap: 10px; }
     body.summary-mode .row-main { justify-content: flex-start; min-width: 0; }
@@ -627,8 +792,8 @@ function buildWebMonitorHtml() {
     .summary-label { text-transform: uppercase; font-size: calc(10px * var(--font-scale)); letter-spacing: .4px; color: var(--text-secondary); }
     .summary-value { color: var(--sensor-value-color); font-family: var(--value-font-family); font-weight: var(--font-weight-bold); min-width: 0; text-align: right; font-variant-numeric: tabular-nums; }
     .summary-sep { opacity: .65; }
-    body.view-compact .wrap { max-width: 1280px; }
-    body.view-compact .grid { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+    body.view-compact .wrap { max-width: 100%; }
+    body.view-compact .grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
     body.view-compact .card {
       padding: 11px;
       border-radius: 18px;
@@ -637,8 +802,8 @@ function buildWebMonitorHtml() {
       background: linear-gradient(180deg, color-mix(in srgb, var(--bg-secondary) 90%, var(--accent) 10%), var(--bg-secondary));
     }
     body.view-compact .row { padding: 6px 0; }
-    body.view-wide .wrap { max-width: 1800px; }
-    body.view-wide .grid { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px; }
+    body.view-wide .wrap { max-width: 100%; }
+    body.view-wide .grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
     body.view-wide .card {
       padding: 14px;
       border-radius: 2px;
@@ -647,8 +812,8 @@ function buildWebMonitorHtml() {
       background: color-mix(in srgb, var(--bg-secondary) 88%, var(--bg-primary) 12%);
     }
     body.view-wide .card h3 { letter-spacing: 0.12em; }
-    body.view-terminal .wrap { max-width: 1500px; }
-    body.view-terminal .grid { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; }
+    body.view-terminal .wrap { max-width: 100%; }
+    body.view-terminal .grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
     body.view-terminal .card {
       border-radius: 0;
       border-width: 1px;
@@ -661,16 +826,74 @@ function buildWebMonitorHtml() {
       font-size: calc(12px * var(--font-scale));
     }
     body.view-terminal .row { border-bottom-style: dashed; }
-    body.summary-mode.view-compact .grid { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
-    body.summary-mode.view-wide .grid { grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); }
-    body.summary-mode.view-terminal .grid { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+    body.view-rail .grid { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+    body.view-rail .card {
+      border-radius: 12px;
+      border-left: 4px solid var(--accent-light);
+      box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 14%, transparent);
+    }
+    body.view-rail .card h3 { letter-spacing: 0.1em; }
+    body.view-glass .grid { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+    body.view-glass .card {
+      border-radius: 16px;
+      border-color: color-mix(in srgb, var(--accent-light) 26%, var(--border-color));
+      background: color-mix(in srgb, var(--bg-secondary) 72%, transparent);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 10px 24px color-mix(in srgb, black 35%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    }
+    body.view-glass .row { border-bottom-color: color-mix(in srgb, var(--border-color) 70%, transparent); }
+    body.view-split .grid { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+    body.view-split .card {
+      padding-top: 0;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 10%, transparent);
+    }
+    body.view-split .card h3 {
+      margin: 0 -10px 10px;
+      padding: 10px;
+      background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 28%, var(--bg-secondary)), color-mix(in srgb, var(--bg-secondary) 92%, var(--bg-primary)));
+      border-bottom: 1px solid color-mix(in srgb, var(--accent-light) 40%, var(--border-color));
+    }
+    body.view-status .grid { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+    body.view-status .card {
+      position: relative;
+      border-radius: 12px;
+      border-color: color-mix(in srgb, var(--accent-light) 45%, var(--border-color));
+    }
+    body.view-status .card h3::after {
+      content: 'LIVE';
+      margin-left: auto;
+      font-size: calc(9px * var(--font-scale));
+      letter-spacing: 0.08em;
+      color: #09180f;
+      background: #3fe08c;
+      border-radius: 999px;
+      padding: 2px 7px;
+      line-height: 1.4;
+    }
+    body.view-status .row.row-alert-warning .label,
+    body.view-status .row.row-alert-warning .value {
+      color: #ffe17f;
+    }
+    body.view-status .row.row-alert-critical .label,
+    body.view-status .row.row-alert-critical .value {
+      color: #ff8d8d;
+    }
+    body.summary-mode.view-compact .grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    body.summary-mode.view-wide .grid { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+    body.summary-mode.view-terminal .grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    body.summary-mode.view-rail .grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    body.summary-mode.view-glass .grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    body.summary-mode.view-split .grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    body.summary-mode.view-status .grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="header">
       <div style="display: flex; align-items: center; gap: 12px;">
-        <img src="${iconSrc}" alt="SiR System Monitor" style="width: 38px; height: 38px; border-radius: 50%; box-shadow: 0 1px 4px #0002;" />
+        <img src="${headerLogoSrc}" alt="SiR System Monitor" style="width: 44px; height: 44px; border-radius: 10px; object-fit: cover; box-shadow: 0 1px 6px #0004;" />
         <div class="title">SiR System Monitor</div>
         <div id="meta" class="meta">Waiting for data...</div>
       </div>
@@ -682,13 +905,17 @@ function buildWebMonitorHtml() {
   </div>
 
   <script>
-    const groupOrder = ['fps', 'cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'drives', 'other'];
-    const groupLabels = { fps: 'FPS', cpu: 'CPU', gpu: 'GPU', ram: 'RAM', psu: 'PSU', fans: 'Fans', network: 'Network', drives: 'Drives', other: 'Other' };
+    const groupOrder = ['fps', 'cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'latency', 'drives', 'other'];
+    const groupLabels = { fps: 'FPS', cpu: 'CPU', gpu: 'GPU', ram: 'RAM', psu: 'PSU', fans: 'Fans', network: 'Network', latency: 'Ping', drives: 'Drives', other: 'Other' };
     const groupIconsByMode = {
-      standard: { fps: 'bi-graph-up', cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-globe', drives: 'bi-device-hdd-fill', other: 'bi-tools' },
-      compact: { fps: 'bi-speedometer2', cpu: 'bi-speedometer2', gpu: 'bi-badge-8k', ram: 'bi-diagram-3', psu: 'bi-lightning-charge', fans: 'bi-wind', network: 'bi-wifi', drives: 'bi-hdd-stack', other: 'bi-stars' },
-      wide: { fps: 'bi-graph-up-arrow', cpu: 'bi-cpu', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug', fans: 'bi-fan', network: 'bi-ethernet', drives: 'bi-device-hdd', other: 'bi-sliders' },
-      terminal: { fps: 'bi-activity', cpu: 'bi-terminal-fill', gpu: 'bi-pc-display-horizontal', ram: 'bi-diagram-2-fill', psu: 'bi-battery-half', fans: 'bi-arrow-repeat', network: 'bi-router-fill', drives: 'bi-device-ssd-fill', other: 'bi-braces-asterisk' }
+      standard: { fps: 'bi-graph-up', cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-globe', latency: 'bi-broadcast-pin', drives: 'bi-device-hdd-fill', other: 'bi-tools' },
+      compact: { fps: 'bi-speedometer2', cpu: 'bi-speedometer2', gpu: 'bi-badge-8k', ram: 'bi-diagram-3', psu: 'bi-lightning-charge', fans: 'bi-wind', network: 'bi-wifi', latency: 'bi-broadcast', drives: 'bi-hdd-stack', other: 'bi-stars' },
+      wide: { fps: 'bi-graph-up-arrow', cpu: 'bi-cpu', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug', fans: 'bi-fan', network: 'bi-ethernet', latency: 'bi-broadcast', drives: 'bi-device-hdd', other: 'bi-sliders' },
+      terminal: { fps: 'bi-activity', cpu: 'bi-terminal-fill', gpu: 'bi-pc-display-horizontal', ram: 'bi-diagram-2-fill', psu: 'bi-battery-half', fans: 'bi-arrow-repeat', network: 'bi-router-fill', latency: 'bi-activity', drives: 'bi-device-ssd-fill', other: 'bi-braces-asterisk' },
+      rail: { fps: 'bi-layout-sidebar-inset', cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-globe2', latency: 'bi-broadcast-pin', drives: 'bi-device-hdd-fill', other: 'bi-tools' },
+      glass: { fps: 'bi-droplet-half', cpu: 'bi-cpu', gpu: 'bi-gpu-card', ram: 'bi-diagram-3', psu: 'bi-lightning', fans: 'bi-wind', network: 'bi-wifi', latency: 'bi-activity', drives: 'bi-hdd-stack', other: 'bi-stars' },
+      split: { fps: 'bi-grid-3x2-gap-fill', cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-ethernet', latency: 'bi-broadcast', drives: 'bi-device-hdd', other: 'bi-sliders' },
+      status: { fps: 'bi-shield-check', cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-globe-americas', latency: 'bi-activity', drives: 'bi-device-hdd-fill', other: 'bi-check2-circle' }
     };
     const fontScaleMap = { small: 0.92, medium: 1, large: 1.28, xlarge: 1.38, xxlarge: 1.5 };
     const fontFamilyMap = {
@@ -727,7 +954,7 @@ function buildWebMonitorHtml() {
 
     function normalizeViewMode(mode) {
       const normalized = String(mode || '').trim().toLowerCase();
-      if (normalized === 'compact' || normalized === 'wide' || normalized === 'terminal') return normalized;
+      if (normalized === 'compact' || normalized === 'wide' || normalized === 'terminal' || normalized === 'rail' || normalized === 'glass' || normalized === 'split' || normalized === 'status') return normalized;
       return 'standard';
     }
 
@@ -735,7 +962,7 @@ function buildWebMonitorHtml() {
       const nextMode = normalizeViewMode(mode);
       if (domState.viewMode === nextMode) return;
       domState.viewMode = nextMode;
-      document.body.classList.remove('view-compact', 'view-wide', 'view-terminal');
+      document.body.classList.remove('view-compact', 'view-wide', 'view-terminal', 'view-rail', 'view-glass', 'view-split', 'view-status');
       if (nextMode !== 'standard') {
         document.body.classList.add('view-' + nextMode);
       }
@@ -765,7 +992,7 @@ function buildWebMonitorHtml() {
           const sensors = Array.isArray(groups[group]) ? groups[group] : [];
           const rowKey = sensors.map((sensor) => String(sensor.id) + ':' + (sensor.expanded ? '1' : '0')).join(',');
           const groupLayout = layout[group] || {};
-          return group + '#h' + (groupLayout.height || 360) + '#s' + (groupLayout.span || 1) + '#' + rowKey + '#summary:' + (domState.summaryMode ? '1' : '0') + '#view:' + domState.viewMode;
+          return group + '#h' + (groupLayout.height || 360) + '#s' + (groupLayout.span || 1) + '#w' + (groupLayout.width || 0) + '#' + rowKey + '#summary:' + (domState.summaryMode ? '1' : '0') + '#view:' + domState.viewMode;
         })
         .join('|');
     }
@@ -936,6 +1163,7 @@ function buildWebMonitorHtml() {
         root.style.setProperty('--font-weight-regular', '500');
         root.style.setProperty('--font-weight-bold', '700');
       }
+      document.body.classList.toggle('no-glow', !!settings.disableGlow);
     }
 
     function toLocalTime(ts) {
@@ -970,6 +1198,11 @@ function buildWebMonitorHtml() {
 
       domState.rowsByKey.clear();
       grid.innerHTML = '';
+      const gridStyles = getComputedStyle(grid);
+      const columns = Math.max(1, (gridStyles.gridTemplateColumns || '').split(' ').filter(Boolean).length);
+      const gap = parseFloat(gridStyles.columnGap || gridStyles.gap || '10') || 10;
+      const containerWidth = Math.max(1, grid.clientWidth || window.innerWidth || 1200);
+      const columnWidth = Math.max(120, (containerWidth - (gap * (columns - 1))) / columns);
 
       orderedGroups.forEach((group) => {
         const sensors = Array.isArray(groups[group]) ? groups[group] : [];
@@ -978,7 +1211,14 @@ function buildWebMonitorHtml() {
         const card = document.createElement('section');
         card.className = 'card';
         const groupLayout = layout[group] || {};
-        card.style.gridColumn = 'span ' + (groupLayout.span || 1);
+        const desiredWidth = Number(groupLayout.width);
+        if (Number.isFinite(desiredWidth) && desiredWidth >= 180) {
+          const rawSpan = Math.round((desiredWidth + gap) / (columnWidth + gap));
+          const webSpan = Math.min(Math.max(1, rawSpan), columns);
+          card.style.gridColumn = 'span ' + webSpan;
+        } else {
+          card.style.gridColumn = 'span 1';
+        }
         card.style.height = (groupLayout.height || 360) + 'px';
 
         const title = document.createElement('h3');
@@ -993,7 +1233,10 @@ function buildWebMonitorHtml() {
         sensors.forEach((sensor) => {
           const sensorKey = makeSensorKey(group, sensor.id);
           const row = document.createElement('div');
-          row.className = 'row';
+          const alertClass = sensor.alertSeverity === 'critical'
+            ? ' row-alert-critical'
+            : (sensor.alertSeverity === 'warning' ? ' row-alert-warning' : '');
+          row.className = 'row' + alertClass;
           row.dataset.sensorKey = sensorKey;
 
           const rowMain = document.createElement('div');
@@ -1028,7 +1271,7 @@ function buildWebMonitorHtml() {
           row.appendChild(graphHolder);
 
           rowsWrap.appendChild(row);
-          domState.rowsByKey.set(sensorKey, { valueEl: value, graphEl: graphHolder, summaryEl: summaryHolder, labelEl: label });
+          domState.rowsByKey.set(sensorKey, { rowEl: row, valueEl: value, graphEl: graphHolder, summaryEl: summaryHolder, labelEl: label });
         });
 
         card.appendChild(rowsWrap);
@@ -1050,6 +1293,11 @@ function buildWebMonitorHtml() {
           const sensorKey = makeSensorKey(group, sensor.id);
           const refs = domState.rowsByKey.get(sensorKey);
           if (!refs) return;
+          if (refs.rowEl) {
+            refs.rowEl.classList.remove('row-alert-warning', 'row-alert-critical');
+            if (sensor.alertSeverity === 'critical') refs.rowEl.classList.add('row-alert-critical');
+            else if (sensor.alertSeverity === 'warning') refs.rowEl.classList.add('row-alert-warning');
+          }
 
           const nextLabel = sensor.name || '--';
           const nextValue = sensor.formatted || '--';
@@ -1136,13 +1384,15 @@ function buildWebMonitorHtml() {
       updateGridValues(groups, orderedGroups);
     }
 
+    const authToken = "${embeddedToken}";
     let loading = false;
     async function load() {
       if (loading) return;
       loading = true;
       try {
         const summaryParam = domState.summaryMode ? '1' : '0';
-        const response = await fetch('/api/monitor?summary=' + summaryParam, { cache: 'no-store' });
+        const tokenSuffix = authToken ? ('&token=' + encodeURIComponent(authToken)) : '';
+        const response = await fetch('/api/monitor?summary=' + summaryParam + tokenSuffix, { cache: 'no-store' });
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const payload = await response.json();
         render(payload);
@@ -1166,11 +1416,6 @@ function buildWebMonitorHtml() {
 </html>`;
 }
 
-function isWebSummaryModeActive() {
-  if (!webMonitorRuntime.running) return false;
-  return (Date.now() - lastWebSummaryActivityAt) <= WEB_SUMMARY_ACTIVITY_TTL_MS;
-}
-
 function shouldCollectSummaryStats() {
   return true;
 }
@@ -1190,10 +1435,12 @@ function publishWebMonitorPayload(mode, externalText) {
     const saved = sizeMap[cardId];
     const savedHeight = Number(typeof saved === 'object' ? saved.height : saved);
     const savedSpan = Number(typeof saved === 'object' ? saved.span : 1);
+    const savedWidth = Number(typeof saved === 'object' ? saved.width : NaN);
 
     groupLayout[group] = {
       height: Number.isFinite(savedHeight) && savedHeight >= 220 && savedHeight <= 900 ? savedHeight : 360,
-      span: Number.isFinite(savedSpan) && savedSpan >= 1 ? savedSpan : 1
+      span: Number.isFinite(savedSpan) && savedSpan >= 1 ? savedSpan : 1,
+      width: Number.isFinite(savedWidth) && savedWidth >= 180 ? savedWidth : undefined
     };
   });
 
@@ -1256,6 +1503,7 @@ function publishWebMonitorPayload(mode, externalText) {
         value: hasNumericValue && normalizedCurrent ? normalizedCurrent.value : sensor.value,
         units: hasNumericValue && normalizedCurrent ? normalizedCurrent.units : resolvedUnits,
         formatted: formatSensorValue(sensorForFormatting),
+        alertSeverity: activeSensorAlertState[sensor.id]?.severity || '',
         expanded: expandedGraphSensors.has(sensor.id),
         history,
         summary: (includeSummary && hasNumericValue) ? (() => {
@@ -1288,6 +1536,7 @@ function publishWebMonitorPayload(mode, externalText) {
       fontFamily: selectedFontFamily,
       valueMonospace: selectedValueMonospace,
       fontBold: selectedBold,
+      disableGlow: localStorage.getItem(DISABLE_GLOW_EFFECTS_KEY) === 'true',
       temperatureUnit: selectedTempUnit,
       summaryMode: summaryModeEnabled,
       viewMode: normalizeViewMode(localStorage.getItem(VIEW_MODE_KEY) || 'standard'),
@@ -1298,9 +1547,8 @@ function publishWebMonitorPayload(mode, externalText) {
   };
 }
 
-    function refreshWebMonitorStatusUi() {
+function refreshWebMonitorStatusUi() {
       const statusEl = document.getElementById('webMonitorStatus');
-      const urlEl = document.getElementById('webMonitorUrl');
       const openBtn = document.getElementById('webMonitorOpenBtn');
       const liveStatusEl = document.getElementById('liveStatusIndicator');
       const toggleBtn = document.getElementById('webMonitorToggleBtn');
@@ -1310,13 +1558,16 @@ function publishWebMonitorPayload(mode, externalText) {
 
       // Update header toggle button
       if (toggleBtn) {
+        const openIcon = toggleBtn.querySelector('.web-monitor-open-icon');
         toggleBtn.classList.remove('disabled', 'enabled', 'running');
         if (webMonitorRuntime.running) {
           toggleBtn.classList.add('enabled', 'running');
           toggleBtn.querySelector('.web-monitor-toggle-text').textContent = `Web: ${webMonitorRuntime.host}:${webMonitorRuntime.port}`;
+          if (openIcon) openIcon.style.display = 'inline-flex';
         } else {
           toggleBtn.classList.add('disabled');
           toggleBtn.querySelector('.web-monitor-toggle-text').textContent = 'Web: Off';
+          if (openIcon) openIcon.style.display = 'none';
         }
       }
 
@@ -1325,26 +1576,32 @@ function publishWebMonitorPayload(mode, externalText) {
         liveStatusEl.style.display = 'none';
       }
 
-      if (!statusEl || !urlEl || !openBtn) return;
+      if (!statusEl || !openBtn) return;
 
+
+      const currentSettings = normalizeWebMonitorSettings(loadWebMonitorSettings());
 
       if (webMonitorRuntime.running) {
-        statusEl.textContent = `Running on ${webMonitorRuntime.host}:${webMonitorRuntime.port}`;
+        statusEl.textContent = currentSettings.readOnlyApiMode
+          ? `Running on ${webMonitorRuntime.host}:${webMonitorRuntime.port} (API-only mode)`
+          : `Running on ${webMonitorRuntime.host}:${webMonitorRuntime.port}`;
         statusEl.classList.remove('web-status-error');
         statusEl.classList.add('web-status-running');
         const primaryUrl = webMonitorRuntime.urls[0] || '';
-        urlEl.textContent = primaryUrl;
-        urlEl.href = primaryUrl;
         openBtn.disabled = !primaryUrl;
       } else {
         statusEl.textContent = webMonitorRuntime.error ? `Error: ${webMonitorRuntime.error}` : 'Stopped';
         statusEl.classList.remove('web-status-running');
         statusEl.classList.toggle('web-status-error', !!webMonitorRuntime.error);
-        urlEl.textContent = '--';
-        urlEl.removeAttribute('href');
         openBtn.disabled = true;
       }
     }
+
+function openWebMonitorInBrowser() {
+  const targetUrl = webMonitorRuntime.urls[0];
+  if (!targetUrl) return;
+  shell.openExternal(buildWebMonitorOpenUrl(targetUrl, loadWebMonitorSettings()));
+}
 
 function stopWebMonitorServer() {
   return new Promise((resolve) => {
@@ -1406,12 +1663,35 @@ async function startWebMonitorServer(settingsInput) {
   await stopWebMonitorServer();
 
   return new Promise((resolve) => {
+    const getRequestToken = (reqUrl, req) => {
+      const queryToken = String(reqUrl.searchParams.get('token') || '').trim();
+      if (queryToken) return queryToken;
+      const headerToken = String(req.headers['x-sir-token'] || '').trim();
+      if (headerToken) return headerToken;
+      const authHeader = String(req.headers.authorization || '').trim();
+      const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+      if (bearerMatch && bearerMatch[1]) return String(bearerMatch[1]).trim();
+      return '';
+    };
+
+    const isAuthorized = (reqUrl, req) => {
+      if (!settings.requireAuth) return true;
+      if (!settings.authToken) return false;
+      const supplied = getRequestToken(reqUrl, req);
+      return supplied === settings.authToken;
+    };
+
     const server = http.createServer((req, res) => {
       const reqUrl = new URL(req.url || '/', 'http://localhost');
+
+      if (!isAuthorized(reqUrl, req)) {
+        const wantsJson = reqUrl.pathname === '/api/monitor';
+        res.writeHead(401, { 'Content-Type': wantsJson ? 'application/json; charset=utf-8' : 'text/plain; charset=utf-8' });
+        res.end(wantsJson ? JSON.stringify({ error: 'Unauthorized' }) : 'Unauthorized');
+        return;
+      }
+
       if (reqUrl.pathname === '/api/monitor') {
-        if (reqUrl.searchParams.get('summary') === '1') {
-          lastWebSummaryActivityAt = Date.now();
-        }
         res.writeHead(200, {
           'Content-Type': 'application/json; charset=utf-8',
           'Cache-Control': 'no-store, no-cache, must-revalidate'
@@ -1421,11 +1701,16 @@ async function startWebMonitorServer(settingsInput) {
       }
 
       if (reqUrl.pathname === '/' || reqUrl.pathname === '/index.html') {
+        if (settings.readOnlyApiMode) {
+          res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end('Read-only API mode is enabled. Use /api/monitor instead.');
+          return;
+        }
         res.writeHead(200, {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'no-store'
         });
-        res.end(buildWebMonitorHtml());
+        res.end(buildWebMonitorHtml(getRequestToken(reqUrl, req)));
         return;
       }
 
@@ -1671,6 +1956,117 @@ function saveSensorCustomNames() {
   localStorage.setItem(SENSOR_CUSTOM_NAMES_KEY, JSON.stringify(normalizeSensorCustomNames(sensorCustomNames)));
 }
 
+function normalizeAlertOperator(op) {
+  const value = String(op || '').trim();
+  return ['>=', '>', '<=', '<'].includes(value) ? value : '>=';
+}
+
+function normalizeAlertSeverity(severity) {
+  const value = String(severity || '').trim().toLowerCase();
+  return value === 'critical' ? 'critical' : 'warning';
+}
+
+function normalizeSensorAlertRule(input) {
+  const threshold = Number(input?.threshold);
+  const cooldownSec = Number(input?.cooldownSec);
+  return {
+    enabled: input?.enabled !== false,
+    operator: normalizeAlertOperator(input?.operator),
+    threshold: Number.isFinite(threshold) ? threshold : 0,
+    cooldownSec: Number.isFinite(cooldownSec) ? Math.max(1, Math.min(3600, Math.round(cooldownSec))) : 30,
+    severity: normalizeAlertSeverity(input?.severity)
+  };
+}
+
+function normalizeSensorAlertRules(input) {
+  if (!input || typeof input !== 'object') return {};
+  const out = {};
+  Object.entries(input).forEach(([sensorId, rule]) => {
+    const key = String(sensorId || '').trim();
+    if (!key || !rule || typeof rule !== 'object') return;
+    out[key] = normalizeSensorAlertRule(rule);
+  });
+  return out;
+}
+
+function loadSensorAlertRules() {
+  try {
+    const raw = localStorage.getItem(SENSOR_ALERT_RULES_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return normalizeSensorAlertRules(parsed);
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveSensorAlertRules() {
+  localStorage.setItem(SENSOR_ALERT_RULES_KEY, JSON.stringify(normalizeSensorAlertRules(sensorAlertRules)));
+}
+
+function shouldAlertTrigger(operator, value, threshold) {
+  if (!Number.isFinite(value) || !Number.isFinite(threshold)) return false;
+  if (operator === '>') return value > threshold;
+  if (operator === '>=') return value >= threshold;
+  if (operator === '<') return value < threshold;
+  if (operator === '<=') return value <= threshold;
+  return false;
+}
+
+function getDefaultAlertRuleForSensor(sensor) {
+  const name = String(sensor?.name || '').toLowerCase();
+  const units = String(sensor?.units || '').toLowerCase();
+
+  if (name.includes('temp') || units.includes('°c') || units.includes('c') || units.includes('°f') || units.includes('f')) {
+    const isF = currentTemperatureUnit === 'f' || units.includes('°f');
+    return { enabled: true, operator: '>=', threshold: isF ? 176 : 80, cooldownSec: 30, severity: 'critical' };
+  }
+  if (units.includes('%') || name.includes('usage') || name.includes('util') || name.includes('load')) {
+    return { enabled: true, operator: '>=', threshold: 90, cooldownSec: 30, severity: 'warning' };
+  }
+  if (units.includes('rpm') || name.includes('fan')) {
+    return { enabled: true, operator: '<=', threshold: 500, cooldownSec: 30, severity: 'warning' };
+  }
+  return { enabled: true, operator: '>=', threshold: 90, cooldownSec: 30, severity: 'warning' };
+}
+
+function evaluateSensorAlerts(groupedSensors) {
+  const state = {};
+  const now = Date.now();
+  Object.keys(groupedSensors || {}).forEach((group) => {
+    (groupedSensors[group] || []).forEach((sensor) => {
+      const sensorId = String(sensor?.id || '').trim();
+      if (!sensorId) return;
+      const rawRule = sensorAlertRules[sensorId];
+      if (!rawRule) return;
+      const rule = normalizeSensorAlertRule(rawRule);
+      if (!rule.enabled) return;
+      const rawValue = Number(sensor.value);
+      if (!Number.isFinite(rawValue)) return;
+      const normalized = normalizeValueForDisplay(sensor, rawValue);
+      const value = Number(normalized?.value);
+      if (!Number.isFinite(value)) return;
+
+      const breached = shouldAlertTrigger(rule.operator, value, rule.threshold);
+      if (!breached) return;
+
+      const lastAt = Number(sensorAlertLastTriggeredAt[sensorId] || 0);
+      const cooldownMs = Math.max(1000, rule.cooldownSec * 1000);
+      if ((now - lastAt) >= cooldownMs) {
+        sensorAlertLastTriggeredAt[sensorId] = now;
+      }
+
+      state[sensorId] = {
+        active: true,
+        severity: rule.severity,
+        value,
+        threshold: rule.threshold,
+        operator: rule.operator
+      };
+    });
+  });
+  activeSensorAlertState = state;
+}
+
 function loadSensorOrder() {
   try {
     const raw = localStorage.getItem(SENSOR_ORDER_KEY);
@@ -1720,24 +2116,6 @@ function applySensorOrderToGroupedSensors(groupedSensors) {
   });
 
   return ordered;
-}
-
-function moveSensorOrder(group, sensorId, direction) {
-  if (!group || !sensorId) return;
-
-  const list = Array.isArray(sensorOrderByGroup[group]) ? [...sensorOrderByGroup[group]] : [];
-  const index = list.indexOf(sensorId);
-  if (index === -1) return;
-
-  const targetIndex = direction === 'up' ? index - 1 : index + 1;
-  if (targetIndex < 0 || targetIndex >= list.length) return;
-
-  [list[index], list[targetIndex]] = [list[targetIndex], list[index]];
-  sensorOrderByGroup[group] = list;
-  saveSensorOrder();
-  sensorCatalogSignature = '';
-  liveSensorCatalogSignature = '';
-  updateStats();
 }
 
 function moveSensorOrderByDrop(group, sensorId, targetSensorId, placeAfter) {
@@ -1884,11 +2262,62 @@ function setImportSettingsModalVisible(visible) {
   modal.classList.toggle('is-hidden', !visible);
 }
 
+function normalizeProfileName(name) {
+  const text = String(name || '').trim();
+  return text.slice(0, 64);
+}
+
+function loadSettingsProfiles() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_PROFILES_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveSettingsProfiles(profiles) {
+  try {
+    localStorage.setItem(SETTINGS_PROFILES_KEY, JSON.stringify(profiles || {}));
+  } catch (e) {}
+}
+
+function buildSettingsSnapshot() {
+  const payload = {};
+  SETTINGS_SNAPSHOT_KEYS.forEach((k) => {
+    try {
+      payload[k] = localStorage.getItem(k);
+    } catch (e) {
+      payload[k] = null;
+    }
+  });
+  try {
+    payload[SENSOR_ORDER_KEY] = JSON.stringify(sensorOrderByGroup || {});
+  } catch (e) {}
+  return payload;
+}
+
+async function persistCrossProcessSettingsFromSnapshot(parsed) {
+  try {
+    if (parsed && parsed[APP_BEHAVIOR_SETTINGS_KEY]) {
+      const raw = parsed[APP_BEHAVIOR_SETTINGS_KEY];
+      const behavior = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (behavior && typeof behavior === 'object') {
+        await setAppBehaviorSettings(behavior);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to persist app behavior from snapshot:', e);
+  }
+}
+
 function closeImportSettingsModal() {
   setImportSettingsModalVisible(false);
 }
 
-function applyImportedSettingsNow() {
+async function applyImportedSettingsNow() {
   const modal = document.getElementById('importSettingsModal');
   if (!modal) return;
   let parsed = {};
@@ -1936,6 +2365,8 @@ function applyImportedSettingsNow() {
   try { const valueFontMonospaceToggle = document.getElementById('valueFontMonospaceToggle'); if (valueFontMonospaceToggle && parsed[VALUE_FONT_MONOSPACE_KEY]) valueFontMonospaceToggle.checked = String(parsed[VALUE_FONT_MONOSPACE_KEY]).replace(/^"|"$/g, '') === 'true'; } catch (e) {}
   try { if (parsed[FONT_BOLD_KEY]) applyFontBold(String(parsed[FONT_BOLD_KEY]).replace(/^"|"$/g, '') === 'true'); } catch (e) {}
   try { const fontBoldToggle = document.getElementById('fontBoldToggle'); if (fontBoldToggle && parsed[FONT_BOLD_KEY]) fontBoldToggle.checked = String(parsed[FONT_BOLD_KEY]).replace(/^"|"$/g, '') === 'true'; } catch (e) {}
+  try { if (parsed[DISABLE_GLOW_EFFECTS_KEY]) applyDisableGlowEffects(String(parsed[DISABLE_GLOW_EFFECTS_KEY]).replace(/^"|"$/g, '') === 'true'); } catch (e) {}
+  try { const disableGlowEffectsToggle = document.getElementById('disableGlowEffectsToggle'); if (disableGlowEffectsToggle && parsed[DISABLE_GLOW_EFFECTS_KEY]) disableGlowEffectsToggle.checked = String(parsed[DISABLE_GLOW_EFFECTS_KEY]).replace(/^"|"$/g, '') === 'true'; } catch (e) {}
   try { if (parsed[TEMPERATURE_UNIT_KEY]) applyTemperatureUnit(String(parsed[TEMPERATURE_UNIT_KEY]).replace(/^"|"$/g, '')); } catch (e) {}
   try { const tempSelect = document.getElementById('temperatureUnitSelect'); if (tempSelect && parsed[TEMPERATURE_UNIT_KEY]) tempSelect.value = String(parsed[TEMPERATURE_UNIT_KEY]).replace(/^"|"$/g, ''); } catch (e) {}
 
@@ -1981,10 +2412,11 @@ function applyImportedSettingsNow() {
     }
   } catch (e) {}
 
+  await persistCrossProcessSettingsFromSnapshot(parsed);
   closeImportSettingsModal();
 }
 
-function applyImportedSettingsAndReload() {
+async function applyImportedSettingsAndReload() {
   const modal = document.getElementById('importSettingsModal');
   if (!modal) return;
   let parsed = {};
@@ -2000,6 +2432,7 @@ function applyImportedSettingsAndReload() {
       }
     } catch (e) {}
   });
+  await persistCrossProcessSettingsFromSnapshot(parsed);
   location.reload();
 }
 
@@ -2098,7 +2531,11 @@ function setupSettingsAccordion() {
     const sectionTitle = labelEl ? labelEl.textContent.trim() : `Section ${index + 1}`;
     const labelIcon = labelEl ? labelEl.querySelector('.settings-label-icon') : null;
     const sectionTitleIconClass = labelIcon && labelIcon.className ? labelIcon.className : '';
-    const sectionKey = sectionTitle.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || `section_${index + 1}`;
+    const explicitSectionKey = String(section.dataset.sectionKey || '').trim();
+    const nearestGroup = section.closest('.settings-group');
+    const groupScopeKey = nearestGroup ? String(nearestGroup.dataset.groupKey || '').trim() : '';
+    const fallbackSectionSlug = sectionTitle.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || `section_${index + 1}`;
+    const sectionKey = explicitSectionKey || (groupScopeKey ? `${groupScopeKey}_${fallbackSectionSlug}` : fallbackSectionSlug);
 
     const contentWrap = document.createElement('div');
     contentWrap.className = 'settings-section-content';
@@ -2231,7 +2668,9 @@ function applyWindowSizes() {
     : 1;
   const gap = containerStyles ? (parseFloat(containerStyles.columnGap || containerStyles.gap || '14') || 14) : 14;
   const containerWidth = container ? container.clientWidth : window.innerWidth;
-  const columnWidth = Math.max(220, (containerWidth - (gap * (columns - 1))) / columns);
+  const columnWidth = Math.max(120, (containerWidth - (gap * (columns - 1))) / columns);
+  const minCardWidthPx = 220;
+  const minSpan = Math.max(1, Math.ceil((minCardWidthPx + gap) / (columnWidth + gap)));
   let changed = false;
 
   const cards = document.querySelectorAll('.sensor-group');
@@ -2248,18 +2687,30 @@ function applyWindowSizes() {
     let nextSpan = NaN;
     if (Number.isFinite(savedSpan) && savedSpan >= 1) {
       nextSpan = savedSpan;
-    } else if (Number.isFinite(savedWidth) && savedWidth >= 260) {
+    } else if (Number.isFinite(savedWidth) && savedWidth >= 200) {
       const inferredSpan = Math.round((savedWidth + gap) / (columnWidth + gap));
-      nextSpan = Math.min(Math.max(1, inferredSpan), columns);
+      nextSpan = Math.min(Math.max(minSpan, inferredSpan), columns);
       sizes[card.id] = {
         height: Number.isFinite(savedHeight) ? savedHeight : 360,
-        span: nextSpan
+        span: nextSpan,
+        width: Math.round((nextSpan * (columnWidth + gap)) - gap)
       };
       changed = true;
+    } else {
+      nextSpan = minSpan;
     }
 
     if (Number.isFinite(nextSpan)) {
-      card.style.gridColumn = `span ${Math.min(Math.max(1, Math.round(nextSpan)), columns)}`;
+      const clampedSpan = Math.min(Math.max(minSpan, Math.round(nextSpan)), columns);
+      card.style.gridColumn = `span ${clampedSpan}`;
+      if (!savedEntry || (typeof savedEntry === 'object' && !Number.isFinite(Number(savedEntry.width)))) {
+        sizes[card.id] = {
+          height: Number.isFinite(savedHeight) ? savedHeight : 360,
+          span: clampedSpan,
+          width: Math.round((clampedSpan * (columnWidth + gap)) - gap)
+        };
+        changed = true;
+      }
     } else {
       card.style.gridColumn = '';
     }
@@ -2274,7 +2725,7 @@ function setupWindowResize() {
   const cards = Array.from(document.querySelectorAll('.sensor-group'));
   const sizeMap = loadWindowSizes();
   const heightSnap = 20;
-  const widthSnap = 30;
+  const widthSnap = 1;
 
   const snapToStep = (value, step, min, max) => {
     const snapped = Math.round(value / step) * step;
@@ -2292,7 +2743,6 @@ function setupWindowResize() {
     }
 
     handle.onmousedown = (event) => {
-      if (summaryModeEnabled) return;
       event.preventDefault();
       event.stopPropagation();
 
@@ -2303,7 +2753,9 @@ function setupWindowResize() {
         : 1;
       const gap = containerStyles ? (parseFloat(containerStyles.columnGap || containerStyles.gap || '14') || 14) : 14;
       const containerWidth = container ? container.clientWidth : card.getBoundingClientRect().width;
-      const columnWidth = Math.max(220, (containerWidth - (gap * (columns - 1))) / columns);
+      const columnWidth = Math.max(120, (containerWidth - (gap * (columns - 1))) / columns);
+      const minCardWidthPx = 220;
+      const minSpan = Math.max(1, Math.ceil((minCardWidthPx + gap) / (columnWidth + gap)));
 
       const startX = event.clientX;
       const startY = event.clientY;
@@ -2312,7 +2764,7 @@ function setupWindowResize() {
       const minHeight = 220;
       const maxHeight = Math.min(window.innerHeight - 120, 900);
       const currentSpanMatch = (card.style.gridColumn || '').match(/span\s+(\d+)/i);
-      const startSpan = currentSpanMatch ? parseInt(currentSpanMatch[1], 10) : 1;
+      const startSpan = currentSpanMatch ? parseInt(currentSpanMatch[1], 10) : minSpan;
 
       card.classList.add('resizing');
       card.draggable = false;
@@ -2325,7 +2777,7 @@ function setupWindowResize() {
 
         const desiredWidth = snapToStep(Math.max(columnWidth, startWidth + deltaX), widthSnap, columnWidth, containerWidth);
         const rawSpan = Math.round((desiredWidth + gap) / (columnWidth + gap));
-        const nextSpan = Math.min(Math.max(1, rawSpan || startSpan), columns);
+        const nextSpan = Math.min(Math.max(minSpan, rawSpan || startSpan), columns);
         card.style.gridColumn = `span ${nextSpan}`;
       };
 
@@ -2337,11 +2789,11 @@ function setupWindowResize() {
 
         const finalHeight = snapToStep(card.getBoundingClientRect().height, heightSnap, minHeight, maxHeight);
         const finalSpanMatch = (card.style.gridColumn || '').match(/span\s+(\d+)/i);
-        const finalSpan = finalSpanMatch ? Math.max(1, parseInt(finalSpanMatch[1], 10)) : 1;
-
+        const finalSpan = finalSpanMatch ? Math.max(minSpan, parseInt(finalSpanMatch[1], 10)) : minSpan;
         sizeMap[card.id] = {
           height: finalHeight,
-          span: finalSpan
+          span: finalSpan,
+          width: Math.round(card.getBoundingClientRect().width)
         };
         saveWindowSizes(sizeMap);
       };
@@ -2498,6 +2950,12 @@ function applyValueFontMonospace(enabled) {
   localStorage.setItem(VALUE_FONT_MONOSPACE_KEY, isEnabled ? 'true' : 'false');
 }
 
+function applyDisableGlowEffects(enabled) {
+  const isEnabled = !!enabled;
+  document.body.classList.toggle('no-glow', isEnabled);
+  localStorage.setItem(DISABLE_GLOW_EFFECTS_KEY, isEnabled ? 'true' : 'false');
+}
+
 function applyFontBold(enabled) {
   if (enabled) {
     document.body.classList.add('font-bold');
@@ -2648,6 +3106,62 @@ function normalizeOverlayDragUnlock(value) {
   return String(value || '').trim().toLowerCase() === 'true';
 }
 
+function normalizeOverlayCategoryOrder(raw) {
+  let parsed = raw;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch (error) {
+      parsed = [];
+    }
+  }
+  const input = Array.isArray(parsed) ? parsed : [];
+  const valid = new Set(SENSOR_GROUP_ORDER);
+  const seen = new Set();
+  const normalized = [];
+  input.forEach((entry) => {
+    const group = String(entry || '').trim().toLowerCase();
+    if (!valid.has(group) || seen.has(group)) return;
+    seen.add(group);
+    normalized.push(group);
+  });
+  SENSOR_GROUP_ORDER.forEach((group) => {
+    if (!seen.has(group)) normalized.push(group);
+  });
+  return normalized;
+}
+
+function loadOverlayCategoryOrder() {
+  if (Array.isArray(overlayCategoryOrderCache) && overlayCategoryOrderCache.length) {
+    return [...overlayCategoryOrderCache];
+  }
+  overlayCategoryOrderCache = normalizeOverlayCategoryOrder(localStorage.getItem(OVERLAY_CATEGORY_ORDER_KEY));
+  return [...overlayCategoryOrderCache];
+}
+
+function saveOverlayCategoryOrder(order) {
+  const normalized = normalizeOverlayCategoryOrder(order);
+  overlayCategoryOrderCache = [...normalized];
+  localStorage.setItem(OVERLAY_CATEGORY_ORDER_KEY, JSON.stringify(normalized));
+  return normalized;
+}
+
+function renderOverlayCategoryOrderEditor(order) {
+  const list = document.getElementById('overlayCategoryOrderList');
+  if (!list) return;
+  const normalized = normalizeOverlayCategoryOrder(order);
+  list.innerHTML = normalized.map((group, index) => {
+    const label = SENSOR_GROUP_LABELS[group] || group;
+    return `
+      <div class="overlay-category-order-item" draggable="true" data-overlay-category-order="${group}">
+        <span class="overlay-category-order-handle" aria-hidden="true">⋮⋮</span>
+        <span class="overlay-category-order-label">${escapeHtml(label)}</span>
+        <span class="overlay-category-order-position">${index + 1}</span>
+      </div>
+    `;
+  }).join('');
+}
+
 function normalizeOverlayCoordinate(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return null;
@@ -2750,6 +3264,7 @@ function loadOverlaySettings() {
     style: normalizeOverlayStyle(localStorage.getItem(OVERLAY_STYLE_KEY)),
     showUnits: normalizeOverlayShowUnits(localStorage.getItem(OVERLAY_SHOW_UNITS_KEY)),
     groupLineLimits: getOverlayGroupLineLimits(),
+    categoryOrder: loadOverlayCategoryOrder(),
     displayId: localStorage.getItem(OVERLAY_MONITOR_KEY) || '',
     hotkey: normalizeOverlayHotkey(localStorage.getItem(OVERLAY_HOTKEY_KEY)),
     dragUnlock: normalizeOverlayDragUnlock(localStorage.getItem(OVERLAY_DRAG_UNLOCK_KEY)),
@@ -2867,18 +3382,33 @@ function normalizeOverlaySensorGroup(sensor) {
 
 function getOverlaySensorPayload(groupedSensors) {
   const output = [];
+  const grouped = {};
   Object.keys(groupedSensors || {}).forEach((group) => {
     (Array.isArray(groupedSensors[group]) ? groupedSensors[group] : []).forEach((sensor) => {
       if (!sensor) return;
       const overlaySelected = overlaySensorSelection[sensor.id];
       const shouldDisplay = overlaySelected !== undefined ? overlaySelected : !!sensorSelection[sensor.id];
       if (!shouldDisplay) return;
-      output.push(formatOverlaySensor({
+      const normalizedGroup = String(normalizeOverlaySensorGroup(sensor) || 'other').trim().toLowerCase();
+      if (!grouped[normalizedGroup]) grouped[normalizedGroup] = [];
+      grouped[normalizedGroup].push(formatOverlaySensor({
         ...sensor,
-        group: normalizeOverlaySensorGroup(sensor)
+        group: normalizedGroup,
+        alertSeverity: activeSensorAlertState[sensor.id]?.severity || ''
       }));
     });
   });
+
+  const preferredOrder = loadOverlayCategoryOrder();
+  preferredOrder.forEach((group) => {
+    (grouped[group] || []).forEach((sensor) => output.push(sensor));
+  });
+
+  Object.keys(grouped).forEach((group) => {
+    if (preferredOrder.includes(group)) return;
+    grouped[group].forEach((sensor) => output.push(sensor));
+  });
+
   return output;
 }
 
@@ -2918,6 +3448,7 @@ function fahrenheitToCelsius(value) {
 function applyTemperatureUnit(unit, options = {}) {
   const persist = options.persist !== false;
   const normalized = normalizeTemperatureUnit(unit);
+  currentTemperatureUnit = normalized;
 
   if (persist) {
     localStorage.setItem(TEMPERATURE_UNIT_KEY, normalized);
@@ -2936,7 +3467,7 @@ function applyTemperatureUnit(unit, options = {}) {
 
 function normalizeViewMode(mode) {
   const normalized = String(mode || '').trim().toLowerCase();
-  if (normalized === 'compact' || normalized === 'wide' || normalized === 'terminal') return normalized;
+  if (normalized === 'compact' || normalized === 'wide' || normalized === 'terminal' || normalized === 'rail' || normalized === 'glass' || normalized === 'split' || normalized === 'status') return normalized;
   return 'standard';
 }
 
@@ -2961,7 +3492,7 @@ function applyViewMode(mode, options = {}) {
   const persist = options.persist !== false;
   const normalized = normalizeViewMode(mode);
 
-  document.body.classList.remove('view-compact', 'view-wide', 'view-terminal');
+  document.body.classList.remove('view-compact', 'view-wide', 'view-terminal', 'view-rail', 'view-glass', 'view-split', 'view-status');
   if (normalized !== 'standard') {
     document.body.classList.add(`view-${normalized}`);
   }
@@ -2977,9 +3508,7 @@ function applyViewMode(mode, options = {}) {
 
   applyDesktopGroupIconsForViewMode(normalized);
 
-  if (!summaryModeEnabled) {
-    applyWindowSizes();
-  }
+  applyWindowSizes();
 
   invalidateRenderGroupCache();
   renderAllDynamicGroups(latestSelectedGroupedSensors || createEmptyGroupedBuckets(), { force: true });
@@ -3110,12 +3639,8 @@ function applySummaryMode(enabled) {
     applyDebugMode(false);
   }
 
-  if (summaryModeEnabled) {
-    applySummaryCardLayout();
-  } else {
-    applyWindowOrder();
-    applyWindowSizes();
-  }
+  applyWindowOrder();
+  applyWindowSizes();
 
   syncCardInteractionState();
 
@@ -3193,6 +3718,9 @@ function ensureCategoryDefaults(groupedSensors) {
 
 function formatSensorValue(sensor) {
   if (!sensor) return '--';
+  if (typeof sensor.formatted === 'string' && sensor.formatted.trim()) {
+    return sensor.formatted;
+  }
   const rawValue = sensor.value;
   if (rawValue === null || rawValue === undefined) return '--';
 
@@ -3291,7 +3819,7 @@ function normalizeValueForDisplay(sensor, numericValue) {
   let value = numericValue;
   let displayUnits = units;
 
-  const preferredTempUnit = normalizeTemperatureUnit(localStorage.getItem(TEMPERATURE_UNIT_KEY));
+  const preferredTempUnit = normalizeTemperatureUnit(currentTemperatureUnit);
   const lowerInitialUnits = String(displayUnits || '').toLowerCase().replace(/°/g, '');
   if (lowerInitialUnits === 'c' && preferredTempUnit === 'f') {
     value = celsiusToFahrenheit(value);
@@ -3608,9 +4136,26 @@ function buildGroupRenderSignature(sensors) {
           ? `${stats.min.toFixed(3)}|${(stats.sum / Math.max(1, stats.count)).toFixed(3)}|${stats.max.toFixed(3)}|${stats.count}`
           : 'none';
       }
-      return `${sensor.id}|${getFinalDisplayLabel(sensor)}|${normalizedValue}|${sensor.units || ''}|${expanded}|summary:${summaryModeEnabled ? '1' : '0'}|${summarySignature}`;
+      const displayLabel = String(sensor && sensor.displayLabel ? sensor.displayLabel : getFinalDisplayLabel(sensor));
+      return `${sensor.id}|${displayLabel}|${normalizedValue}|${sensor.units || ''}|${expanded}|summary:${summaryModeEnabled ? '1' : '0'}|${summarySignature}`;
     })
     .join('||');
+}
+
+function prepareSelectedSensorsForRender(selectedGroupedSensors) {
+  Object.keys(selectedGroupedSensors || {}).forEach((group) => {
+    (selectedGroupedSensors[group] || []).forEach((sensor) => {
+      if (!sensor) return;
+      sensor.displayLabel = getFinalDisplayLabel(sensor);
+      sensor.formatted = formatSensorNumericValue(sensor, Number(sensor.value));
+      if (!Number.isFinite(Number(sensor.value))) {
+        const rawValue = sensor.value;
+        if (rawValue === null || rawValue === undefined) sensor.formatted = '--';
+        else if (typeof rawValue === 'string') sensor.formatted = rawValue.trim() || '--';
+        else sensor.formatted = String(rawValue);
+      }
+    });
+  });
 }
 
 function renderAllDynamicGroups(selected, options = {}) {
@@ -3666,12 +4211,13 @@ function renderSensorOptions(groupedSensors) {
         .map((sensor, index) => {
           const checked = sensorSelection[sensor.id] ? 'checked' : '';
           const overlayChecked = overlaySensorSelection[sensor.id] ? 'checked' : '';
+          const hasAlertEnabled = !!(sensorAlertRules[sensor.id] && sensorAlertRules[sensor.id].enabled !== false);
           const disabled = groupEnabled ? '' : 'disabled';
           const label = escapeHtml(getFinalDisplayLabel(sensor));
           return `
             <div class="sensor-item-row" draggable="true" data-order-group="${group}" data-order-sensor-id="${sensor.id}">
               <span class="sensor-drag-handle" title="Drag to reorder" aria-hidden="true">⋮⋮</span>
-              <label class="checkbox-label sensor-item-label"><input type="checkbox" data-sensor-id="${sensor.id}" ${checked} ${disabled}><span class="sensor-name">${label}</span></label>
+              <label class="checkbox-label sensor-item-label"><input type="checkbox" data-sensor-id="${sensor.id}" ${checked} ${disabled}><span class="sensor-name">${label}</span>${hasAlertEnabled ? '<span class="sensor-alert-enabled-indicator" title="Alert enabled">✓</span>' : ''}</label>
               <div class="sensor-item-actions">
                 <label class="checkbox-label overlay-checkbox" title="Show in overlay"><input type="checkbox" data-overlay-sensor-id="${sensor.id}" ${overlayChecked} ${disabled}><span>Overlay</span></label>
                 <button type="button" class="sensor-order-btn sensor-rename-btn" data-rename-sensor-id="${sensor.id}" aria-label="Rename ${label}" title="Rename sensor">✎</button>
@@ -3703,6 +4249,71 @@ function renderSensorOptions(groupedSensors) {
     .join('');
 
   container.innerHTML = html || '<div class="settings-note">No other sensors detected</div>';
+  refreshSensorAlertEditor(groupedSensors);
+}
+
+function listAlertCandidateSensors(groupedSensors) {
+  const sensors = [];
+  SENSOR_GROUP_ORDER.forEach((group) => {
+    (groupedSensors[group] || []).forEach((sensor) => {
+      if (!sensor || !sensor.id) return;
+      sensors.push({
+        id: String(sensor.id),
+        label: `${SENSOR_GROUP_LABELS[group] || group}: ${getFinalDisplayLabel(sensor)}`,
+        sensor
+      });
+    });
+  });
+  return sensors;
+}
+
+function refreshSensorAlertEditor(groupedSensors) {
+  const sensorSelect = document.getElementById('alertSensorSelect');
+  const enabledToggle = document.getElementById('alertRuleEnabled');
+  const operatorSelect = document.getElementById('alertOperatorSelect');
+  const thresholdInput = document.getElementById('alertThresholdInput');
+  const cooldownInput = document.getElementById('alertCooldownInput');
+  const severitySelect = document.getElementById('alertSeveritySelect');
+  if (!sensorSelect) return;
+
+  const previousValue = sensorSelect.value;
+  const candidates = listAlertCandidateSensors(groupedSensors);
+  sensorSelect.innerHTML = '<option value="">Select sensor...</option>';
+  candidates.forEach((entry) => {
+    const option = document.createElement('option');
+    option.value = entry.id;
+    const hasAlertEnabled = !!(sensorAlertRules[entry.id] && sensorAlertRules[entry.id].enabled !== false);
+    option.textContent = hasAlertEnabled ? `✅ ${entry.label}` : entry.label;
+    sensorSelect.appendChild(option);
+  });
+  if (previousValue && candidates.some((entry) => entry.id === previousValue)) {
+    sensorSelect.value = previousValue;
+  }
+
+  const applyRuleToEditor = () => {
+    const sensorId = String(sensorSelect.value || '').trim();
+    const selectedSensorEntry = candidates.find((entry) => entry.id === sensorId);
+    if (!sensorId || !selectedSensorEntry) {
+      if (enabledToggle) enabledToggle.checked = false;
+      if (operatorSelect) operatorSelect.value = '>=';
+      if (thresholdInput) thresholdInput.value = '';
+      if (cooldownInput) cooldownInput.value = '30';
+      if (severitySelect) severitySelect.value = 'warning';
+      return;
+    }
+    const rule = normalizeSensorAlertRule(sensorAlertRules[sensorId] || getDefaultAlertRuleForSensor(selectedSensorEntry.sensor));
+    if (enabledToggle) enabledToggle.checked = !!rule.enabled;
+    if (operatorSelect) operatorSelect.value = rule.operator;
+    if (thresholdInput) thresholdInput.value = String(rule.threshold);
+    if (cooldownInput) cooldownInput.value = String(rule.cooldownSec);
+    if (severitySelect) severitySelect.value = rule.severity;
+  };
+
+  if (!sensorSelect.dataset.alertEditorBound) {
+    sensorSelect.addEventListener('change', applyRuleToEditor);
+    sensorSelect.dataset.alertEditorBound = 'true';
+  }
+  applyRuleToEditor();
 }
 
 function buildLiveSensorCatalogSignature(groupedSensors) {
@@ -4041,6 +4652,8 @@ function renderDynamicGroup(containerId, sensors) {
   container.innerHTML = sensors
     .map((sensor) => {
       const isExpanded = expandedGraphSensors.has(sensor.id);
+      const alertSeverity = activeSensorAlertState[sensor.id]?.severity || '';
+      const alertClass = alertSeverity === 'critical' ? ' stat-alert-critical' : (alertSeverity === 'warning' ? ' stat-alert-warning' : '');
       const encodedId = encodeURIComponent(sensor.id);
       const graphHtml = summaryModeEnabled ? renderSensorSummary(sensor) : (isExpanded ? renderSensorGraph(sensor) : '');
       const expandedClass = isExpanded ? ' is-expanded' : '';
@@ -4048,11 +4661,11 @@ function renderDynamicGroup(containerId, sensors) {
       const roleAttr = summaryModeEnabled ? '' : ' role="button" tabindex="0"';
       const expandedAttr = summaryModeEnabled ? '' : ` aria-expanded="${isExpanded ? 'true' : 'false'}"`;
       const mainRowHtml = summaryModeEnabled
-        ? `<div class="stat-main stat-main-summary"><span class="stat-label">${escapeHtml(getFinalDisplayLabel(sensor))}</span></div>`
-        : `<div class="stat-main"><span class="stat-label">${escapeHtml(getFinalDisplayLabel(sensor))}</span><span class="stat-value">${escapeHtml(formatSensorValue(sensor))}</span></div>`;
+        ? `<div class="stat-main stat-main-summary"><span class="stat-label">${escapeHtml(sensor.displayLabel || getFinalDisplayLabel(sensor))}</span></div>`
+        : `<div class="stat-main"><span class="stat-label">${escapeHtml(sensor.displayLabel || getFinalDisplayLabel(sensor))}</span><span class="stat-value">${escapeHtml(formatSensorValue(sensor))}</span></div>`;
 
       return `
-        <div class="stat${clickableClass}${expandedClass}" data-sensor-id="${encodedId}"${roleAttr}${expandedAttr}>
+        <div class="stat${clickableClass}${expandedClass}${alertClass}" data-sensor-id="${encodedId}"${roleAttr}${expandedAttr}>
           ${mainRowHtml}
           ${graphHtml}
         </div>
@@ -4086,6 +4699,7 @@ function findCatalogSensorById(sensorId) {
 function applyCustomSensorNamesRefresh() {
   saveSensorCustomNames();
   invalidateRenderGroupCache();
+  prepareSelectedSensorsForRender(latestSelectedGroupedSensors || createEmptyGroupedBuckets());
   renderSensorOptions(cachedOrderedSensorCatalog);
   renderAllDynamicGroups(latestSelectedGroupedSensors || createEmptyGroupedBuckets(), { force: true });
 }
@@ -4489,6 +5103,101 @@ const SettingsManager = {
       });
     }
 
+    const overlayCategoryOrderList = document.getElementById('overlayCategoryOrderList');
+    const overlayCategoryOrderReset = document.getElementById('overlayCategoryOrderReset');
+    if (overlayCategoryOrderList) {
+      let overlayCategoryOrder = loadOverlayCategoryOrder();
+      let overlayOrderDragging = '';
+      let overlayOrderDropTarget = '';
+      let overlayOrderPlaceAfter = false;
+      renderOverlayCategoryOrderEditor(overlayCategoryOrder);
+
+      const clearOverlayOrderDragClasses = () => {
+        overlayCategoryOrderList.querySelectorAll('.overlay-category-order-item.dragging, .overlay-category-order-item.drag-over-before, .overlay-category-order-item.drag-over-after').forEach((row) => {
+          row.classList.remove('dragging', 'drag-over-before', 'drag-over-after');
+        });
+      };
+
+      const persistAndRefresh = () => {
+        overlayCategoryOrder = saveOverlayCategoryOrder(overlayCategoryOrder);
+        renderOverlayCategoryOrderEditor(overlayCategoryOrder);
+        sendOverlayPayload(getOverlaySensorPayload(latestSelectedGroupedSensors || createEmptyGroupedBuckets()));
+      };
+
+      overlayCategoryOrderList.addEventListener('dragstart', (event) => {
+        const item = event.target.closest('[data-overlay-category-order]');
+        if (!item || !event.dataTransfer) return;
+        overlayOrderDragging = String(item.dataset.overlayCategoryOrder || '').trim().toLowerCase();
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', overlayOrderDragging);
+        overlayOrderDropTarget = '';
+        overlayOrderPlaceAfter = false;
+        item.classList.add('dragging');
+      });
+
+      overlayCategoryOrderList.addEventListener('dragend', (event) => {
+        overlayOrderDragging = '';
+        overlayOrderDropTarget = '';
+        overlayOrderPlaceAfter = false;
+        clearOverlayOrderDragClasses();
+      });
+
+      overlayCategoryOrderList.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        const dragged = String(overlayOrderDragging || '').trim().toLowerCase();
+        const targetEl = event.target.closest('[data-overlay-category-order]');
+        const target = targetEl ? String(targetEl.dataset.overlayCategoryOrder || '').trim().toLowerCase() : '';
+        if (!dragged || !target || dragged === target || !targetEl) return;
+        const rect = targetEl.getBoundingClientRect();
+        const placeAfter = (event.clientY - rect.top) > (rect.height / 2);
+
+        clearOverlayOrderDragClasses();
+        overlayCategoryOrderList.querySelector(`.overlay-category-order-item[data-overlay-category-order="${dragged}"]`)?.classList.add('dragging');
+        targetEl.classList.add(placeAfter ? 'drag-over-after' : 'drag-over-before');
+        overlayOrderDropTarget = target;
+        overlayOrderPlaceAfter = placeAfter;
+      });
+
+      overlayCategoryOrderList.addEventListener('dragleave', (event) => {
+        if (event.currentTarget !== event.target) return;
+        clearOverlayOrderDragClasses();
+      });
+
+      overlayCategoryOrderList.addEventListener('drop', (event) => {
+        event.preventDefault();
+        const dragged = String(overlayOrderDragging || '').trim().toLowerCase();
+        const target = String(overlayOrderDropTarget || '').trim().toLowerCase();
+        if (!dragged || !target || dragged === target) {
+          clearOverlayOrderDragClasses();
+          return;
+        }
+
+        const next = [...overlayCategoryOrder];
+        const from = next.indexOf(dragged);
+        const to = next.indexOf(target);
+        if (from < 0 || to < 0) {
+          clearOverlayOrderDragClasses();
+          return;
+        }
+        next.splice(from, 1);
+        const adjustedTarget = Math.max(0, Math.min(next.length, to + (overlayOrderPlaceAfter ? 1 : 0) - (from < to ? 1 : 0)));
+        next.splice(adjustedTarget, 0, dragged);
+        overlayCategoryOrder = next;
+        overlayOrderDragging = '';
+        overlayOrderDropTarget = '';
+        overlayOrderPlaceAfter = false;
+        clearOverlayOrderDragClasses();
+        persistAndRefresh();
+      });
+
+      if (overlayCategoryOrderReset) {
+        overlayCategoryOrderReset.addEventListener('click', () => {
+          overlayCategoryOrder = [...SENSOR_GROUP_ORDER];
+          persistAndRefresh();
+        });
+      }
+    }
+
     const latencyHostInput = document.getElementById('latencyHost');
     if (latencyHostInput) {
       const host = normalizeLatencyHost(localStorage.getItem(LATENCY_HOST_KEY));
@@ -4543,53 +5252,10 @@ const SettingsManager = {
     const exportSettingsBtn = document.getElementById('exportSettingsBtn');
     const importSettingsBtn = document.getElementById('importSettingsBtn');
 
-    const SETTINGS_EXPORT_KEYS = [
-      SENSOR_ORDER_KEY,
-      SENSOR_SELECTION_KEY,
-      SENSOR_OVERLAY_SELECTION_KEY,
-      SENSOR_CATEGORY_SELECTION_KEY,
-      SENSOR_CUSTOM_NAMES_KEY,
-      CUSTOM_COLORS_KEY,
-      VIEW_MODE_KEY,
-      'theme',
-      FONT_SIZE_KEY,
-      FONT_FAMILY_KEY,
-      VALUE_FONT_MONOSPACE_KEY,
-      SUMMARY_MODE_KEY,
-      'refreshRate',
-      OVERLAY_ENABLED_KEY,
-      OVERLAY_FONT_SIZE_KEY,
-      OVERLAY_FONT_FAMILY_KEY,
-      OVERLAY_FONT_BOLD_KEY,
-      OVERLAY_TEXT_COLOR_KEY,
-      OVERLAY_VALUE_COLOR_KEY,
-      OVERLAY_BG_COLOR_KEY,
-      OVERLAY_OPACITY_KEY,
-      OVERLAY_WIDTH_PRESET_KEY,
-      OVERLAY_WIDTH_KEY,
-      OVERLAY_POSITION_KEY,
-      OVERLAY_STYLE_KEY,
-      OVERLAY_SHOW_UNITS_KEY,
-      OVERLAY_GROUP_LINE_LIMITS_KEY,
-      OVERLAY_LINE_LIMITS_EXPANDED_KEY,
-      LATENCY_HOST_KEY
-    ];
-
     if (exportSettingsBtn) {
       exportSettingsBtn.addEventListener('click', () => {
         try {
-          const payload = {};
-          SETTINGS_EXPORT_KEYS.forEach((k) => {
-            try {
-              payload[k] = localStorage.getItem(k);
-            } catch (e) {
-              payload[k] = null;
-            }
-          });
-          // include any in-memory state fallback
-          try {
-            payload[SENSOR_ORDER_KEY] = JSON.stringify(sensorOrderByGroup || {});
-          } catch (e) {}
+          const payload = buildSettingsSnapshot();
 
           const blob = new Blob([JSON.stringify({ exportedAt: Date.now(), data: payload }, null, 2)], { type: 'application/json' });
           const url = URL.createObjectURL(blob);
@@ -4708,6 +5374,16 @@ const SettingsManager = {
       });
     }
 
+    const disableGlowEffectsToggle = document.getElementById('disableGlowEffectsToggle');
+    if (disableGlowEffectsToggle) {
+      const disableGlow = localStorage.getItem(DISABLE_GLOW_EFFECTS_KEY) === 'true';
+      disableGlowEffectsToggle.checked = disableGlow;
+      applyDisableGlowEffects(disableGlow);
+      disableGlowEffectsToggle.addEventListener('change', (e) => {
+        applyDisableGlowEffects(!!e.target.checked);
+      });
+    }
+
     const overlayEnabledToggle = document.getElementById('overlayEnabledToggle');
     const overlayFontSizeSlider = document.getElementById('overlayFontSizeSlider');
     const overlayFontSizeValue = document.getElementById('overlayFontSizeValue');
@@ -4743,6 +5419,174 @@ const SettingsManager = {
         if (overlayFontSizeValue) overlayFontSizeValue.textContent = overlayFontSizeLabel(nextSize);
         saveOverlaySetting(OVERLAY_FONT_SIZE_KEY, nextSize);
         refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
+      });
+    }
+
+    const settingsProfileSelect = document.getElementById('settingsProfileSelect');
+    const settingsProfileNameInput = document.getElementById('settingsProfileNameInput');
+    const saveSettingsProfileBtn = document.getElementById('saveSettingsProfileBtn');
+    const applySettingsProfileBtn = document.getElementById('applySettingsProfileBtn');
+    const renameSettingsProfileBtn = document.getElementById('renameSettingsProfileBtn');
+    const deleteSettingsProfileBtn = document.getElementById('deleteSettingsProfileBtn');
+
+    const renderSettingsProfiles = () => {
+      if (!settingsProfileSelect) return;
+      const profiles = loadSettingsProfiles();
+      const names = Object.keys(profiles).sort((a, b) => a.localeCompare(b));
+      const active = normalizeProfileName(localStorage.getItem(ACTIVE_SETTINGS_PROFILE_KEY) || '');
+
+      settingsProfileSelect.innerHTML = '';
+      if (!names.length) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No profiles saved';
+        settingsProfileSelect.appendChild(option);
+      } else {
+        names.forEach((name) => {
+          const option = document.createElement('option');
+          option.value = name;
+          option.textContent = name;
+          settingsProfileSelect.appendChild(option);
+        });
+      }
+
+      if (active && names.includes(active)) {
+        settingsProfileSelect.value = active;
+      } else if (names.length) {
+        settingsProfileSelect.value = names[0];
+      }
+      if (settingsProfileNameInput && settingsProfileSelect.value) {
+        settingsProfileNameInput.value = settingsProfileSelect.value;
+      }
+    };
+
+    if (settingsProfileSelect) {
+      settingsProfileSelect.addEventListener('change', () => {
+        const selected = normalizeProfileName(settingsProfileSelect.value);
+        if (selected) {
+          localStorage.setItem(ACTIVE_SETTINGS_PROFILE_KEY, selected);
+          if (settingsProfileNameInput) settingsProfileNameInput.value = selected;
+        }
+      });
+      renderSettingsProfiles();
+    }
+
+    if (saveSettingsProfileBtn) {
+      saveSettingsProfileBtn.addEventListener('click', () => {
+        try {
+          const typedName = normalizeProfileName(settingsProfileNameInput ? settingsProfileNameInput.value : '');
+          let name = typedName;
+          if (!name) {
+            const stamp = new Date().toISOString().replace(/[^\d]/g, '').slice(0, 14);
+            name = `Profile ${stamp}`;
+          }
+          if (!name) {
+            alert('Please enter a valid profile name.');
+            return;
+          }
+
+          const profiles = loadSettingsProfiles();
+          profiles[name] = {
+            updatedAt: Date.now(),
+            snapshot: buildSettingsSnapshot()
+          };
+          saveSettingsProfiles(profiles);
+          localStorage.setItem(ACTIVE_SETTINGS_PROFILE_KEY, name);
+          renderSettingsProfiles();
+          if (settingsProfileSelect) settingsProfileSelect.value = name;
+          alert(`Profile "${name}" saved.`);
+        } catch (error) {
+          console.error('Failed to save profile:', error);
+          alert('Failed to save profile: ' + (error && error.message ? error.message : String(error)));
+        }
+      });
+    }
+
+    if (applySettingsProfileBtn) {
+      applySettingsProfileBtn.addEventListener('click', async () => {
+        const selected = normalizeProfileName(settingsProfileSelect ? settingsProfileSelect.value : '');
+        if (!selected) {
+          alert('Select a profile first.');
+          return;
+        }
+
+        const profiles = loadSettingsProfiles();
+        const profile = profiles[selected];
+        if (!profile || !profile.snapshot || typeof profile.snapshot !== 'object') {
+          alert('Selected profile is invalid or missing snapshot data.');
+          return;
+        }
+
+        Object.keys(profile.snapshot).forEach((k) => {
+          try {
+            const v = profile.snapshot[k];
+            if (v === null || v === undefined) {
+              localStorage.removeItem(k);
+            } else {
+              localStorage.setItem(k, String(v));
+            }
+          } catch (e) {}
+        });
+        await persistCrossProcessSettingsFromSnapshot(profile.snapshot);
+        localStorage.setItem(ACTIVE_SETTINGS_PROFILE_KEY, selected);
+        location.reload();
+      });
+    }
+
+    if (renameSettingsProfileBtn) {
+      renameSettingsProfileBtn.addEventListener('click', () => {
+        const selected = normalizeProfileName(settingsProfileSelect ? settingsProfileSelect.value : '');
+        if (!selected) {
+          alert('Select a profile first.');
+          return;
+        }
+
+        const nextName = normalizeProfileName(settingsProfileNameInput ? settingsProfileNameInput.value : '');
+        if (!nextName) {
+          alert('Enter a new profile name in the profile name box.');
+          return;
+        }
+
+        const profiles = loadSettingsProfiles();
+        const existing = profiles[selected];
+        if (!existing) {
+          alert('Selected profile no longer exists.');
+          renderSettingsProfiles();
+          return;
+        }
+
+        if (nextName !== selected && profiles[nextName]) {
+          alert('A profile with that name already exists.');
+          return;
+        }
+
+        delete profiles[selected];
+        profiles[nextName] = existing;
+        profiles[nextName].updatedAt = Date.now();
+        saveSettingsProfiles(profiles);
+        localStorage.setItem(ACTIVE_SETTINGS_PROFILE_KEY, nextName);
+        renderSettingsProfiles();
+        if (settingsProfileNameInput) settingsProfileNameInput.value = nextName;
+        alert(`Profile renamed to "${nextName}".`);
+      });
+    }
+
+    if (deleteSettingsProfileBtn) {
+      deleteSettingsProfileBtn.addEventListener('click', () => {
+        const selected = normalizeProfileName(settingsProfileSelect ? settingsProfileSelect.value : '');
+        if (!selected) {
+          alert('Select a profile first.');
+          return;
+        }
+        if (!confirm(`Delete profile "${selected}"?`)) return;
+
+        const profiles = loadSettingsProfiles();
+        if (profiles[selected]) delete profiles[selected];
+        saveSettingsProfiles(profiles);
+        if (localStorage.getItem(ACTIVE_SETTINGS_PROFILE_KEY) === selected) {
+          localStorage.removeItem(ACTIVE_SETTINGS_PROFILE_KEY);
+        }
+        renderSettingsProfiles();
       });
     }
 
@@ -5057,21 +5901,64 @@ const SettingsManager = {
     const webAutoStart = document.getElementById('webMonitorAutoStart');
     const webHost = document.getElementById('webMonitorHost');
     const webPort = document.getElementById('webMonitorPort');
+    const webRequireAuth = document.getElementById('webMonitorRequireAuth');
+    const webAuthToken = document.getElementById('webMonitorAuthToken');
+    const webReadOnlyApiMode = document.getElementById('webMonitorReadOnlyApiMode');
+    const webGenerateTokenBtn = document.getElementById('webMonitorGenerateTokenBtn');
+    const webCopyTokenBtn = document.getElementById('webMonitorCopyTokenBtn');
+    const webRiskWarning = document.getElementById('webMonitorRiskWarning');
     const webApplyBtn = document.getElementById('webMonitorApplyBtn');
     const webOpenBtn = document.getElementById('webMonitorOpenBtn');
+
+    const refreshWebMonitorRiskWarning = () => {
+      if (!webRiskWarning) return;
+      const nextSettings = normalizeWebMonitorSettings({
+        enabled: !!(webEnabled && webEnabled.checked),
+        autoStart: !!(webAutoStart && webAutoStart.checked),
+        host: webHost ? webHost.value : DEFAULT_WEB_MONITOR_SETTINGS.host,
+        port: webPort ? Number(webPort.value) : DEFAULT_WEB_MONITOR_SETTINGS.port,
+        requireAuth: !!(webRequireAuth && webRequireAuth.checked),
+        authToken: webAuthToken ? webAuthToken.value : '',
+        readOnlyApiMode: !!(webReadOnlyApiMode && webReadOnlyApiMode.checked)
+      });
+      if (nextSettings.requireAuth && !nextSettings.authToken) {
+        nextSettings.authToken = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+      }
+
+      const isWideBind = nextSettings.host === '0.0.0.0' || nextSettings.host === '::';
+      if (!nextSettings.enabled || !isWideBind) {
+        webRiskWarning.style.display = 'none';
+        webRiskWarning.textContent = '';
+        return;
+      }
+
+      if (nextSettings.requireAuth && nextSettings.authToken) {
+        webRiskWarning.textContent = 'Warning: server is exposed on all interfaces. Access token is enabled.';
+      } else {
+        webRiskWarning.textContent = 'High risk: server is exposed on all interfaces without token protection.';
+      }
+      webRiskWarning.style.display = 'block';
+    };
 
     const applyWebSettings = async () => {
       const nextSettings = normalizeWebMonitorSettings({
         enabled: !!(webEnabled && webEnabled.checked),
         autoStart: !!(webAutoStart && webAutoStart.checked),
         host: webHost ? webHost.value : DEFAULT_WEB_MONITOR_SETTINGS.host,
-        port: webPort ? Number(webPort.value) : DEFAULT_WEB_MONITOR_SETTINGS.port
+        port: webPort ? Number(webPort.value) : DEFAULT_WEB_MONITOR_SETTINGS.port,
+        requireAuth: !!(webRequireAuth && webRequireAuth.checked),
+        authToken: webAuthToken ? webAuthToken.value : '',
+        readOnlyApiMode: !!(webReadOnlyApiMode && webReadOnlyApiMode.checked)
       });
 
       if (webHost) webHost.value = nextSettings.host;
       if (webPort) webPort.value = String(nextSettings.port);
+      if (webRequireAuth) webRequireAuth.checked = nextSettings.requireAuth;
+      if (webAuthToken) webAuthToken.value = nextSettings.authToken;
+      if (webReadOnlyApiMode) webReadOnlyApiMode.checked = nextSettings.readOnlyApiMode;
 
       saveWebMonitorSettings(nextSettings);
+      refreshWebMonitorRiskWarning();
       if (nextSettings.enabled) {
         await startWebMonitorServer(nextSettings);
       } else {
@@ -5087,16 +5974,63 @@ const SettingsManager = {
 
     if (webOpenBtn) {
       webOpenBtn.addEventListener('click', () => {
-        const targetUrl = webMonitorRuntime.urls[0];
-        if (!targetUrl) return;
-        shell.openExternal(targetUrl);
+        openWebMonitorInBrowser();
+      });
+    }
+
+    if (webGenerateTokenBtn) {
+      webGenerateTokenBtn.addEventListener('click', () => {
+        const token = generateWebMonitorToken();
+        if (webAuthToken) webAuthToken.value = token;
+        if (webRequireAuth) webRequireAuth.checked = true;
+        refreshWebMonitorRiskWarning();
+      });
+    }
+
+    if (webCopyTokenBtn) {
+      webCopyTokenBtn.addEventListener('click', async () => {
+        const token = String(webAuthToken ? webAuthToken.value : '').trim();
+        if (!token) {
+          alert('No token to copy. Generate or enter a token first.');
+          return;
+        }
+        try {
+          if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            await navigator.clipboard.writeText(token);
+          } else {
+            throw new Error('Clipboard API unavailable');
+          }
+          alert('Access token copied to clipboard.');
+        } catch (clipboardError) {
+          try {
+            const temp = document.createElement('textarea');
+            temp.value = token;
+            temp.setAttribute('readonly', 'readonly');
+            temp.style.position = 'fixed';
+            temp.style.opacity = '0';
+            document.body.appendChild(temp);
+            temp.select();
+            document.execCommand('copy');
+            temp.remove();
+            alert('Access token copied to clipboard.');
+          } catch (fallbackError) {
+            alert('Failed to copy token. Please copy it manually.');
+          }
+        }
       });
     }
 
     // Web Monitor toggle button in header
     const webMonitorToggleBtn = document.getElementById('webMonitorToggleBtn');
     if (webMonitorToggleBtn) {
-      webMonitorToggleBtn.addEventListener('click', () => {
+      webMonitorToggleBtn.addEventListener('click', (event) => {
+        const openIcon = event.target && event.target.closest ? event.target.closest('.web-monitor-open-icon') : null;
+        if (openIcon) {
+          event.preventDefault();
+          event.stopPropagation();
+          openWebMonitorInBrowser();
+          return;
+        }
         const webEnabledCheckbox = document.getElementById('webMonitorEnabled');
         if (webEnabledCheckbox) {
           // Toggle the checkbox state
@@ -5112,6 +6046,15 @@ const SettingsManager = {
     if (webAutoStart) webAutoStart.checked = savedWebSettings.autoStart;
     if (webHost) webHost.value = savedWebSettings.host;
     if (webPort) webPort.value = String(savedWebSettings.port);
+    if (webRequireAuth) webRequireAuth.checked = savedWebSettings.requireAuth;
+    if (webAuthToken) webAuthToken.value = savedWebSettings.authToken;
+    if (webReadOnlyApiMode) webReadOnlyApiMode.checked = savedWebSettings.readOnlyApiMode;
+    [webEnabled, webHost, webPort, webRequireAuth, webAuthToken, webReadOnlyApiMode].forEach((el) => {
+      if (!el) return;
+      const eventName = el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'number') ? 'input' : 'change';
+      el.addEventListener(eventName, refreshWebMonitorRiskWarning);
+    });
+    refreshWebMonitorRiskWarning();
     refreshWebMonitorStatusUi();
 
     if (savedWebSettings.enabled && savedWebSettings.autoStart) {
@@ -5122,7 +6065,9 @@ const SettingsManager = {
       launchAtStartup: document.getElementById('launchAtStartup'),
       startMinimized: document.getElementById('startMinimized'),
       minimizeToTray: document.getElementById('minimizeToTray'),
-      closeToTray: document.getElementById('closeToTray')
+      closeToTray: document.getElementById('closeToTray'),
+      autoCheckForUpdates: document.getElementById('autoCheckForUpdates'),
+      startupDelaySeconds: document.getElementById('startupDelaySeconds')
     };
 
     const discordPresenceSelect = document.getElementById('discordPresenceSelect');
@@ -5132,7 +6077,11 @@ const SettingsManager = {
       const normalized = normalizeAppBehaviorSettings(settings);
       Object.entries(appBehaviorControls).forEach(([key, element]) => {
         if (!element) return;
-        element.checked = !!normalized[key];
+        if (element.type === 'checkbox') {
+          element.checked = !!normalized[key];
+        } else {
+          element.value = String(normalized[key] ?? '');
+        }
       });
       if (discordPresenceSelect) {
         discordPresenceSelect.value = normalized.enableDiscordRichPresence ? 'enabled' : 'disabled';
@@ -5185,8 +6134,9 @@ const SettingsManager = {
         launchAtStartup: !!appBehaviorControls.launchAtStartup?.checked,
         startMinimized: !!appBehaviorControls.startMinimized?.checked,
         minimizeToTray: !!appBehaviorControls.minimizeToTray?.checked,
-        closeToTray: !!appBehaviorControls.closeToTray?.checked
-      ,
+        closeToTray: !!appBehaviorControls.closeToTray?.checked,
+        autoCheckForUpdates: !!appBehaviorControls.autoCheckForUpdates?.checked,
+        startupDelaySeconds: appBehaviorControls.startupDelaySeconds?.value,
         enableDiscordRichPresence: discordPresenceSelect ? (discordPresenceSelect.value === 'enabled') : true
       });
     };
@@ -5259,6 +6209,11 @@ const SettingsManager = {
     getAppBehaviorSettings().then((settings) => {
       applyAppBehaviorToUi(settings);
       updateDiscordPresenceStatusUi({ enabled: settings.enableDiscordRichPresence, connected: settings.enableDiscordRichPresence ? null : false });
+      if (settings.autoCheckForUpdates) {
+        setTimeout(() => {
+          performUpdateCheck({ automatic: true }).catch(() => {});
+        }, 900);
+      }
     });
 
     const checkForUpdatesBtn = document.getElementById('checkForUpdatesBtn');
@@ -5435,17 +6390,16 @@ const SettingsManager = {
       });
     }
 
-    if (checkForUpdatesBtn) {
-      checkForUpdatesBtn.addEventListener('click', async () => {
+    const performUpdateCheck = async ({ automatic = false } = {}) => {
         if (!ipcRenderer || typeof ipcRenderer.invoke !== 'function') {
           setUpdateStatus('Update check is unavailable in this runtime.');
           return;
         }
 
-        checkForUpdatesBtn.disabled = true;
+        if (checkForUpdatesBtn) checkForUpdatesBtn.disabled = true;
         latestReleaseUrl = DEFAULT_LATEST_RELEASE_URL;
         toggleOpenLatestButton(/^https?:\/\//i.test(latestReleaseUrl));
-        setUpdateStatus('Checking for updates...');
+        setUpdateStatus(automatic ? 'Auto-checking for updates...' : 'Checking for updates...');
 
         try {
           const result = await ipcRenderer.invoke('app-update:check');
@@ -5515,8 +6469,13 @@ const SettingsManager = {
         } catch (error) {
           setUpdateStatus(`Update check failed: ${error.message}`);
         } finally {
-          checkForUpdatesBtn.disabled = false;
+          if (checkForUpdatesBtn) checkForUpdatesBtn.disabled = false;
         }
+    };
+
+    if (checkForUpdatesBtn) {
+      checkForUpdatesBtn.addEventListener('click', async () => {
+        await performUpdateCheck({ automatic: false });
       });
     }
 
@@ -5618,6 +6577,58 @@ const SettingsManager = {
     sensorCategorySelection = loadSensorCategorySelection();
     sensorCategoryCollapse = loadSensorCategoryCollapse();
     sensorOrderByGroup = loadSensorOrder();
+    sensorAlertRules = loadSensorAlertRules();
+    const alertSensorSelect = document.getElementById('alertSensorSelect');
+    const alertRuleEnabled = document.getElementById('alertRuleEnabled');
+    const alertOperatorSelect = document.getElementById('alertOperatorSelect');
+    const alertThresholdInput = document.getElementById('alertThresholdInput');
+    const alertCooldownInput = document.getElementById('alertCooldownInput');
+    const alertSeveritySelect = document.getElementById('alertSeveritySelect');
+    const saveAlertRuleBtn = document.getElementById('saveAlertRuleBtn');
+    const deleteAlertRuleBtn = document.getElementById('deleteAlertRuleBtn');
+
+    if (saveAlertRuleBtn) {
+      saveAlertRuleBtn.addEventListener('click', () => {
+        const sensorId = String(alertSensorSelect ? alertSensorSelect.value : '').trim();
+        if (!sensorId) {
+          alert('Select a sensor first.');
+          return;
+        }
+        const threshold = Number(alertThresholdInput ? alertThresholdInput.value : NaN);
+        if (!Number.isFinite(threshold)) {
+          alert('Enter a valid threshold.');
+          return;
+        }
+        const nextRule = normalizeSensorAlertRule({
+          enabled: !!(alertRuleEnabled && alertRuleEnabled.checked),
+          operator: alertOperatorSelect ? alertOperatorSelect.value : '>=',
+          threshold,
+          cooldownSec: alertCooldownInput ? alertCooldownInput.value : 30,
+          severity: alertSeveritySelect ? alertSeveritySelect.value : 'warning'
+        });
+        sensorAlertRules[sensorId] = nextRule;
+        saveSensorAlertRules();
+        refreshSensorAlertEditor(cachedOrderedSensorCatalog || createEmptyGroupedBuckets());
+      });
+    }
+
+    if (deleteAlertRuleBtn) {
+      deleteAlertRuleBtn.addEventListener('click', () => {
+        const sensorId = String(alertSensorSelect ? alertSensorSelect.value : '').trim();
+        if (!sensorId) {
+          alert('Select a sensor first.');
+          return;
+        }
+        if (sensorAlertRules[sensorId]) {
+          delete sensorAlertRules[sensorId];
+          saveSensorAlertRules();
+          delete activeSensorAlertState[sensorId];
+          delete sensorAlertLastTriggeredAt[sensorId];
+        }
+        refreshSensorAlertEditor(cachedOrderedSensorCatalog || createEmptyGroupedBuckets());
+      });
+    }
+
     const sensorOptions = document.getElementById('sensorOptions');
     if (sensorOptions) {
       const sensorDragState = {
@@ -5852,9 +6863,13 @@ async function updateStats(forceRender = false) {
       if ((now - lastSuccessfulSensorReadAt) > SENSOR_READ_STALE_HOLD_MS) {
         latestSelectedGroupedSensors = createEmptyGroupedBuckets();
       }
+      prepareSelectedSensorsForRender(latestSelectedGroupedSensors);
       renderAllDynamicGroups(latestSelectedGroupedSensors);
+      evaluateSensorAlerts(latestSelectedGroupedSensors);
       sendOverlayPayload(getOverlaySensorPayload(latestSelectedGroupedSensors));
-      publishWebMonitorPayload(mode, 'No data');
+      if (webMonitorRuntime.running) {
+        publishWebMonitorPayload(mode, 'No data');
+      }
       return;
     }
 
@@ -5893,11 +6908,13 @@ async function updateStats(forceRender = false) {
         }
 
         const selected = buildSelectedSensorsFromCachedCatalog(groupedWithRealtime);
+        prepareSelectedSensorsForRender(selected);
         latestSelectedGroupedSensors = selected;
         updateSensorHistory(selected);
         if (shouldCollectSummaryStats()) {
           updateSensorSessionStats(selected);
         }
+        evaluateSensorAlerts(selected);
         lastSuccessfulSensorReadAt = Date.now();
         renderAllDynamicGroups(selected, { force: forceRender });
         sendOverlayPayload(getOverlaySensorPayload(selected));
@@ -5906,11 +6923,15 @@ async function updateStats(forceRender = false) {
         if ((now - lastSuccessfulSensorReadAt) > SENSOR_READ_STALE_HOLD_MS) {
           latestSelectedGroupedSensors = createEmptyGroupedBuckets();
         }
+        prepareSelectedSensorsForRender(latestSelectedGroupedSensors);
         renderAllDynamicGroups(latestSelectedGroupedSensors, { force: forceRender });
+        evaluateSensorAlerts(latestSelectedGroupedSensors);
       }
       
       const externalText = externalInfo.length > 0 ? externalInfo.join(' | ') : 'No data';
-      publishWebMonitorPayload(mode, externalText);
+      if (webMonitorRuntime.running) {
+        publishWebMonitorPayload(mode, externalText);
+      }
     } else {
       lastDebugExternalData = null;
       if (debugModeEnabled) {
@@ -5920,9 +6941,13 @@ async function updateStats(forceRender = false) {
       if ((now - lastSuccessfulSensorReadAt) > SENSOR_READ_STALE_HOLD_MS) {
         latestSelectedGroupedSensors = createEmptyGroupedBuckets();
       }
+      prepareSelectedSensorsForRender(latestSelectedGroupedSensors);
       renderAllDynamicGroups(latestSelectedGroupedSensors, { force: forceRender });
+      evaluateSensorAlerts(latestSelectedGroupedSensors);
       sendOverlayPayload(getOverlaySensorPayload(latestSelectedGroupedSensors));
-      publishWebMonitorPayload(mode, 'N/A');
+      if (webMonitorRuntime.running) {
+        publishWebMonitorPayload(mode, 'N/A');
+      }
     }
 
   } catch (error) {
@@ -6012,8 +7037,21 @@ function applyUiTooltips() {
     showDrives: 'Show/hide Drives group card.',
     showExternal: 'Show/hide Other group card.',
     resetSensorNamesBtn: 'Clear all custom sensor names.',
+    alertSensorSelect: 'Select a sensor to configure alert thresholds.',
+    alertRuleEnabled: 'Enable or disable alert rule for selected sensor.',
+    alertOperatorSelect: 'Alert comparison operator.',
+    alertThresholdInput: 'Numeric threshold value for alert condition.',
+    alertCooldownInput: 'Minimum seconds between repeated alerts.',
+    alertSeveritySelect: 'Alert severity level for UI/web/overlay warning state.',
+    saveAlertRuleBtn: 'Save alert rule for selected sensor.',
+    deleteAlertRuleBtn: 'Delete alert rule for selected sensor.',
     exportSettingsBtn: 'Export current app settings to a JSON file.',
     importSettingsBtn: 'Import settings from a JSON file.',
+    settingsProfileSelect: 'Choose a saved settings profile.',
+    applySettingsProfileBtn: 'Apply selected profile and reload.',
+    saveSettingsProfileBtn: 'Save current settings as a named profile.',
+    renameSettingsProfileBtn: 'Rename the selected settings profile.',
+    deleteSettingsProfileBtn: 'Delete the selected settings profile.',
     providerRTSS: 'Enable RTSS/MSI shared-memory provider.',
     providerAIDA64: 'Enable AIDA64 shared-memory provider.',
     providerHWiNFO: 'Enable HWiNFO/LHM shared-memory provider.',
@@ -6021,6 +7059,11 @@ function applyUiTooltips() {
     webMonitorAutoStart: 'Auto-start web monitor when app launches.',
     webMonitorHost: 'Host binding for web monitor server.',
     webMonitorPort: 'Port for web monitor server.',
+    webMonitorRequireAuth: 'Require a token for web monitor access.',
+    webMonitorAuthToken: 'Access token accepted via query token, X-SiR-Token, or Bearer auth.',
+    webMonitorReadOnlyApiMode: 'Serve API only and block HTML monitor page.',
+    webMonitorGenerateTokenBtn: 'Generate a new random access token and enable token auth.',
+    webMonitorCopyTokenBtn: 'Copy the current web monitor access token to clipboard.',
     webMonitorApplyBtn: 'Apply and restart web monitor settings.',
     webMonitorOpenBtn: 'Open web monitor in your default browser.',
     discordPresenceSelect: 'Enable or disable Discord Rich Presence.',
@@ -6028,6 +7071,8 @@ function applyUiTooltips() {
     startMinimized: 'Launch app minimized.',
     minimizeToTray: 'Minimize to system tray instead of taskbar.',
     closeToTray: 'Close button hides to tray instead of exiting.',
+    autoCheckForUpdates: 'Automatically check for updates when the app starts.',
+    startupDelaySeconds: 'Delay app window startup by 0 to 60 seconds.',
     checkForUpdatesBtn: 'Check GitHub releases for updates.',
     openLatestReleaseBtn: 'Open latest release page in browser.'
   };
@@ -6079,3 +7124,5 @@ window.addEventListener('beforeunload', () => {
   clearTimeout(updateTimer);
   stopWebMonitorServer();
 });
+
+

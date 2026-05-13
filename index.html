@@ -69,6 +69,10 @@
           <input type="checkbox" id="valueFontMonospaceToggle">
           <span>Use monospace for values</span>
         </label>
+        <label class="checkbox-label settings-inline-gap-xs">
+          <input type="checkbox" id="disableGlowEffectsToggle">
+          <span>Disable glow effects</span>
+        </label>
       </div>
 
       <div class="settings-section">
@@ -77,8 +81,8 @@
           <input type="checkbox" id="overlayEnabledToggle">
           <span>Enable Overlay</span>
         </label>
-        <div class="settings-group">
-          <div class="settings-group-title">Overlay Settings</div>
+        <div class="settings-section">
+          <label class="settings-label"><span>Overlay Settings</span></label>
           <div class="overlay-section">
             <div class="overlay-settings-groups">
               <div class="overlay-settings-cluster">
@@ -160,6 +164,11 @@
                       <label class="overlay-line-limit-row" for="overlayLineLimit_other"><span class="overlay-line-limit-label">Other</span><input type="number" id="overlayLineLimit_other" class="detection-select" min="1" max="40" value="8"></label>
                     </div>
                   </div>
+                  <div class="overlay-section-row overlay-category-order-row">
+                    <label class="settings-label overlay-field-label">Overlay Category Order</label>
+                    <div id="overlayCategoryOrderList" class="overlay-category-order-list"></div>
+                    <button type="button" id="overlayCategoryOrderReset" class="test-btn overlay-order-reset-btn">Reset Order</button>
+                  </div>
                 </div>
               </div>
 
@@ -210,8 +219,8 @@
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-thermometer-half settings-label-icon" aria-hidden="true"></i><span>Temperature Unit</span></label>
         <select id="temperatureUnitSelect" class="detection-select">
-          <option value="c">Celsius (Â°C)</option>
-          <option value="f">Fahrenheit (Â°F)</option>
+          <option value="c">Celsius (°C)</option>
+          <option value="f">Fahrenheit (°F)</option>
         </select>
       </div>
 
@@ -261,6 +270,10 @@
           <button class="style-btn" data-view-mode="compact">Neon</button>
           <button class="style-btn" data-view-mode="wide">Minimal</button>
           <button class="style-btn" data-view-mode="terminal">Terminal</button>
+          <button class="style-btn" data-view-mode="rail">Accent Rail</button>
+          <button class="style-btn" data-view-mode="glass">Soft Glass</button>
+          <button class="style-btn" data-view-mode="split">Split Header</button>
+          <button class="style-btn" data-view-mode="status">Status Tags</button>
         </div>
         <div class="settings-note">Cycle visual style presets for the desktop and web monitor.</div>
       </div>
@@ -269,7 +282,7 @@
     <div class="settings-group">
       <div class="settings-group-title">Monitoring</div>
 
-      <div class="settings-section">
+      <div class="settings-section" data-section-key="appearance_on_screen_overlay">
         <label class="settings-label"><i class="bi bi-arrow-repeat settings-label-icon" aria-hidden="true"></i><span>Refresh Rate</span></label>
         <div class="refresh-rate">
           <input type="range" id="refreshRate" class="refresh-slider" min="1000" max="5000" value="1000" step="100">
@@ -277,8 +290,8 @@
         </div>
       </div>
 
-      <div class="settings-section">
-        <label class="settings-label"><i class="bi bi-broadcast-pin settings-label-icon" aria-hidden="true"></i><span>Latency Host</span></label>
+        <div class="settings-section" data-section-key="appearance_overlay_settings">
+        <label class="settings-label"><i class="bi bi-broadcast-pin settings-label-icon" aria-hidden="true"></i><span>Ping Host</span></label>
         <input type="text" id="latencyHost" class="detection-select" value="1.1.1.1" placeholder="Host/IP to ping (e.g. 1.1.1.1)">
         <div class="settings-note">Used for latency stats: current, average, minimum, maximum, and packet loss.</div>
       </div>
@@ -337,6 +350,41 @@
           <button id="resetSensorNamesBtn" class="test-btn" type="button">Reset Custom Sensor Names</button>
         </div>
       </div>
+
+      <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-bell-fill settings-label-icon" aria-hidden="true"></i><span>Sensor Alerts</span></label>
+        <div class="settings-note">Create per-sensor threshold alerts with cooldown and severity.</div>
+        <div class="settings-note">Sensor</div>
+        <select id="alertSensorSelect" class="detection-select">
+          <option value="">Select sensor...</option>
+        </select>
+        <label class="checkbox-label settings-inline-gap-sm">
+          <input type="checkbox" id="alertRuleEnabled">
+          <span>Enable alert for selected sensor</span>
+        </label>
+        <div class="settings-note">Condition and Threshold</div>
+        <div class="settings-field-grid">
+          <select id="alertOperatorSelect" class="detection-select">
+            <option value=">=">>=</option>
+            <option value=">">></option>
+            <option value="<="><=</option>
+            <option value="<"><</option>
+          </select>
+          <input id="alertThresholdInput" class="detection-select" type="number" step="0.1" placeholder="Threshold">
+        </div>
+        <div class="settings-note">Cooldown (seconds) and Severity</div>
+        <div class="settings-field-grid">
+          <input id="alertCooldownInput" class="detection-select" type="number" min="1" max="3600" step="1" placeholder="Cooldown (sec)">
+          <select id="alertSeveritySelect" class="detection-select">
+            <option value="warning">Warning</option>
+            <option value="critical">Critical</option>
+          </select>
+        </div>
+        <div class="web-monitor-actions action-grid-two settings-inline-gap-sm">
+          <button id="saveAlertRuleBtn" class="test-btn" type="button">Save Alert Rule</button>
+          <button id="deleteAlertRuleBtn" class="test-btn" type="button">Delete Alert Rule</button>
+        </div>
+      </div>
     </div>
 
     <div class="settings-group">
@@ -349,6 +397,24 @@
           <button id="importSettingsBtn" class="test-btn" type="button">Import Settings</button>
         </div>
         <div class="settings-note">Export your settings to a file or import a previously exported settings file.</div>
+      </div>
+      <div class="settings-section">
+        <label class="settings-label"><i class="bi bi-bookmarks-fill settings-label-icon" aria-hidden="true"></i><span>Profiles</span></label>
+        <div class="settings-note">Profile Name (used for Save/Rename)</div>
+        <input id="settingsProfileNameInput" class="detection-select" type="text" maxlength="64" placeholder="Profile name (e.g. Gaming)">
+        <div class="settings-note">Saved Profiles (select one to apply)</div>
+        <select id="settingsProfileSelect" class="detection-select">
+          <option value="">No profiles saved</option>
+        </select>
+        <div class="web-monitor-actions action-grid-two settings-inline-gap-sm">
+          <button id="applySettingsProfileBtn" class="test-btn" type="button">Apply Profile</button>
+          <button id="saveSettingsProfileBtn" class="test-btn" type="button">Save Current as Profile</button>
+        </div>
+        <div class="web-monitor-actions action-grid-two settings-inline-gap-sm">
+          <button id="renameSettingsProfileBtn" class="test-btn" type="button">Rename Profile</button>
+          <button id="deleteSettingsProfileBtn" class="test-btn" type="button">Delete Profile</button>
+        </div>
+        <div class="settings-note">Profiles store your current app setup and can be switched quickly.</div>
       </div>
 
     </div>
@@ -393,12 +459,25 @@
           <input id="webMonitorHost" class="detection-select" placeholder="Host (e.g. 127.0.0.1 or 0.0.0.0)" value="127.0.0.1">
           <input id="webMonitorPort" class="detection-select" type="number" min="1024" max="65535" value="17381">
         </div>
+        <label class="checkbox-label settings-inline-gap-sm">
+          <input type="checkbox" id="webMonitorRequireAuth">
+          <span>Require Access Token</span>
+        </label>
+        <input id="webMonitorAuthToken" class="detection-select" type="text" maxlength="128" placeholder="Access token for remote clients">
+        <label class="checkbox-label settings-inline-gap-sm">
+          <input type="checkbox" id="webMonitorReadOnlyApiMode">
+          <span>Read-only mode (API only)</span>
+        </label>
+        <div class="web-monitor-actions action-grid-two">
+          <button id="webMonitorGenerateTokenBtn" class="test-btn" type="button">Generate New Token</button>
+          <button id="webMonitorCopyTokenBtn" class="test-btn" type="button">Copy Token</button>
+        </div>
         <div class="web-monitor-actions action-grid-two">
           <button id="webMonitorApplyBtn" class="test-btn">Apply Web Settings</button>
           <button id="webMonitorOpenBtn" class="test-btn" disabled>Open in Browser</button>
         </div>
         <div id="webMonitorStatus" class="settings-note">Stopped</div>
-        <a id="webMonitorUrl" class="web-monitor-url" target="_blank" rel="noopener noreferrer">--</a>
+        <div id="webMonitorRiskWarning" class="settings-note web-status-error" style="display:none;"></div>
         <div class="settings-note">Use host <strong>0.0.0.0</strong> to allow other devices on your network.</div>
       </div>
 
@@ -438,11 +517,20 @@
             <span>Close to system tray</span>
           </label>
         </div>
+        <div class="startup-delay-row settings-inline-gap-sm">
+          <label for="startupDelaySeconds">Startup delay (seconds)</label>
+          <input type="number" id="startupDelaySeconds" class="detection-select" min="0" max="60" step="1" value="0" placeholder="0">
+        </div>
+        <div class="settings-note">Delay app window startup by this many seconds (0-60).</div>
         <div class="settings-note">When close to tray is enabled, use the tray icon menu to quit the app.</div>
       </div>
 
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-cloud-arrow-down-fill settings-label-icon" aria-hidden="true"></i><span>App Updates</span></label>
+        <label class="checkbox-label settings-inline-gap-sm">
+          <input type="checkbox" id="autoCheckForUpdates">
+          <span>Auto-check for updates on startup</span>
+        </label>
         <div class="web-monitor-actions action-grid-two">
           <button id="checkForUpdatesBtn" class="test-btn" type="button">Check for Updates</button>
           <button id="openLatestReleaseBtn" class="test-btn" type="button" disabled>Open Latest Release</button>
@@ -466,6 +554,7 @@
         <button id="webMonitorToggleBtn" class="header-control-btn web-monitor-toggle-btn disabled" title="Web Monitor">
           <i class="bi bi-globe" aria-hidden="true"></i>
           <span class="web-monitor-toggle-text">Web: Off</span>
+          <span class="web-monitor-open-icon" title="Open in Browser" style="display:none;"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></span>
         </button>
         <button id="discordPresenceToggleBtn" class="header-control-btn discord-toggle-btn disabled" title="Discord Rich Presence">
           <i class="bi bi-discord" aria-hidden="true"></i>
@@ -564,6 +653,10 @@
           <strong>Quick start:</strong> enable the provider(s) you use, pick visible groups, then fine-tune with Sensor Selection and Overlay Settings.
         </div>
 
+        <div class="setup-guide-highlight">
+          <strong>Recommended setup order:</strong> Provider app setup -> launch provider(s) -> launch SiR -> verify live groups -> tune overlay/web monitor -> save a backup export.
+        </div>
+
         <details class="setup-guide-dropdown" open>
           <summary><i class="bi bi-hdd-stack-fill" aria-hidden="true"></i><span>1) Choose Sensor Providers</span></summary>
           <div class="setup-guide-dropdown-body">
@@ -571,6 +664,8 @@
               <li>SiR reads sensors from shared memory providers: <strong>RTSS/MSI</strong>, <strong>AIDA64</strong>, and <strong>HWiNFO/LHM</strong>.</li>
               <li>In <strong>Settings → Data Sources → Shared Memory Sources</strong>, keep only the providers you actually use enabled.</li>
               <li>Provider apps must be running while SiR is open.</li>
+              <li>If multiple providers expose similar sensors, keep one preferred source active first to avoid duplicate/noisy categories while building your layout.</li>
+              <li>After initial setup, only enable additional providers when you specifically need their unique metrics.</li>
             </ul>
           </div>
         </details>
@@ -582,6 +677,9 @@
               <li><strong>AIDA64:</strong> File → Preferences → External Applications → enable <strong>Shared Memory</strong>.</li>
               <li><strong>HWiNFO/LHM:</strong> enable shared-memory sensor output in their settings.</li>
               <li><strong>RTSS/MSI:</strong> best for live <strong>FPS</strong> and <strong>Frame Time</strong> telemetry.</li>
+              <li><strong>If values look stale:</strong> restart the provider first, then restart SiR so shared-memory mappings are refreshed in order.</li>
+              <li>When using startup automation, ensure provider apps start before SiR (or use SiR startup delay) so mappings are available at first poll.</li>
+              <li>After changing provider sensor configuration, wait a few refresh cycles before troubleshooting to allow cache/history to repopulate.</li>
             </ul>
           </div>
         </details>
@@ -593,6 +691,9 @@
               <li>Use <strong>Visible Sensors</strong> to show/hide whole groups (FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, Other).</li>
               <li>Use <strong>Sensor Selection</strong> for per-sensor visibility, overlay inclusion, and drag-to-reorder.</li>
               <li>Use <strong>Summary Mode</strong> for a compact overall snapshot.</li>
+              <li>Right-click a sensor row (or use the rename button) to apply a custom display name without changing source telemetry.</li>
+              <li>Start with only critical groups (CPU/GPU/FPS/Temps), then add extra sensors after baseline readability is good.</li>
+              <li>Use custom names to shorten long provider labels so web/overlay rows remain clean and readable in tight layouts.</li>
             </ul>
           </div>
         </details>
@@ -604,6 +705,9 @@
               <li>Enable overlay in <strong>Appearance → On-Screen Overlay</strong>.</li>
               <li>Configure style, position, monitor, font size slider, spacing, unit scale, colors, and background opacity.</li>
               <li>Set a global <strong>Toggle Hotkey</strong> to quickly show/hide overlay in game or desktop use.</li>
+              <li>Use <strong>Per-Category Line Limits</strong> in grouped-line style to keep noisy groups readable during gameplay.</li>
+              <li>If overlay seems too dense, reduce groups first, then tune line limits and font scale instead of shrinking everything globally.</li>
+              <li>If overlay position resets unexpectedly, disable custom drag placement and re-apply a fixed corner position.</li>
             </ul>
           </div>
         </details>
@@ -615,18 +719,52 @@
               <li>Enable <strong>Web Monitor</strong> in Connectivity, then apply host/port settings.</li>
               <li>Use <strong>127.0.0.1</strong> for local-only access. Use <strong>0.0.0.0</strong> to listen on all interfaces (LAN), and note this can also allow WAN/public access if firewall rules, router port forwarding, or cloud/public networking expose the port.</li>
               <li>Open the provided URL from another device on the same network if LAN sharing is enabled.</li>
+              <li>If remote devices cannot connect, verify Windows Firewall inbound rules for the selected port and confirm both devices are on the same subnet.</li>
+              <li>If browser view works locally but not on LAN, test ping between devices first, then confirm port accessibility using the host device IP + configured port.</li>
+              <li>Avoid exposing web monitor to public internet unless you intentionally control access at firewall/router level.</li>
             </ul>
           </div>
         </details>
 
         <details class="setup-guide-dropdown">
-          <summary><i class="bi bi-life-preserver" aria-hidden="true"></i><span>6) Troubleshooting Missing/Stale Sensors</span></summary>
+          <summary><i class="bi bi-cloud-arrow-down-fill" aria-hidden="true"></i><span>6) Update & Startup Controls</span></summary>
+          <div class="setup-guide-dropdown-body">
+            <ul>
+              <li>Use <strong>Auto-check for updates on startup</strong> to automatically check GitHub releases each launch.</li>
+              <li><strong>Startup Delay</strong> can prevent heavy sensor providers from racing app startup; increase delay if sensors are missing right after login.</li>
+              <li>If in-app downloading is unavailable for a release, use <strong>Open Latest Release</strong> as the fallback path.</li>
+              <li>For fast logins, start with 3-5 seconds delay and only raise it if providers initialize slowly.</li>
+              <li>After changing startup/tray behavior, perform one full restart test to confirm expected launch/minimize behavior.</li>
+            </ul>
+          </div>
+        </details>
+
+        <details class="setup-guide-dropdown">
+          <summary><i class="bi bi-life-preserver" aria-hidden="true"></i><span>7) Troubleshooting Missing/Stale Sensors</span></summary>
           <div class="setup-guide-dropdown-body">
             <ul>
               <li>Confirm the right provider toggle is enabled in SiR.</li>
               <li>Re-check provider shared-memory options and restart the provider app.</li>
               <li>For FPS/Frame Time issues, verify RTSS/MSI is running and actively updating.</li>
               <li>If needed, restart SiR after provider configuration changes.</li>
+              <li>If a single group is empty, verify that group is enabled in <strong>Visible Sensors</strong> and not filtered out in <strong>Sensor Selection</strong>.</li>
+              <li>If only Ping looks wrong, verify the configured Ping Host and wait for several samples before judging min/avg/max.</li>
+              <li>If data appears frozen while minimized, restore the app and confirm providers are still running.</li>
+              <li>If a recent import changed behavior unexpectedly, restore your previous exported settings backup.</li>
+            </ul>
+          </div>
+        </details>
+
+        <details class="setup-guide-dropdown">
+          <summary><i class="bi bi-check2-circle" aria-hidden="true"></i><span>8) Final Validation Checklist</span></summary>
+          <div class="setup-guide-dropdown-body">
+            <ul>
+              <li>At least one provider is enabled and running.</li>
+              <li>CPU/GPU/FPS/Ping groups show changing values (not static zeros).</li>
+              <li>Overlay toggle and hotkey both work as expected.</li>
+              <li>Web monitor opens from the app and displays live updates.</li>
+              <li>Startup/tray/update preferences behave correctly after a restart.</li>
+              <li>Settings exported successfully as a recovery point.</li>
             </ul>
           </div>
         </details>
