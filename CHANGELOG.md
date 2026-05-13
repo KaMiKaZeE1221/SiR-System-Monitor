@@ -1,5 +1,55 @@
 # Changelog
 
+## 1.2.5 - 2026-05-13
+
+### Added
+- Added named Settings Profiles in `Backup / Restore`:
+  - Save current settings as a profile
+  - Apply selected profile
+  - Rename selected profile
+  - Delete selected profile
+- Added clearer profile UX labels to distinguish:
+  - profile name input (used for Save/Rename)
+  - saved profile selector (used for Apply)
+- Added safer Web Monitor controls under Connectivity:
+  - `Require Access Token` toggle
+  - `Read-only mode (API only)` toggle
+  - `Generate New Token` action
+  - `Copy Token` action
+- Added live bind-risk warning text when using wide host bindings (`0.0.0.0` / `::`).
+- Added per-sensor alert rules in Monitoring:
+  - condition operator
+  - threshold
+  - cooldown
+  - severity (`Warning` / `Critical`)
+- Added visual alert-state highlighting for triggered sensors in:
+  - main dashboard cards
+  - overlay rows/groups
+  - web monitor rows
+- Added `Disable glow effects` appearance toggle to globally remove glow/shadow effects across desktop and web monitor UI.
+
+### Changed
+- Expanded web monitor settings model to persist auth token requirement and API-only mode.
+- Updated `Open in Browser` behavior to include token query when token auth is enabled.
+- Updated web monitor status text to indicate API-only runtime mode.
+- Updated README documentation for profiles and web monitor security options.
+- Updated Sensor Alerts UX with clearer field labeling and enabled-rule indicators.
+- Updated Discord Rich Presence state text to show running app version as `vX.X.X`.
+- Removed the clickable web monitor URL text line from Connectivity (kept `Open in Browser` button).
+- Expanded dashboard card resizing support to include Summary Mode card width/height adjustments.
+- Increased dashboard width-resize granularity with tighter snap behavior and finer grid minimum sizing.
+- Reworked web monitor header controls so browser-open action is integrated into the existing `Web` toggle button.
+- Updated web monitor dashboard layout density so browser cards use single-span layout and better match desktop per-row packing.
+- Updated web monitor header branding icon source to higher-quality PNG rendering.
+- Updated card width persistence to store effective pixel width for better cross-view mapping.
+
+### Fixed
+- Fixed a startup initialization regression that could prevent telemetry rendering after profile feature integration.
+- Fixed profile rename flow by moving to explicit input-based rename behavior.
+- Fixed settings temperature unit display mojibake (`Â°C` / `Â°F` -> `°C` / `°F`).
+- Fixed web monitor layout over-spanning by mapping desktop card widths to web spans instead of using raw desktop span values.
+- Fixed missing web monitor tab favicon by restoring explicit favicon/shortcut icon links with ICO-first fallback.
+
 ## 1.2.4 - 2026-05-12
 
 ### Added
