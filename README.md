@@ -13,7 +13,6 @@ A Windows Electron desktop app for real-time hardware telemetry, overlay display
 - [Web Monitor](#globe_with_meridians-web-monitor)
 - [Updater](#arrows_counterclockwise-updater)
 - [Troubleshooting](#rescue_worker_helmet-troubleshooting)
-- [Tech Stack](#hammer_and_wrench-tech-stack)
 - [Screenshots](#framed_picture-screenshots)
 
 ## :computer: Overview
@@ -41,11 +40,15 @@ The app reads shared-memory telemetry from RTSS, AIDA64, HWiNFO, and Libre Hardw
   - Inline rename
   - Reset custom names
 - :window: Monitoring Mode and Summary Mode
+- :triangular_ruler: Card layout controls:
+  - Resize card width and height in both Main view and Summary Mode
+  - Fine-grained width snapping for tighter layout control
 - :art: Appearance customization:
   - Theme presets
-  - Style presets (`Classic`, `Neon`, `Minimal`, `Terminal`)
+  - Style presets (`Classic`, `Neon`, `Minimal`, `Terminal`, `Accent Rail`, `Soft Glass`, `Split Header`, `Status Tags`)
   - Font family and size
   - Bold text and monospace value options
+  - Optional global glow-disable mode
   - Temperature unit (`C` / `F`)
   - Full UI color controls
 - :tools: Overlay customization:
@@ -73,6 +76,7 @@ All settings are persisted locally and survive app restarts.
 ### :art: Appearance
 - Theme and style presets
 - Font and text options
+- Disable glow effects toggle
 - Temperature unit
 - Custom colors:
   - Font
@@ -90,6 +94,11 @@ All settings are persisted locally and survive app restarts.
 - Ping host target
 - Visible sensor groups
 - Sensor Selection controls
+- Per-sensor alert rules:
+  - Condition operator (`>=`, `>`, `<=`, `<`)
+  - Threshold
+  - Cooldown
+  - Severity (`Warning` / `Critical`)
 
 ### :electric_plug: Data Sources
 - Provider toggles for shared-memory sources
@@ -97,7 +106,10 @@ All settings are persisted locally and survive app restarts.
 ### :globe_with_meridians: Connectivity
 - Web monitor host/port
 - Open monitor URL action
+- Optional access token auth for remote clients
+- API-only read-only mode
 - Discord Rich Presence toggle
+- Header `Web` control includes integrated quick-open browser action when running
 
 ### :brain: App Behavior
 - Launch at startup
@@ -117,6 +129,14 @@ Built-in **Export** and **Import** are available under `Settings -> Backup & Res
   - `Apply & Reload`
 
 The export includes appearance preferences, monitoring options, provider toggles, web monitor settings, overlay configuration, and update-related behavior.
+
+### Profiles
+Also available in `Settings -> Backup & Restore -> Profiles`:
+- Save current app state as a named profile
+- Apply a saved profile
+- Rename a saved profile
+- Delete a profile
+- Quick profile naming field to control Save/Rename actions
 
 ## :test_tube: Data Sources
 Primary runtime provider path:
@@ -147,11 +167,29 @@ Primary runtime provider path:
 - Category order is user-configurable.
 - Grouped-line style shortens `Network` to `NET`.
 - Per-category line limits can reduce overlay clutter on smaller displays.
+- Active sensor alerts are visually highlighted in overlay rows/groups.
 
 ## :globe_with_meridians: Web Monitor
 When enabled:
 - UI: `http://<host>:<port>/`
 - JSON: `http://<host>:<port>/api/monitor`
+
+Security options:
+- `Require Access Token` to protect remote access
+- `Generate New Token` for one-click credential rotation
+- `Copy Token` for sharing with trusted clients
+- `Read-only mode (API only)` to disable the HTML dashboard and expose only JSON
+- Active sensor alerts are visually highlighted in web monitor rows.
+
+Layout and UI notes:
+- Web monitor card widths are mapped from desktop card width settings for cross-view consistency.
+- Web monitor header branding uses a higher-quality icon source for improved sharpness.
+- Web monitor tab favicon is restored with ICO-first fallback behavior.
+
+Token support:
+- Query: `?token=...`
+- Header: `x-sir-token: ...`
+- Header: `Authorization: Bearer <token>`
 
 Host guidance:
 - `127.0.0.1` for local-only access
@@ -168,6 +206,9 @@ Current flow:
 4. After download, choose **Restart to Install**.
 
 If release metadata is missing, the app falls back to **Open Latest Release**.
+
+## Discord Rich Presence
+- Presence now includes the currently running app version (`vX.X.X`) in status text.
 
 ## :rescue_worker_helmet: Troubleshooting
 ### :question: Missing sensors
@@ -189,13 +230,6 @@ If release metadata is missing, the app falls back to **Open Latest Release**.
 - Keep refresh rate at `1000 ms` or higher.
 - Disable unused providers and overlays.
 - Reduce visible sensor groups if rendering appears heavy.
-
-## :hammer_and_wrench: Tech Stack
-- Electron
-- Node.js
-- `electron-updater`
-- `systeminformation`
-- `koffi`
 
 ## :framed_picture: Screenshots
 More screenshots: [Imgur Album](https://imgur.com/a/pkG1Cyb)
