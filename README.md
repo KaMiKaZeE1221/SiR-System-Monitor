@@ -220,7 +220,7 @@ If release metadata is missing, the app falls back to **Open Latest Release**.
 - Verify `Built-in Sensors` is enabled in `Settings -> Data Sources`.
 - Try `Enhanced Hardware Sensors` for supported temperature, fan, voltage, clock, and power readings.
 - If using an optional provider, ensure its app is running and shared-memory output is enabled.
-- See [`sensor-host/HARDWARE-SUPPORT.md`](sensor-host/HARDWARE-SUPPORT.md) for the direct digital PSU USB IDs and enhanced controller families included in v1.2.6.
+- See [`sensor-host/HARDWARE-SUPPORT.md`](sensor-host/HARDWARE-SUPPORT.md) for the direct digital PSU USB IDs and enhanced controller families included in v1.2.6 and above.
 
 ### :video_game: FPS / Frame Time not updating
 - Ensure RTSS/MSI Afterburner is running.
