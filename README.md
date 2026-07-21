@@ -2,7 +2,7 @@
   <h1>SiR System Monitor</h1>
   <p><strong>Real-time hardware monitoring for Windows, your desktop, your overlay, and your browser.</strong></p>
   <p>
-    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.2.7" src="https://img.shields.io/badge/version-1.2.7-f97316?style=for-the-badge"></a>
+    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.3.0" src="https://img.shields.io/badge/version-1.3.0-f97316?style=for-the-badge"></a>
     <a href="#requirements"><img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&amp;logo=windows"></a>
     <a href="./LICENSE.txt"><img alt="GNU GPL v3" src="https://img.shields.io/badge/license-GPL--3.0-3DA639?style=for-the-badge"></a>
   </p>
@@ -25,19 +25,19 @@ SiR System Monitor is an open-source Windows desktop app that combines live syst
 | **Built-in monitoring** | CPU, memory, storage, network, latency, system information, and supported digital PSUs without a separate monitoring app. |
 | **Enhanced hardware access** | A bundled LibreHardwareMonitor backend adds supported temperatures, clocks, power, voltage, fans, SMART data, GPUs, and controllers. |
 | **A dashboard that fits you** | Choose which sensors appear, search, rename, reorder, resize, group, and include them in the overlay. |
-| **Desktop and web layouts** | Use Compact, Balanced, Wide, or Stacked presets in both views, or build a freely resized Custom layout. |
+| **Desktop and web layouts** | Give normal and Summary modes their own Compact, Balanced, Wide, Stacked, or freely resized Custom layout in both the app and Web Monitor. |
 | **Overlay and alerts** | Keep selected readings over other apps and highlight warning or critical threshold events. |
 | **Profiles and portability** | Save named profiles or export the complete setup to JSON for backup and transfer. |
 
 Sensor groups include **FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, and Other**. FPS and frame-time values appear when an enabled source provides them.
 
-## What's new in 1.2.7
+## What's new in 1.3.0
 
-- Faster, progressive hardware discovery with `Detecting...` placeholders during cold starts.
-- Improved launch visibility so sensor discovery no longer hides or minimizes the app unexpectedly.
-- Enhanced Hardware Sensors now also enables **Launch app as administrator** and carries that setting through profiles and imports.
-- Sensor Alert selection now lists only sensors that are actually enabled.
-- Faster collector recovery and smoother profile switching without a long sensor blackout.
+- Normal and Summary modes now have independent layout presets, Custom card dimensions, and drag order.
+- The Web Monitor mirrors each layout and card order independently when its own Summary Mode is toggled.
+- Added separate background, accent, and icon colors for the settings panel.
+- Added current settings-workspace and overlay-editor screenshots to this README.
+- All new layout and color preferences are included in named profiles and exported settings.
 
 See the [full changelog](./CHANGELOG.md) for every change and fix.
 
@@ -53,18 +53,18 @@ Get the latest Windows installer or portable build from [GitHub Releases](https:
 ### Requirements
 
 - Windows 10 or Windows 11, 64-bit
-- Administrator access only when **Enhanced Hardware Sensors** or **Launch app as administrator** is enabled
+- Administrator access only when **Enhanced Hardware Sensors**, its bundled low-level hardware-access driver, or **Launch app as administrator** is enabled
 - Network access only for update checks, WAN IP lookup, Discord Rich Presence, or clients using the Web Monitor
 
 > [!NOTE]
-> Built-in Sensors require no separate monitoring software. Enhanced Hardware Sensors are also bundled with SiR System Monitor, but Windows may request administrator access for low-level hardware communication.
+> Built-in Sensors require no separate monitoring software. Enhanced Hardware Sensors and the PawnIO driver used for protected low-level access are bundled with SiR System Monitor; Windows may request administrator access to install the driver and read supported hardware.
 
 ## Quick start
 
 1. Install SiR System Monitor or launch the portable build.
-2. Leave **Settings → Data Sources → Built-in Sensors** enabled.
+2. Leave **Settings → Monitoring → Sensor Sources → Built-in Sensors** enabled.
 3. Open **Monitoring → Visible Sensors** and **Sensor Selection** to choose and arrange the readings you want.
-4. Choose a card preset under **Appearance → Layout**, or select **Custom** to resize cards from their lower-right corners.
+4. Choose separate normal and Summary card presets under **Appearance → Layout**, or select **Custom** for either mode to resize its cards independently.
 5. Enable **Enhanced Hardware Sensors** only if you want the additional readings supported by your hardware.
 6. Optionally configure the overlay, alerts, Web Monitor, startup behavior, and a settings profile.
 
@@ -74,13 +74,15 @@ SiR uses an isolated, persistent collector so standard sensor refreshes do not r
 
 | Source | External app required? | Typical use |
 |---|:---:|---|
-| **Built-in Sensors** | No | CPU utilization and overall clock, memory capacity and activity, storage, network, latency, system data, and supported direct digital PSU telemetry. |
+| **Built-in Sensors** | No | CPU utilization and overall clock, vendor-neutral FPS/frame time, memory capacity and activity, storage, network, latency, system data, and supported direct digital PSU telemetry. |
 | **Enhanced Hardware Sensors** | No | Supported CPU/GPU temperatures and clocks, power, voltage, fans, motherboard controllers, storage SMART data, and additional hardware telemetry. Administrator access may be required. |
 | **RTSS / MSI** | Yes, optional | Additional FPS, frame-time, and compatible shared-memory telemetry. |
 | **AIDA64** | Yes, optional | Extra sensors exposed through AIDA64 shared memory. |
 | **HWiNFO / LHM Shared Memory** | Yes, optional | Compatibility access to sensors published by HWiNFO or a running LHM shared-memory provider. |
 
 Only enable compatibility providers you use. This keeps the sensor catalogue cleaner and avoids duplicate readings from overlapping sources.
+
+Native FPS and frame time use the signed PresentMon component bundled inside the sensor host. It reads Windows presentation events across AMD, NVIDIA, and Intel GPUs without installing a separate application or service. SiR follows the foreground rendering process, retains the last active game while you view the dashboard, and disables unused GPU-duration, input, and display-duration tracing to keep overhead low.
 
 ### Enhanced Hardware Sensors
 
@@ -89,6 +91,7 @@ Enabling Enhanced Hardware Sensors displays a themed confirmation before SiR:
 1. Saves the enhanced-sensor setting.
 2. Enables **Startup & Tray → Launch app as administrator**.
 3. Restarts and asks Windows for administrator access.
+4. Installs or updates the bundled PawnIO driver when required for Intel CPU package power and other protected readings.
 
 Availability still depends on the hardware, firmware, driver, Windows permissions, and whether another application has exclusive access to the device.
 
@@ -107,7 +110,7 @@ Each sensor can be:
 
 ### Layouts
 
-The selected layout is shared by the desktop dashboard and Web Monitor.
+Normal mode and Summary Mode each have an independent layout. The desktop dashboard and Web Monitor use the matching choice for the mode currently being viewed.
 
 | Layout | Purpose |
 |---|---|
@@ -117,11 +120,11 @@ The selected layout is shared by the desktop dashboard and Web Monitor.
 | **Stacked** | Uses a more vertical card arrangement. |
 | **Custom** | Unlocks independent width and height resizing for each card. |
 
-Custom geometry, card order, layout choice, and Summary Mode sizing are saved locally and included in profiles and exported settings.
+Normal and Summary geometry and card order are stored separately, so resizing or moving a Summary card never changes the normal dashboard. Both arrangements and the mode preference are included in profiles and exported settings.
 
 ### Themes and styles
 
-- Multiple color themes and full custom colors
+- Multiple dashboard themes plus independent settings-panel background, accent, and icon colors
 - `Classic`, `Neon`, `Minimal`, `Terminal`, `Accent Rail`, `Soft Glass`, `Split Header`, and `Status Tags` styles
 - Font family, size, bold text, and monospace value controls
 - Celsius or Fahrenheit temperature display
@@ -152,7 +155,7 @@ Available controls include:
 - Optional access-token authentication
 - Token generation, copying, and rotation
 - API-only mode, which disables the HTML dashboard
-- Alert highlighting and shared desktop layout presets
+- Alert highlighting and independent normal/Summary layout presets mirrored from the desktop app
 
 Access tokens are accepted through:
 
@@ -176,7 +179,7 @@ Under **Settings → Backup & Restore**, you can:
 - Preview an imported profile before applying it
 - Apply immediately or apply and reload
 
-Profiles and exports include appearance settings, layouts, custom card sizes, card order, sensor choices, alert rules, data sources, Web Monitor options, overlay configuration, startup behavior, and update preferences.
+Profiles and exports include appearance settings, all settings-panel colors, separate normal/Summary layouts, Custom card sizes and card order, sensor choices, alert rules, data sources, Web Monitor options, overlay configuration, startup behavior, and update preferences.
 
 ## Digital PSU support
 
@@ -246,6 +249,10 @@ Automatic startup checks can be disabled. If a release does not include the meta
 ## Screenshots
 
 <table>
+  <tr>
+    <td width="50%"><img src="./Screenshots/SiR_System_Monitor_Settings_Layout_1.3.0.png" alt="Independent normal and Summary Mode layout settings"><br><sub><strong>Independent layouts</strong> — choose or customize normal and Summary cards separately</sub></td>
+    <td width="50%"><img src="./Screenshots/SiR_System_Monitor_Settings_Overlay_1.3.0.png" alt="Redesigned on-screen overlay settings"><br><sub><strong>Overlay editor</strong> — placement, sizing, content, ordering, and colors in one workspace</sub></td>
+  </tr>
   <tr>
     <td width="50%"><img src="./Screenshots/SiR_System_Monitor_SummaryView.png" alt="Summary Mode"><br><sub><strong>Summary Mode</strong> — live minimum and maximum values</sub></td>
     <td width="50%"><img src="./Screenshots/SiR_System_Monitor_SensorSelection.png" alt="Sensor Selection settings"><br><sub><strong>Sensor Selection</strong> — choose, rename, and arrange readings</sub></td>

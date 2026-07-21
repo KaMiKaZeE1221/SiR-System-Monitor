@@ -43,7 +43,11 @@ The bundled LibreHardwareMonitor 0.9.6 backend covers common Intel/AMD CPUs, NVI
 - Razer fan controllers
 - T-Balancer and Heatmaster
 
-Enhanced mode can require administrator privileges for low-level motherboard and controller access. Direct PSU readers remain available in standard mode where Windows permits the HID interface to be opened.
+Enhanced mode can require administrator privileges for low-level motherboard and controller access. Intel CPU package-power domains use LibreHardwareMonitor's RAPL implementation and the bundled PawnIO driver; SiR offers to install or update that driver only after the user enables Enhanced Hardware Sensors or explicitly presses the driver-install button. RAPL domains vary by processor and platform: SiR publishes Package, Cores, Memory/DRAM, and Platform/PSys power only after the corresponding energy counter produces a valid reading, rather than displaying unsupported domains as permanent `0 W` sensors. Direct PSU readers remain available in standard mode where Windows permits the HID interface to be opened.
+
+## Vendor-neutral FPS and frame time
+
+The native sensor host bundles the signed Intel PresentMon 2.4.1 console collector and consumes Windows ETW presentation events. This provides `Native FPS` and `Native Frame Time` sensors for AMD, NVIDIA, and Intel GPUs across DirectX, OpenGL, and Vulkan applications without installing PresentMon, RTSS, or a vendor monitoring application. SiR detects installed GPU vendors automatically, prefers displayed-frame timing on AMD (including Fluid Motion Frames), falls back to presented-frame timing whenever displayed timing is unavailable, and keeps the lower-overhead presented-frame path for NVIDIA and other adapters. It targets the foreground rendering process, retains the last active game while the dashboard has focus, and disables GPU-duration and input tracking. Capture sessions are stopped cleanly, and abandoned SiR trace sessions from interrupted older builds are recovered before a new capture starts.
 
 ## Protocol and ID references
 

@@ -4,6 +4,9 @@ const DEFAULT_LAYOUT_PRESET = 'balanced';
 const LAYOUT_PRESET_STORAGE_KEY = 'layoutPreset';
 const CUSTOM_LAYOUT_CONFIG_STORAGE_KEY = 'customLayoutConfig';
 const CUSTOM_LAYOUT_SIZES_STORAGE_KEY = 'customLayoutSizes';
+const SUMMARY_LAYOUT_PRESET_STORAGE_KEY = 'summaryLayoutPreset';
+const SUMMARY_CUSTOM_LAYOUT_CONFIG_STORAGE_KEY = 'summaryCustomLayoutConfig';
+const SUMMARY_CUSTOM_LAYOUT_SIZES_STORAGE_KEY = 'summaryCustomLayoutSizes';
 
 const LAYOUT_PRESETS = Object.freeze({
   compact: Object.freeze({
@@ -41,7 +44,8 @@ const LAYOUT_PRESETS = Object.freeze({
   custom: Object.freeze({
     id: 'custom',
     label: 'Custom',
-    minCardWidth: 300,
+    minCardWidth: 180,
+    defaultCardWidth: 300,
     cardHeight: 360,
     gap: 14,
     stacked: false,
@@ -65,6 +69,9 @@ module.exports = {
   LAYOUT_PRESET_STORAGE_KEY,
   CUSTOM_LAYOUT_CONFIG_STORAGE_KEY,
   CUSTOM_LAYOUT_SIZES_STORAGE_KEY,
+  SUMMARY_LAYOUT_PRESET_STORAGE_KEY,
+  SUMMARY_CUSTOM_LAYOUT_CONFIG_STORAGE_KEY,
+  SUMMARY_CUSTOM_LAYOUT_SIZES_STORAGE_KEY,
   LAYOUT_PRESETS,
   normalizeLayoutPreset,
   getLayoutPreset

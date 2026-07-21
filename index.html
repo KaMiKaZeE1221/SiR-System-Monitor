@@ -18,8 +18,14 @@
       <div class="sidebar-header-copy">
         <div class="sidebar-header-eyebrow">Control Panel</div>
         <div class="sidebar-header-title">Settings</div>
-        <div class="sidebar-header-subtitle">Tune appearance, monitoring, connectivity, and app behavior from one organized workspace.</div>
+        <div class="sidebar-header-subtitle">Configure the dashboard, sensors, sharing, and app behavior.</div>
       </div>
+      <div class="settings-search-shell">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input id="settingsSearchInput" type="search" placeholder="Find a setting..." autocomplete="off" aria-label="Search all settings">
+        <button id="settingsSearchClearBtn" type="button" aria-label="Clear settings search" title="Clear search" hidden><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+      </div>
+      <div id="settingsSearchStatus" class="settings-search-status" aria-live="polite" hidden></div>
     </div>
 
     <div class="settings-group">
@@ -38,15 +44,30 @@
       </div>
 
       <div class="settings-section">
-        <label class="settings-label" for="layoutPresetSelect"><i class="bi bi-grid-3x3-gap-fill settings-label-icon" aria-hidden="true"></i><span>Layout</span></label>
-        <select id="layoutPresetSelect" class="detection-select">
-          <option value="compact">Compact — 220 px cards</option>
-          <option value="balanced">Balanced — 300 px cards</option>
-          <option value="wide">Wide — 420 px cards</option>
-          <option value="stacked">Stacked — full-width cards</option>
-          <option value="custom">Custom — resize cards freely</option>
-        </select>
-        <div class="settings-note">Fixed presets apply matching dimensions to the app and Web Monitor. Choose Custom to resize cards with their lower-right corner handles; your custom arrangement is saved separately.</div>
+        <label class="settings-label"><i class="bi bi-grid-3x3-gap-fill settings-label-icon" aria-hidden="true"></i><span>Layout</span></label>
+        <div class="settings-field-grid layout-mode-grid">
+          <label class="settings-field-stack" for="layoutPresetSelect">
+            <span>Normal mode</span>
+            <select id="layoutPresetSelect" class="detection-select">
+              <option value="compact">Compact — 220 px cards</option>
+              <option value="balanced">Balanced — 300 px cards</option>
+              <option value="wide">Wide — 420 px cards</option>
+              <option value="stacked">Stacked — full-width cards</option>
+              <option value="custom">Custom — resize cards freely</option>
+            </select>
+          </label>
+          <label class="settings-field-stack" for="summaryLayoutPresetSelect">
+            <span>Summary mode</span>
+            <select id="summaryLayoutPresetSelect" class="detection-select">
+              <option value="compact">Compact — 220 px cards</option>
+              <option value="balanced">Balanced — 300 px cards</option>
+              <option value="wide">Wide — 420 px cards</option>
+              <option value="stacked">Stacked — full-width cards</option>
+              <option value="custom">Custom — resize cards freely</option>
+            </select>
+          </label>
+        </div>
+        <div class="settings-note">Normal and Summary modes keep separate presets and Custom card sizes. Both arrangements are mirrored independently in the Web Monitor.</div>
       </div>
 
       <div class="settings-section">
@@ -73,15 +94,15 @@
             <option value="monospace">Monospace</option>
           </select>
         </div>
-        <label class="checkbox-label settings-inline-gap-sm">
+        <label class="checkbox-label settings-switch-row settings-inline-gap-sm">
           <input type="checkbox" id="fontBoldToggle">
           <span>Bold Text</span>
         </label>
-        <label class="checkbox-label settings-inline-gap-xs">
+        <label class="checkbox-label settings-switch-row settings-inline-gap-xs">
           <input type="checkbox" id="valueFontMonospaceToggle">
           <span>Use monospace for values</span>
         </label>
-        <label class="checkbox-label settings-inline-gap-xs">
+        <label class="checkbox-label settings-switch-row settings-inline-gap-xs">
           <input type="checkbox" id="disableGlowEffectsToggle">
           <span>Disable glow effects</span>
         </label>
@@ -89,16 +110,20 @@
 
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-pc-display-horizontal settings-label-icon" aria-hidden="true"></i><span>On-Screen Overlay</span></label>
-        <label class="checkbox-label settings-inline-gap-sm">
-          <input type="checkbox" id="overlayEnabledToggle">
-          <span>Enable Overlay</span>
-        </label>
-        <div class="settings-section">
-          <label class="settings-label"><span>Overlay Settings</span></label>
-          <div class="overlay-section">
+        <div class="overlay-master-row">
+          <div class="overlay-master-copy">
+            <strong>Overlay status</strong>
+            <span>Show selected readings above games and desktop apps.</span>
+          </div>
+          <label class="checkbox-label settings-switch-row overlay-master-switch">
+            <input type="checkbox" id="overlayEnabledToggle">
+            <span>Enabled</span>
+          </label>
+        </div>
+        <div class="overlay-section">
             <div class="overlay-settings-groups">
-              <div class="overlay-settings-cluster">
-                <div class="overlay-cluster-title">Dropdowns</div>
+              <div class="overlay-settings-cluster overlay-panel-section">
+                <div class="overlay-cluster-title"><i class="bi bi-layout-text-window" aria-hidden="true"></i><span><strong>Placement &amp; style</strong><small>Choose how and where the overlay appears.</small></span></div>
                 <div class="overlay-settings-grid">
                   <div class="overlay-section-row">
                     <label class="settings-label overlay-field-label" for="overlayFontFamilySelect">Font Style</label>
@@ -141,28 +166,30 @@
                 </div>
               </div>
 
-              <div class="overlay-settings-cluster">
-                <div class="overlay-cluster-title">Sliders</div>
-                <div class="overlay-settings-grid">
-                  <div class="overlay-section-row">
-                    <label class="settings-label overlay-field-label" for="overlayFontSizeSlider">Font Size <span id="overlayFontSizeValue">Medium</span></label>
+              <div class="overlay-settings-cluster overlay-panel-section">
+                <div class="overlay-cluster-title"><i class="bi bi-arrows-angle-expand" aria-hidden="true"></i><span><strong>Size &amp; arrangement</strong><small>Tune density without changing the selected sensors.</small></span></div>
+                <div class="overlay-settings-grid overlay-slider-grid">
+                  <div class="overlay-section-row overlay-slider-row">
+                    <label class="settings-label overlay-field-label" for="overlayFontSizeSlider"><span>Font size</span><output id="overlayFontSizeValue">Medium</output></label>
                     <input type="range" id="overlayFontSizeSlider" min="0" max="4" value="1" step="1" class="full-width">
                   </div>
-                  <div class="overlay-section-row">
-                    <label class="settings-label overlay-field-label" for="overlayGroupSpacing">Group spacing</label>
+                  <div class="overlay-section-row overlay-slider-row">
+                    <label class="settings-label overlay-field-label" for="overlayGroupSpacing"><span>Group spacing</span><output id="overlayGroupSpacingValue">0 px</output></label>
                     <input type="range" id="overlayGroupSpacing" min="0" max="32" value="0" step="1" class="full-width">
                   </div>
-                  <div class="overlay-section-row">
-                    <label class="settings-label overlay-field-label" for="overlayScale">Unit Scale</label>
+                  <div class="overlay-section-row overlay-slider-row">
+                    <label class="settings-label overlay-field-label" for="overlayScale"><span>Unit scale</span><output id="overlayScaleValue">100%</output></label>
                     <input type="range" id="overlayScale" min="50" max="200" value="100" step="5" class="full-width">
                   </div>
-                  <div class="overlay-section-row">
-                    <label class="settings-label overlay-field-label" for="overlayOpacity">Background opacity</label>
+                  <div class="overlay-section-row overlay-slider-row">
+                    <label class="settings-label overlay-field-label" for="overlayOpacity"><span>Background opacity</span><output id="overlayOpacityValue">70%</output></label>
                     <input type="range" id="overlayOpacity" min="0" max="100" value="70" step="1" class="full-width">
                   </div>
                   <div class="overlay-section-row overlay-line-limits-row">
-                    <label class="settings-label overlay-field-label">Per-Category Line Limits</label>
-                    <button type="button" id="overlayLineLimitsToggle" class="test-btn overlay-advanced-toggle">Advanced: Show</button>
+                    <button type="button" id="overlayLineLimitsToggle" class="overlay-disclosure-btn" aria-expanded="false">
+                      <span class="overlay-disclosure-copy"><i class="bi bi-list-ol" aria-hidden="true"></i><span><strong>Per-category line limits</strong><small>Cap dense groups in grouped-line mode.</small></span></span>
+                      <span class="overlay-disclosure-state"><span id="overlayLineLimitsToggleText">Show</span><i class="bi bi-chevron-down" aria-hidden="true"></i></span>
+                    </button>
                     <div class="overlay-line-limit-grid is-collapsed" id="overlayLineLimitGrid">
                       <label class="overlay-line-limit-row" for="overlayLineLimit_fps"><span class="overlay-line-limit-label">FPS</span><input type="number" id="overlayLineLimit_fps" class="detection-select" min="1" max="40" value="8"></label>
                       <label class="overlay-line-limit-row" for="overlayLineLimit_cpu"><span class="overlay-line-limit-label">CPU</span><input type="number" id="overlayLineLimit_cpu" class="detection-select" min="1" max="40" value="8"></label>
@@ -177,15 +204,14 @@
                     </div>
                   </div>
                   <div class="overlay-section-row overlay-category-order-row">
-                    <label class="settings-label overlay-field-label">Overlay Category Order</label>
+                    <div class="overlay-inline-heading"><span><strong>Category order</strong><small>Drag groups into the order shown on the overlay.</small></span><button type="button" id="overlayCategoryOrderReset" class="test-btn overlay-order-reset-btn">Reset</button></div>
                     <div id="overlayCategoryOrderList" class="overlay-category-order-list"></div>
-                    <button type="button" id="overlayCategoryOrderReset" class="test-btn overlay-order-reset-btn">Reset Order</button>
                   </div>
                 </div>
               </div>
 
-              <div class="overlay-settings-cluster">
-                <div class="overlay-cluster-title">Other</div>
+              <div class="overlay-settings-cluster overlay-panel-section">
+                <div class="overlay-cluster-title"><i class="bi bi-toggles" aria-hidden="true"></i><span><strong>Content &amp; controls</strong><small>Choose what the overlay shows and how it is toggled.</small></span></div>
                 <div class="overlay-settings-grid overlay-settings-grid-other">
                   <div class="overlay-section-row">
                     <label class="settings-label overlay-field-label" for="overlayHotkey">Toggle Hotkey</label>
@@ -208,23 +234,25 @@
                 </div>
               </div>
             </div>
-            <div class="overlay-colors-grid">
-              <label class="color-picker-row">
-                <span>Text Color</span>
-                <input type="color" id="overlayTextColor" class="color-picker-input" value="#e0e0e0">
-              </label>
-              <label class="color-picker-row">
-                <span>Value Color</span>
-                <input type="color" id="overlayValueColor" class="color-picker-input" value="#ffffff">
-              </label>
-              <label class="color-picker-row">
-                <span>Background Color</span>
-                <input type="color" id="overlayBackgroundColor" class="color-picker-input" value="#000000">
-              </label>
+            <div class="overlay-panel-section overlay-colors-section">
+              <div class="overlay-cluster-title"><i class="bi bi-palette2" aria-hidden="true"></i><span><strong>Overlay colors</strong><small>Independent from the dashboard color theme.</small></span></div>
+              <div class="overlay-colors-grid">
+                <label class="color-picker-row">
+                  <span>Text</span>
+                  <input type="color" id="overlayTextColor" class="color-picker-input" value="#e0e0e0">
+                </label>
+                <label class="color-picker-row">
+                  <span>Values</span>
+                  <input type="color" id="overlayValueColor" class="color-picker-input" value="#ffffff">
+                </label>
+                <label class="color-picker-row">
+                  <span>Background</span>
+                  <input type="color" id="overlayBackgroundColor" class="color-picker-input" value="#000000">
+                </label>
+              </div>
             </div>
 
-            <div class="settings-note">Overlay uses your selected sensors and displays them in an always-on-top transparent window. Changes apply immediately.</div>
-          </div>
+            <div class="settings-note overlay-footer-note"><i class="bi bi-lightning-charge-fill" aria-hidden="true"></i><span>Changes apply immediately. Choose overlay readings from Monitoring → Sensor Selection.</span></div>
         </div>
       </div>
 
@@ -271,6 +299,18 @@
             <span>Background Color</span>
             <input type="color" id="customBackgroundColor" class="color-picker-input" value="#1a1a1a">
           </label>
+          <label class="color-picker-row">
+            <span>Settings Panel Color</span>
+            <input type="color" id="customSettingsPanelColor" class="color-picker-input" value="#1a1a1a">
+          </label>
+          <label class="color-picker-row">
+            <span>Settings Accent Color</span>
+            <input type="color" id="customSettingsPanelAccentColor" class="color-picker-input" value="#0066ff">
+          </label>
+          <label class="color-picker-row">
+            <span>Settings Icon Color</span>
+            <input type="color" id="customSettingsPanelIconColor" class="color-picker-input" value="#3f95ff">
+          </label>
         </div>
         <button id="resetThemeColorsBtn" class="test-btn color-reset-btn" type="button">Reset to Theme Defaults</button>
       </div>
@@ -302,6 +342,39 @@
         </div>
       </div>
 
+      <div class="settings-section" data-section-key="monitoring_sensor_sources">
+        <label class="settings-label"><i class="bi bi-hdd-stack-fill settings-label-icon" aria-hidden="true"></i><span>Sensor Sources</span></label>
+        <div class="settings-note">Built-in sensors need no separate monitoring app. Enhanced access adds temperatures, clocks, power and fans where the hardware permits it. Enabling it asks for confirmation, then restarts the app with administrator privileges.</div>
+        <div class="visibility-options settings-switch-grid source-switch-grid">
+          <label class="checkbox-label">
+            <input type="checkbox" id="providerBuiltin" checked>
+            <span>Built-in Sensors</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="providerEnhanced">
+            <span>Enhanced Hardware Sensors</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="providerRTSS">
+            <span>RTSS / MSI (Optional)</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="providerAIDA64">
+            <span>AIDA64 (Optional)</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="providerHWiNFO">
+            <span>HWiNFO / LHM Shared Memory (Optional)</span>
+          </label>
+        </div>
+        <div id="builtinSensorStatus" class="settings-note" aria-live="polite">Built-in collector starts with monitoring.</div>
+        <div id="nativeFpsStatus" class="settings-note" aria-live="polite">Native FPS collector starts with Built-in Sensors.</div>
+        <div id="hardwareAccessDriverStatus" class="settings-note" aria-live="polite">Low-level hardware access driver: Checking...</div>
+        <div class="web-monitor-actions settings-inline-gap-sm">
+          <button id="hardwareAccessDriverInstallBtn" class="test-btn" type="button" hidden>Install Hardware Access Driver</button>
+        </div>
+      </div>
+
         <div class="settings-section" data-section-key="appearance_overlay_settings">
         <label class="settings-label"><i class="bi bi-broadcast-pin settings-label-icon" aria-hidden="true"></i><span>Ping Host</span></label>
         <input type="text" id="latencyHost" class="detection-select" value="1.1.1.1" placeholder="Host/IP to ping (e.g. 1.1.1.1)">
@@ -310,7 +383,7 @@
 
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-eye-fill settings-label-icon" aria-hidden="true"></i><span>Visible Sensors</span></label>
-        <div class="visibility-options">
+        <div class="visibility-options settings-switch-grid compact-switch-grid">
           <label class="checkbox-label">
             <input type="checkbox" id="showFps" checked>
             <span>FPS</span>
@@ -356,10 +429,15 @@
 
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-list-check settings-label-icon" aria-hidden="true"></i><span>Sensor Selection</span></label>
-        <input id="sensorSearchInput" class="detection-select sensor-search-input" type="search" placeholder="Search sensors or categories..." autocomplete="off" aria-label="Search sensor selection">
+        <div class="sensor-search-row">
+          <input id="sensorSearchInput" class="detection-select sensor-search-input" type="search" placeholder="Search sensors or categories..." autocomplete="off" aria-label="Search sensor selection">
+          <button id="sensorHideUntickedBtn" class="test-btn sensor-hide-unticked-btn" type="button" aria-pressed="false" title="Hide sensors that are not ticked">
+            <i class="bi bi-eye-slash" aria-hidden="true"></i><span>Hide Unticked</span>
+          </button>
+        </div>
         <div id="sensorOptions" class="visibility-options"></div>
         <div id="sensorSearchEmpty" class="settings-note sensor-search-empty" aria-live="polite" hidden>No sensors match your search.</div>
-        <div class="settings-note">Use the checkboxes above to show or hide groups, and drag individual sensors to reorder them.</div>
+        <div class="settings-note">Use the checkboxes above to show or hide groups, filter out unticked sensors, and drag individual sensors to reorder them.</div>
         <div class="web-monitor-actions settings-inline-gap-sm">
           <button id="resetSensorNamesBtn" class="test-btn" type="button">Reset Custom Sensor Names</button>
         </div>
@@ -372,7 +450,7 @@
         <select id="alertSensorSelect" class="detection-select">
           <option value="">Select sensor...</option>
         </select>
-        <label class="checkbox-label settings-inline-gap-sm">
+        <label class="checkbox-label settings-switch-row settings-inline-gap-sm">
           <input type="checkbox" id="alertRuleEnabled">
           <span>Enable alert for selected sensor</span>
         </label>
@@ -434,47 +512,15 @@
     </div>
 
     <div class="settings-group">
-      <div class="settings-group-title">Data Sources</div>
-
-      <div class="settings-section">
-        <label class="settings-label"><i class="bi bi-hdd-stack-fill settings-label-icon" aria-hidden="true"></i><span>Sensor Sources</span></label>
-        <div class="settings-note">Built-in sensors need no separate monitoring app. Enhanced access adds temperatures, clocks, power and fans where the hardware permits it. Enabling it asks for confirmation, then restarts the app with administrator privileges.</div>
-        <div class="visibility-options">
-          <label class="checkbox-label">
-            <input type="checkbox" id="providerBuiltin" checked>
-            <span>Built-in Sensors</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="providerEnhanced">
-            <span>Enhanced Hardware Sensors</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="providerRTSS">
-            <span>RTSS / MSI (Optional)</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="providerAIDA64">
-            <span>AIDA64 (Optional)</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="providerHWiNFO">
-            <span>HWiNFO / LHM Shared Memory (Optional)</span>
-          </label>
-        </div>
-        <div id="builtinSensorStatus" class="settings-note" aria-live="polite">Built-in collector starts with monitoring.</div>
-      </div>
-    </div>
-
-    <div class="settings-group">
       <div class="settings-group-title">Connectivity</div>
 
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-globe settings-label-icon" aria-hidden="true"></i><span>Web Monitor</span></label>
-        <label class="checkbox-label">
+        <label class="checkbox-label settings-switch-row">
           <input type="checkbox" id="webMonitorEnabled">
           <span>Enable Browser View</span>
         </label>
-        <label class="checkbox-label settings-inline-gap-sm">
+        <label class="checkbox-label settings-switch-row settings-inline-gap-sm">
           <input type="checkbox" id="webMonitorAutoStart" checked>
           <span>Auto-start on app launch</span>
         </label>
@@ -482,12 +528,12 @@
           <input id="webMonitorHost" class="detection-select" placeholder="Host (e.g. 127.0.0.1 or 0.0.0.0)" value="127.0.0.1">
           <input id="webMonitorPort" class="detection-select" type="number" min="1024" max="65535" value="17381">
         </div>
-        <label class="checkbox-label settings-inline-gap-sm">
+        <label class="checkbox-label settings-switch-row settings-inline-gap-sm">
           <input type="checkbox" id="webMonitorRequireAuth">
           <span>Require Access Token</span>
         </label>
         <input id="webMonitorAuthToken" class="detection-select" type="text" maxlength="128" placeholder="Access token for remote clients">
-        <label class="checkbox-label settings-inline-gap-sm">
+        <label class="checkbox-label settings-switch-row settings-inline-gap-sm">
           <input type="checkbox" id="webMonitorReadOnlyApiMode">
           <span>Read-only mode (API only)</span>
         </label>
@@ -522,7 +568,7 @@
 
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-window-stack settings-label-icon" aria-hidden="true"></i><span>Startup & Tray</span></label>
-        <div class="visibility-options">
+        <div class="visibility-options settings-switch-grid source-switch-grid">
           <label class="checkbox-label">
             <input type="checkbox" id="launchAtStartup">
             <span>Start app with Windows</span>
@@ -554,7 +600,7 @@
 
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-cloud-arrow-down-fill settings-label-icon" aria-hidden="true"></i><span>App Updates</span></label>
-        <label class="checkbox-label settings-inline-gap-sm">
+        <label class="checkbox-label settings-switch-row settings-inline-gap-sm">
           <input type="checkbox" id="autoCheckForUpdates">
           <span>Auto-check for updates on startup</span>
         </label>
@@ -690,7 +736,7 @@
             <ul>
               <li><strong>Built-in Sensors</strong> provides CPU load, memory, drives, and network telemetry without another monitoring app.</li>
               <li><strong>Enhanced Hardware Sensors</strong> adds supported GPU, temperature, clock, power, voltage, and fan readings.</li>
-              <li>In <strong>Settings → Data Sources → Sensor Sources</strong>, enable compatibility providers only when you need their additional readings.</li>
+              <li>In <strong>Settings → Monitoring → Sensor Sources</strong>, enable compatibility providers only when you need their additional readings.</li>
               <li>Optional provider apps must be running only when their source is enabled.</li>
               <li>If multiple providers expose similar sensors, keep one preferred source active first to avoid duplicate/noisy categories while building your layout.</li>
               <li>After initial setup, only enable additional providers when you specifically need their unique metrics.</li>
@@ -704,7 +750,8 @@
             <ul>
               <li><strong>AIDA64:</strong> File → Preferences → External Applications → enable <strong>Shared Memory</strong>.</li>
               <li><strong>HWiNFO/LHM:</strong> enable shared-memory sensor output in their settings.</li>
-              <li><strong>RTSS/MSI:</strong> best for live <strong>FPS</strong> and <strong>Frame Time</strong> telemetry.</li>
+              <li><strong>Built-in Sensors:</strong> automatically detects AMD, NVIDIA, and Intel adapters for native <strong>FPS</strong> and <strong>Frame Time</strong> through the bundled Windows presentation-event collector.</li>
+              <li><strong>RTSS/MSI:</strong> remains available as an optional compatibility source for FPS and shared-memory telemetry.</li>
               <li><strong>Enhanced access:</strong> availability depends on hardware, firmware, Windows security settings, and permissions.</li>
               <li><strong>If values look stale:</strong> restart the provider first, then restart SiR so shared-memory mappings are refreshed in order.</li>
               <li>When using startup automation, ensure provider apps start before SiR (or use SiR startup delay) so mappings are available at first poll.</li>
@@ -721,6 +768,7 @@
               <li>Use <strong>Sensor Selection</strong> for per-sensor visibility, overlay inclusion, and drag-to-reorder.</li>
               <li>Use <strong>Summary Mode</strong> for a compact overall snapshot.</li>
               <li>Right-click a sensor row (or use the rename button) to apply a custom display name without changing source telemetry.</li>
+              <li>Use the reset button beside Rename to restore only that sensor's original name.</li>
               <li>Start with only critical groups (CPU/GPU/FPS/Temps), then add extra sensors after baseline readability is good.</li>
               <li>Use custom names to shorten long provider labels so web/overlay rows remain clean and readable in tight layouts.</li>
             </ul>
@@ -775,7 +823,7 @@
               <li>Confirm <strong>Built-in Sensors</strong> is enabled in SiR.</li>
               <li>Enable <strong>Enhanced Hardware Sensors</strong> for supported temperatures, clocks, power, voltage, and fans.</li>
               <li>For optional sources, re-check provider shared-memory options and restart the provider app.</li>
-              <li>For FPS/Frame Time issues, verify RTSS/MSI is running and actively updating.</li>
+              <li>For native FPS/Frame Time issues, run SiR as administrator and make sure the game is actively presenting frames; if using the optional RTSS source, verify RTSS/MSI is also running.</li>
               <li>If needed, restart SiR after provider configuration changes.</li>
               <li>If a single group is empty, verify that group is enabled in <strong>Visible Sensors</strong> and not filtered out in <strong>Sensor Selection</strong>.</li>
               <li>If only Ping looks wrong, verify the configured Ping Host and wait for several samples before judging min/avg/max.</li>
@@ -832,14 +880,15 @@
       </div>
       <div class="setup-guide-body confirmation-body" id="enhancedSensorsConfirmDescription">
         <p>Enhanced Hardware Sensors reads low-level temperatures, fan speeds, clocks, power, and other hardware data.</p>
+        <p>Where required, SiR will install or update its bundled PawnIO hardware-access driver. This driver is needed for Intel CPU package power and other protected low-level readings; no separate monitoring application is installed.</p>
         <div class="setup-guide-highlight confirmation-restart-note">
           <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
-          <span>SiR System Monitor will save this setting, close, and restart with administrator privileges. Windows will then show a User Account Control prompt.</span>
+          <span>SiR System Monitor will also enable Launch app as administrator under Startup &amp; Tray, then close and restart with administrator privileges. Windows will show a User Account Control prompt now and on future launches.</span>
         </div>
       </div>
       <div class="setup-guide-footer confirmation-modal-footer">
         <button type="button" class="test-btn confirmation-cancel-btn" data-cancel-enhanced-sensors>Cancel</button>
-        <button type="button" class="test-btn" id="confirmEnhancedSensorsBtn">Restart as Administrator</button>
+        <button type="button" class="test-btn" id="confirmEnhancedSensorsBtn">Enable &amp; Restart</button>
       </div>
     </div>
   </div>

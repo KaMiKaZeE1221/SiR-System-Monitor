@@ -31,6 +31,7 @@ if (process.platform === 'win32') {
 const APP_BEHAVIOR_SETTINGS_FILE = 'appBehaviorSettings.json';
 const FORCE_ADMIN_ARGUMENT = '--sir-require-admin';
 const ELEVATION_RELAUNCH_ARGUMENT = '--sir-elevation-relaunch-attempted';
+const INSTALL_HARDWARE_ACCESS_DRIVER_ARGUMENT = '--sir-install-hardware-access-driver';
 const DEFAULT_APP_BEHAVIOR_SETTINGS = {
   launchAtStartup: false,
   launchAsAdministrator: false,
@@ -66,6 +67,10 @@ const DISCORD_ACTIVITY_INTERVAL_MS = 5_000;
 const DISCORD_RECONNECT_INTERVAL_MS = 5_000;
 let currentOverlayHotkey = null;
 let elevationRestartInProgress = false;
+let hardwareAccessLastError = '';
+let startupRevealTimer = null;
+let startupRevealHandled = false;
+let startupWindowOpenedByUser = false;
 
 function isRunningAsAdministrator() {
   if (process.platform !== 'win32') return false;
@@ -127,6 +132,95 @@ function launchElevatedApp(additionalArguments = []) {
       }
     );
   });
+}
+
+function compareVersionParts(left, right) {
+  const leftParts = String(left || '').split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const rightParts = String(right || '').split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index++) {
+    const difference = (leftParts[index] || 0) - (rightParts[index] || 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
+function queryPawnIoRegistryVersion(registryView) {
+  if (process.platform !== 'win32') return Promise.resolve('');
+  const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+  const regPath = path.join(systemRoot, 'System32', 'reg.exe');
+  const registryKey = 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PawnIO';
+
+  return new Promise((resolve) => {
+    execFile(
+      regPath,
+      ['query', registryKey, '/v', 'DisplayVersion', `/reg:${registryView}`],
+      { windowsHide: true, timeout: 5000 },
+      (error, stdout = '') => {
+        if (error) {
+          resolve('');
+          return;
+        }
+        const match = String(stdout).match(/DisplayVersion\s+REG_\w+\s+([^\r\n]+)/i);
+        resolve(match ? String(match[1]).trim() : '');
+      }
+    );
+  });
+}
+
+function resolveHardwareAccessDriverInstallerPath() {
+  const candidates = [];
+  if (process.resourcesPath) {
+    candidates.push(path.join(process.resourcesPath, 'sensor-host', 'PawnIO_setup.exe'));
+  }
+  candidates.push(path.join(__dirname, 'sensor-host', 'bin', 'PawnIO_setup.exe'));
+  return candidates.find((candidate) => fs.existsSync(candidate)) || '';
+}
+
+async function getHardwareAccessDriverStatus() {
+  const versions = await Promise.all([
+    queryPawnIoRegistryVersion('64'),
+    queryPawnIoRegistryVersion('32')
+  ]);
+  const version = versions.find(Boolean) || '';
+  return {
+    installed: !!version,
+    compatible: !!version && compareVersionParts(version, '2.0.0') >= 0,
+    version,
+    installerAvailable: !!resolveHardwareAccessDriverInstallerPath(),
+    error: hardwareAccessLastError
+  };
+}
+
+async function installHardwareAccessDriverIfRequired() {
+  const currentStatus = await getHardwareAccessDriverStatus();
+  if (currentStatus.compatible) return currentStatus;
+
+  const installerPath = resolveHardwareAccessDriverInstallerPath();
+  if (!installerPath) {
+    throw new Error('The bundled hardware access driver installer is missing. Reinstall SiR System Monitor.');
+  }
+
+  await new Promise((resolve, reject) => {
+    execFile(
+      installerPath,
+      ['-install'],
+      { windowsHide: true, timeout: 120000 },
+      (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      }
+    );
+  });
+
+  const installedStatus = await getHardwareAccessDriverStatus();
+  if (!installedStatus.compatible) {
+    throw new Error('The hardware access driver installer completed, but a compatible PawnIO installation was not detected.');
+  }
+  return installedStatus;
 }
 
 function isMissingLatestYmlError(error) {
@@ -531,6 +625,12 @@ function applyLoginItemSettings() {
 
 function showMainWindow() {
   if (!mainWindow) return;
+  startupWindowOpenedByUser = true;
+  startupRevealHandled = true;
+  if (startupRevealTimer) {
+    clearTimeout(startupRevealTimer);
+    startupRevealTimer = null;
+  }
   if (mainWindow.isMinimized()) {
     mainWindow.restore();
   }
@@ -663,6 +763,12 @@ function syncTrayState() {
 
 function createWindow() {
   const startupDelayMs = Math.max(0, Math.min(60000, Number(appBehaviorSettings.startupDelaySeconds || 0) * 1000));
+  startupRevealHandled = false;
+  startupWindowOpenedByUser = false;
+  if (startupRevealTimer) {
+    clearTimeout(startupRevealTimer);
+    startupRevealTimer = null;
+  }
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 900,
@@ -703,25 +809,38 @@ function createWindow() {
   });
 
   mainWindow.on('closed', () => {
+    if (startupRevealTimer) {
+      clearTimeout(startupRevealTimer);
+      startupRevealTimer = null;
+    }
     shutdownOverlaySubsystem();
     mainWindow = null;
   });
 
-  mainWindow.once('ready-to-show', () => {
-    const revealWindow = () => {
-      if (!mainWindow || mainWindow.isDestroyed()) return;
-      mainWindow.show();
-      if (appBehaviorSettings.startMinimized) {
-        mainWindow.minimize();
-      }
-    };
+  const applyAutomaticStartupVisibility = () => {
+    startupRevealTimer = null;
+    if (startupRevealHandled || startupWindowOpenedByUser || !mainWindow || mainWindow.isDestroyed()) return;
+    startupRevealHandled = true;
 
-    if (startupDelayMs > 0) {
-      setTimeout(revealWindow, startupDelayMs);
+    if (appBehaviorSettings.startMinimized && appBehaviorSettings.minimizeToTray) {
+      mainWindow.hide();
       return;
     }
 
-    revealWindow();
+    mainWindow.show();
+    if (appBehaviorSettings.startMinimized) mainWindow.minimize();
+  };
+
+  // DOM readiness happens before asynchronous sensor discovery. Waiting for
+  // ready-to-show made visibility depend on the first fully painted sensor set
+  // and could later re-minimize a window the user had already opened manually.
+  mainWindow.webContents.once('dom-ready', () => {
+    if (startupRevealHandled || startupWindowOpenedByUser) return;
+    if (startupDelayMs > 0) {
+      startupRevealTimer = setTimeout(applyAutomaticStartupVisibility, startupDelayMs);
+      return;
+    }
+    applyAutomaticStartupVisibility();
   });
 }
 
@@ -1094,13 +1213,15 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   appBehaviorSettings = loadBehaviorSettings();
   const forceAdministrator = process.argv.includes(FORCE_ADMIN_ARGUMENT);
+  const installHardwareAccessDriver = process.argv.includes(INSTALL_HARDWARE_ACCESS_DRIVER_ARGUMENT);
   const elevationAlreadyAttempted = process.argv.includes(ELEVATION_RELAUNCH_ARGUMENT);
-  const shouldElevate = forceAdministrator || appBehaviorSettings.launchAsAdministrator;
+  const shouldElevate = forceAdministrator || installHardwareAccessDriver || appBehaviorSettings.launchAsAdministrator;
   const runningAsAdministrator = isRunningAsAdministrator();
   if (shouldElevate && !runningAsAdministrator && !elevationAlreadyAttempted) {
     try {
       await launchElevatedApp([
         ...(forceAdministrator ? [FORCE_ADMIN_ARGUMENT] : []),
+        ...(installHardwareAccessDriver ? [INSTALL_HARDWARE_ACCESS_DRIVER_ARGUMENT] : []),
         ELEVATION_RELAUNCH_ARGUMENT
       ]);
       isQuitting = true;
@@ -1115,11 +1236,20 @@ app.whenReady().then(async () => {
       }
     }
   }
-  if (forceAdministrator && !runningAsAdministrator) {
+  if ((forceAdministrator || installHardwareAccessDriver) && !runningAsAdministrator) {
     console.warn('The forced administrator launch did not obtain administrator privileges.');
     isQuitting = true;
     app.quit();
     return;
+  }
+  if (installHardwareAccessDriver) {
+    try {
+      await installHardwareAccessDriverIfRequired();
+      hardwareAccessLastError = '';
+    } catch (error) {
+      hardwareAccessLastError = String(error && error.message ? error.message : error);
+      console.warn('Unable to install the hardware access driver:', hardwareAccessLastError);
+    }
   }
   applyLoginItemSettings();
   syncTrayState();
@@ -1160,24 +1290,38 @@ app.on('will-quit', () => {
   }
 });
 
-ipcMain.handle('app:restart-elevated', async () => {
+ipcMain.handle('app:restart-elevated', async (_event, options = {}) => {
   if (elevationRestartInProgress) {
     return { ok: false, error: 'An administrator restart is already in progress.' };
   }
 
   elevationRestartInProgress = true;
+  const enableAdministratorLaunch = options && options.enableLaunchAsAdministrator === true;
+  const previousBehaviorSettings = { ...appBehaviorSettings };
   try {
-    await launchElevatedApp();
+    if (enableAdministratorLaunch && !appBehaviorSettings.launchAsAdministrator) {
+      saveBehaviorSettings({ ...appBehaviorSettings, launchAsAdministrator: true });
+      applyLoginItemSettings();
+    }
+    await launchElevatedApp([
+      ...(options && options.installHardwareAccessDriver === true ? [INSTALL_HARDWARE_ACCESS_DRIVER_ARGUMENT] : []),
+      ELEVATION_RELAUNCH_ARGUMENT
+    ]);
     setTimeout(() => {
       isQuitting = true;
       app.quit();
     }, 350);
-    return { ok: true };
+    return { ok: true, settings: appBehaviorSettings };
   } catch (error) {
+    if (enableAdministratorLaunch) {
+      saveBehaviorSettings(previousBehaviorSettings);
+      applyLoginItemSettings();
+    }
     elevationRestartInProgress = false;
     const message = String(error && error.message ? error.message : error || 'Administrator restart was cancelled.');
     return {
       ok: false,
+      settings: appBehaviorSettings,
       error: message.toLowerCase().includes('cancel')
         ? 'The administrator restart was cancelled. Enhanced Hardware Sensors remains disabled.'
         : `Unable to restart with administrator privileges: ${message}`
@@ -1190,6 +1334,8 @@ ipcMain.handle('app-behavior:get', () => {
 });
 
 ipcMain.handle('app:is-elevated', () => isRunningAsAdministrator());
+
+ipcMain.handle('hardware-access:get-status', () => getHardwareAccessDriverStatus());
 
 ipcMain.handle('app-behavior:set', (_event, nextSettings) => {
   const merged = {

@@ -9,10 +9,20 @@ const {
   LAYOUT_PRESET_STORAGE_KEY,
   CUSTOM_LAYOUT_CONFIG_STORAGE_KEY,
   CUSTOM_LAYOUT_SIZES_STORAGE_KEY,
+  SUMMARY_LAYOUT_PRESET_STORAGE_KEY,
+  SUMMARY_CUSTOM_LAYOUT_CONFIG_STORAGE_KEY,
+  SUMMARY_CUSTOM_LAYOUT_SIZES_STORAGE_KEY,
   normalizeLayoutPreset,
   getLayoutPreset
 } = require('./layoutPresets');
 const { reorderVisibleSensors } = require('./sensorOrder');
+const { listEnabledAlertSensors } = require('./sensorAlerts');
+const {
+  SENSOR_DETECTING_VALUE,
+  createSensorCatalogCachePayload,
+  parseSensorCatalogCache,
+  mergeLiveAndCachedCatalog
+} = require('./sensorCatalogCache');
 const http = require('http');
 const os = require('os');
 const fs = require('fs');
@@ -87,6 +97,7 @@ let lastSuccessfulSensorReadAt = 0;
 const SENSOR_READ_STALE_HOLD_MS = 8000;
 const renderGroupSignatureCache = {};
 const SENSOR_SELECTION_KEY = 'sensorSelection';
+const SENSOR_HIDE_UNTICKED_KEY = 'sensorHideUnticked';
 const SENSOR_CATEGORY_SELECTION_KEY = 'sensorCategorySelection';
 const SENSOR_CATEGORY_COLLAPSE_KEY = 'sensorCategoryCollapse';
 const SENSOR_ORDER_KEY = 'sensorOrderByGroup';
@@ -99,8 +110,10 @@ const TEMPERATURE_UNIT_KEY = 'temperatureUnit';
 const PROVIDER_SELECTION_KEY = 'providerSelection';
 const SENSOR_CUSTOM_NAMES_KEY = 'sensorCustomNames';
 const SENSOR_ALERT_RULES_KEY = 'sensorAlertRules';
+const SENSOR_CATALOG_CACHE_KEY = 'sensorCatalogCacheV1';
 const SETTINGS_ACCORDION_STATE_KEY = 'settingsAccordionState';
 const WINDOW_ORDER_KEY = 'windowOrder';
+const SUMMARY_WINDOW_ORDER_KEY = 'summaryWindowOrder';
 const WINDOW_SIZE_KEY = 'windowSize';
 const MONITORING_MODE_KEY = 'monitoringMode';
 const SUMMARY_MODE_KEY = 'summaryMode';
@@ -109,6 +122,12 @@ const VIEW_MODE_KEY = 'viewMode';
 const LAYOUT_PRESET_KEY = LAYOUT_PRESET_STORAGE_KEY;
 const CUSTOM_LAYOUT_CONFIG_KEY = CUSTOM_LAYOUT_CONFIG_STORAGE_KEY;
 const CUSTOM_LAYOUT_SIZES_KEY = CUSTOM_LAYOUT_SIZES_STORAGE_KEY;
+const SUMMARY_LAYOUT_PRESET_KEY = SUMMARY_LAYOUT_PRESET_STORAGE_KEY;
+const SUMMARY_CUSTOM_LAYOUT_CONFIG_KEY = SUMMARY_CUSTOM_LAYOUT_CONFIG_STORAGE_KEY;
+const SUMMARY_CUSTOM_LAYOUT_SIZES_KEY = SUMMARY_CUSTOM_LAYOUT_SIZES_STORAGE_KEY;
+const SUMMARY_WINDOW_SIZE_KEY = 'summaryWindowSize';
+const CUSTOM_LAYOUT_COLUMNS = 36;
+const CUSTOM_LAYOUT_ROW_HEIGHT = 8;
 const GRAPH_EXPANDED_KEY = 'graphExpandedSensors';
 const WEB_MONITOR_SETTINGS_KEY = 'webMonitorSettings';
 const OVERLAY_ENABLED_KEY = 'overlayEnabled';
@@ -145,6 +164,7 @@ const LATENCY_HOST_KEY = 'latencyHost';
 const SETTINGS_SNAPSHOT_KEYS = [
   SENSOR_ORDER_KEY,
   SENSOR_SELECTION_KEY,
+  SENSOR_HIDE_UNTICKED_KEY,
   SENSOR_OVERLAY_SELECTION_KEY,
   SENSOR_CATEGORY_SELECTION_KEY,
   SENSOR_CUSTOM_NAMES_KEY,
@@ -153,6 +173,9 @@ const SETTINGS_SNAPSHOT_KEYS = [
   LAYOUT_PRESET_KEY,
   CUSTOM_LAYOUT_CONFIG_KEY,
   CUSTOM_LAYOUT_SIZES_KEY,
+  SUMMARY_LAYOUT_PRESET_KEY,
+  SUMMARY_CUSTOM_LAYOUT_CONFIG_KEY,
+  SUMMARY_CUSTOM_LAYOUT_SIZES_KEY,
   'theme',
   FONT_SIZE_KEY,
   FONT_FAMILY_KEY,
@@ -192,7 +215,9 @@ const SETTINGS_SNAPSHOT_KEYS = [
   APP_BEHAVIOR_SETTINGS_KEY,
   SENSOR_ALERT_RULES_KEY,
   WINDOW_ORDER_KEY,
+  SUMMARY_WINDOW_ORDER_KEY,
   WINDOW_SIZE_KEY,
+  SUMMARY_WINDOW_SIZE_KEY,
   SIDEBAR_WIDTH_KEY,
   GRAPH_EXPANDED_KEY,
   'showFps',
@@ -382,6 +407,7 @@ let lastDebugExternalData = null;
 let latestSelectedGroupedSensors = createEmptyGroupedBuckets();
 let liveSensorCatalogSignature = '';
 let cachedOrderedSensorCatalog = createEmptyGroupedBuckets();
+let cachedCatalogPreservingMissingSensors = false;
 let sensorCustomNames = {};
 let sensorAlertRules = {};
 let sensorAlertLastTriggeredAt = {};
@@ -392,6 +418,8 @@ let forceNextUiRender = true;
 let currentTemperatureUnit = 'c';
 let webMonitorServer = null;
 let webMonitorSockets = new Set();
+let webMonitorLifecycleQueue = Promise.resolve();
+let webMonitorDesiredEnabled = false;
 let webMonitorRuntime = {
   running: false,
   error: '',
@@ -787,6 +815,7 @@ function buildWebMonitorHtml(authToken = '') {
       --accent: #0066ff;
       --accent-light: #4d9fff;
       --layout-card-min-width: 300px;
+      --layout-card-default-width: 300px;
       --layout-card-height: 360px;
       --layout-card-gap: 14px;
     }
@@ -802,7 +831,9 @@ function buildWebMonitorHtml(authToken = '') {
     .summary-toggle:hover { background: var(--border-color); color: var(--text-primary); }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--layout-card-min-width)), 1fr)); gap: var(--layout-card-gap); }
     body.layout-stacked .grid { grid-template-columns: minmax(0, 1fr); }
+    body.layout-custom .grid { grid-template-columns: repeat(36, minmax(0, 1fr)); grid-auto-rows: 8px; grid-auto-flow: dense; }
     .card { border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); padding: 14px; height: var(--layout-card-height); overflow: hidden; display: flex; flex-direction: column; }
+    body.layout-custom .card { height: auto; min-width: 0; }
     .card h3 { margin: 0 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--bg-tertiary); font-size: calc(13px * var(--font-scale)); letter-spacing: .08em; color: var(--block-header-color); text-transform: uppercase; font-weight: var(--font-weight-bold); display: flex; align-items: center; gap: 8px; }
     .group-icon { color: var(--icon-color); font-size: calc(14px * var(--font-scale)); line-height: 1; }
     .rows { overflow-y: auto; min-height: 0; flex: 1 1 auto; scrollbar-gutter: stable both-edges; padding-right: 8px; padding-bottom: 28px; scroll-padding-bottom: 28px; }
@@ -1001,17 +1032,20 @@ function buildWebMonitorHtml(authToken = '') {
       const normalized = supported.includes(requested) ? requested : 'balanced';
       const nextConfig = config && typeof config === 'object' ? config : {};
       const minCardWidth = Math.min(900, Math.max(180, Number(nextConfig.minCardWidth) || 300));
+      const defaultCardWidth = Math.min(1200, Math.max(minCardWidth, Number(nextConfig.defaultCardWidth) || minCardWidth));
       const cardHeight = Math.min(900, Math.max(220, Number(nextConfig.cardHeight) || 360));
       const gap = Math.min(40, Math.max(0, Number(nextConfig.gap) || 14));
       const root = document.documentElement;
-      const signature = [normalized, minCardWidth, cardHeight, gap, nextConfig.stacked === true ? '1' : '0'].join('|');
+      const signature = [normalized, minCardWidth, defaultCardWidth, cardHeight, gap, nextConfig.stacked === true ? '1' : '0'].join('|');
 
       if (domState.layoutSignature === signature) return;
 
       domState.layoutPreset = normalized;
       domState.layoutSignature = signature;
       document.body.classList.toggle('layout-stacked', normalized === 'stacked' || nextConfig.stacked === true);
+      document.body.classList.toggle('layout-custom', normalized === 'custom');
       root.style.setProperty('--layout-card-min-width', minCardWidth + 'px');
+      root.style.setProperty('--layout-card-default-width', defaultCardWidth + 'px');
       root.style.setProperty('--layout-card-height', cardHeight + 'px');
       root.style.setProperty('--layout-card-gap', gap + 'px');
     }
@@ -1178,7 +1212,13 @@ function buildWebMonitorHtml(authToken = '') {
       if (!settings || typeof settings !== 'object') return;
 
       applyViewMode(settings.viewMode || 'standard');
-      applyLayoutPreset(settings.layoutPreset || 'balanced', settings.layoutConfig || {});
+      const activeLayoutPreset = domState.summaryMode
+        ? (settings.summaryLayoutPreset || 'balanced')
+        : (settings.layoutPreset || 'balanced');
+      const activeLayoutConfig = domState.summaryMode
+        ? (settings.summaryLayoutConfig || {})
+        : (settings.layoutConfig || {});
+      applyLayoutPreset(activeLayoutPreset, activeLayoutConfig);
 
       const palette = settings.palette || {};
       if (palette.bgPrimary) root.style.setProperty('--bg-primary', palette.bgPrimary);
@@ -1248,10 +1288,15 @@ function buildWebMonitorHtml(authToken = '') {
       domState.rowsByKey.clear();
       grid.innerHTML = '';
       const gridStyles = getComputedStyle(grid);
-      const columns = Math.max(1, (gridStyles.gridTemplateColumns || '').split(' ').filter((track) => (parseFloat(track) || 0) > 1).length);
+      const customLayout = domState.layoutPreset === 'custom';
+      const measuredColumns = Math.max(1, (gridStyles.gridTemplateColumns || '').split(' ').filter((track) => (parseFloat(track) || 0) > 1).length);
+      const columns = customLayout ? 36 : measuredColumns;
       const gap = parseFloat(gridStyles.columnGap || gridStyles.gap || '10') || 10;
       const containerWidth = Math.max(1, grid.clientWidth || window.innerWidth || 1200);
-      const columnWidth = Math.max(120, (containerWidth - (gap * (columns - 1))) / columns);
+      const columnWidth = Math.max(customLayout ? 1 : 120, (containerWidth - (gap * (columns - 1))) / columns);
+      const configuredMinWidth = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--layout-card-min-width')) || 180;
+      const configuredDefaultWidth = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--layout-card-default-width')) || configuredMinWidth;
+      const configuredHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--layout-card-height')) || 360;
 
       orderedGroups.forEach((group) => {
         const sensors = Array.isArray(groups[group]) ? groups[group] : [];
@@ -1261,13 +1306,19 @@ function buildWebMonitorHtml(authToken = '') {
         card.className = 'card';
         const groupLayout = layout[group] || {};
         const desiredWidth = Number(groupLayout.width);
-        if (Number.isFinite(desiredWidth) && desiredWidth >= 180) {
-          const rawSpan = Math.round((desiredWidth + gap) / (columnWidth + gap));
+        const targetWidth = Number.isFinite(desiredWidth) && desiredWidth >= configuredMinWidth ? desiredWidth : configuredDefaultWidth;
+        if ((Number.isFinite(desiredWidth) && desiredWidth >= 180) || customLayout) {
+          const rawSpan = Math.round((targetWidth + gap) / (columnWidth + gap));
           const webSpan = Math.min(Math.max(1, rawSpan), columns);
           card.style.gridColumn = 'span ' + webSpan;
         }
         const desiredHeight = Number(groupLayout.height);
-        if (Number.isFinite(desiredHeight) && desiredHeight >= 220 && desiredHeight <= 900) {
+        if (customLayout) {
+          const targetHeight = Number.isFinite(desiredHeight) && desiredHeight >= 220 && desiredHeight <= 900 ? desiredHeight : configuredHeight;
+          const rowSpan = Math.max(1, Math.round((targetHeight + gap) / (8 + gap)));
+          card.style.gridRow = 'span ' + rowSpan;
+          card.style.height = 'auto';
+        } else if (Number.isFinite(desiredHeight) && desiredHeight >= 220 && desiredHeight <= 900) {
           card.style.height = desiredHeight + 'px';
         }
 
@@ -1387,7 +1438,6 @@ function buildWebMonitorHtml(authToken = '') {
         return;
       }
 
-      applySyncedSettings(payload.settings || {});
       const rawMode = String(payload.mode || '').toLowerCase();
       const modeLabel = rawMode === 'builtin' ? 'Built-in Sensors' : (rawMode === 'msi' ? 'Shared Memory' : (payload.mode || 'N/A'));
       const version = String(payload.version || APP_VERSION || 'N/A').trim() || 'N/A';
@@ -1418,9 +1468,14 @@ function buildWebMonitorHtml(authToken = '') {
         domState.initializedSummaryMode = true;
       }
 
+      applySyncedSettings(payload.settings || {});
       const groups = payload.groups || {};
-      const layout = (payload.settings && payload.settings.groupLayout) ? payload.settings.groupLayout : {};
-      const orderedGroups = Array.isArray(payload.settings && payload.settings.groupOrder) ? payload.settings.groupOrder : groupOrder;
+      const layout = domState.summaryMode
+        ? ((payload.settings && payload.settings.summaryGroupLayout) ? payload.settings.summaryGroupLayout : {})
+        : ((payload.settings && payload.settings.groupLayout) ? payload.settings.groupLayout : {});
+      const orderedGroups = domState.summaryMode
+        ? (Array.isArray(payload.settings && payload.settings.summaryGroupOrder) ? payload.settings.summaryGroupOrder : groupOrder)
+        : (Array.isArray(payload.settings && payload.settings.groupOrder) ? payload.settings.groupOrder : groupOrder);
 
       const structureKey = computeStructureKey(groups, orderedGroups, layout);
       if (structureKey !== domState.structureKey) {
@@ -1471,35 +1526,46 @@ function shouldCollectSummaryStats() {
 }
 
 function publishWebMonitorPayload(mode, externalText) {
-  const sizeMap = loadWindowSizes();
-  const selectedLayoutPreset = normalizeLayoutPreset(localStorage.getItem(LAYOUT_PRESET_KEY) || DEFAULT_LAYOUT_PRESET);
-  const selectedLayoutConfig = getActiveLayoutConfig(selectedLayoutPreset);
-  const windowOrder = loadWindowOrder();
-  const orderedGroups = windowOrder
-    .map((cardId) => CARD_GROUP_IDS[cardId])
-    .filter((group) => !!group);
-  const missingGroups = SENSOR_GROUP_ORDER.filter((group) => !orderedGroups.includes(group));
-  const groupOrder = [...orderedGroups, ...missingGroups];
+  const sizeMap = loadWindowSizes('normal');
+  const summarySizeMap = loadWindowSizes('summary');
+  const selectedLayoutPreset = getSelectedLayoutPreset('normal');
+  const selectedLayoutConfig = getActiveLayoutConfig(selectedLayoutPreset, 'normal');
+  const selectedSummaryLayoutPreset = getSelectedLayoutPreset('summary');
+  const selectedSummaryLayoutConfig = getActiveLayoutConfig(selectedSummaryLayoutPreset, 'summary');
+  const buildGroupOrder = (layoutMode) => {
+    const orderedGroups = loadWindowOrder(layoutMode)
+      .map((cardId) => CARD_GROUP_IDS[cardId])
+      .filter((group) => !!group);
+    const missingGroups = SENSOR_GROUP_ORDER.filter((group) => !orderedGroups.includes(group));
+    return [...orderedGroups, ...missingGroups];
+  };
+  const groupOrder = buildGroupOrder('normal');
+  const summaryGroupOrder = buildGroupOrder('summary');
 
-  const groupLayout = {};
-  SENSOR_GROUP_ORDER.forEach((group) => {
-    const cardId = GROUP_CARD_IDS[group];
-    const saved = sizeMap[cardId];
-    const savedHeight = Number(typeof saved === 'object' ? saved.height : saved);
-    const savedSpan = Number(typeof saved === 'object' && saved !== null ? saved.span : NaN);
-    const savedWidth = Number(typeof saved === 'object' ? saved.width : NaN);
+  const buildGroupLayout = (savedSizes) => {
+    const layout = {};
+    SENSOR_GROUP_ORDER.forEach((group) => {
+      const cardId = GROUP_CARD_IDS[group];
+      const saved = savedSizes[cardId];
+      const savedHeight = Number(typeof saved === 'object' ? saved.height : saved);
+      const savedSpan = Number(typeof saved === 'object' && saved !== null ? saved.span : NaN);
+      const savedWidth = Number(typeof saved === 'object' ? saved.width : NaN);
 
-    groupLayout[group] = {};
-    if (Number.isFinite(savedHeight) && savedHeight >= 220 && savedHeight <= 900) {
-      groupLayout[group].height = savedHeight;
-    }
-    if (Number.isFinite(savedSpan) && savedSpan >= 1) {
-      groupLayout[group].span = savedSpan;
-    }
-    if (Number.isFinite(savedWidth) && savedWidth >= 180) {
-      groupLayout[group].width = savedWidth;
-    }
-  });
+      layout[group] = {};
+      if (Number.isFinite(savedHeight) && savedHeight >= 220 && savedHeight <= 900) {
+        layout[group].height = savedHeight;
+      }
+      if (Number.isFinite(savedSpan) && savedSpan >= 1) {
+        layout[group].span = savedSpan;
+      }
+      if (Number.isFinite(savedWidth) && savedWidth >= 180) {
+        layout[group].width = savedWidth;
+      }
+    });
+    return layout;
+  };
+  const groupLayout = buildGroupLayout(sizeMap);
+  const summaryGroupLayout = buildGroupLayout(summarySizeMap);
 
   const selectedTheme = (localStorage.getItem('theme') || 'blue').toLowerCase();
   const selectedFontSize = localStorage.getItem(FONT_SIZE_KEY) || 'medium';
@@ -1556,7 +1622,7 @@ function publishWebMonitorPayload(mode, externalText) {
         : [];
       return {
         id: sensor.id,
-        name: sensor.name,
+        name: getFinalDisplayLabel(sensor),
         value: hasNumericValue && normalizedCurrent ? normalizedCurrent.value : sensor.value,
         units: hasNumericValue && normalizedCurrent ? normalizedCurrent.units : resolvedUnits,
         formatted: formatSensorValue(sensorForFormatting),
@@ -1599,8 +1665,12 @@ function publishWebMonitorPayload(mode, externalText) {
       viewMode: normalizeViewMode(localStorage.getItem(VIEW_MODE_KEY) || 'standard'),
       layoutPreset: selectedLayoutPreset,
       layoutConfig: selectedLayoutConfig,
+      summaryLayoutPreset: selectedSummaryLayoutPreset,
+      summaryLayoutConfig: selectedSummaryLayoutConfig,
       groupOrder,
+      summaryGroupOrder,
       groupLayout,
+      summaryGroupLayout,
       palette
     }
   };
@@ -2262,40 +2332,111 @@ function showEnhancedSensorsConfirmation() {
   });
 }
 
-function loadWindowOrder() {
+function queueWebMonitorRuntimeState(settingsInput) {
+  const requestedSettings = normalizeWebMonitorSettings(settingsInput || loadWebMonitorSettings());
+  webMonitorDesiredEnabled = requestedSettings.enabled;
+
+  webMonitorLifecycleQueue = webMonitorLifecycleQueue
+    .catch((error) => {
+      console.error('Previous Web Monitor transition failed:', error);
+    })
+    .then(async () => {
+      if (!requestedSettings.enabled) {
+        await stopWebMonitorServer();
+        return true;
+      }
+
+      const started = await startWebMonitorServer(requestedSettings);
+      if (!started && webMonitorDesiredEnabled === requestedSettings.enabled) {
+        // A failed start is not an active target. This lets the header button
+        // retry even when the saved Enable Browser View checkbox remains on.
+        webMonitorDesiredEnabled = false;
+      }
+      return started;
+    });
+
+  return webMonitorLifecycleQueue;
+}
+
+function getWindowOrderStorageKey(mode = getCurrentLayoutMode()) {
+  return normalizeLayoutMode(mode) === 'summary' ? SUMMARY_WINDOW_ORDER_KEY : WINDOW_ORDER_KEY;
+}
+
+function loadWindowOrder(mode = getCurrentLayoutMode()) {
   try {
-    const raw = localStorage.getItem(WINDOW_ORDER_KEY);
+    const key = getWindowOrderStorageKey(mode);
+    let raw = localStorage.getItem(key);
+    if (raw === null && key === SUMMARY_WINDOW_ORDER_KEY) {
+      // Seed Summary Mode from the user's existing dashboard order once, then
+      // save future Summary drag changes under its own independent key.
+      raw = localStorage.getItem(WINDOW_ORDER_KEY);
+    }
     return raw ? JSON.parse(raw) : [];
   } catch (e) {
     return [];
   }
 }
 
-function saveWindowOrder(order) {
-  localStorage.setItem(WINDOW_ORDER_KEY, JSON.stringify(order || []));
+function saveWindowOrder(order, mode = getCurrentLayoutMode()) {
+  localStorage.setItem(getWindowOrderStorageKey(mode), JSON.stringify(order || []));
 }
 
-function loadWindowSizes() {
+function normalizeLayoutMode(mode) {
+  return String(mode || '').toLowerCase() === 'summary' ? 'summary' : 'normal';
+}
+
+function getCurrentLayoutMode() {
+  return summaryModeEnabled ? 'summary' : 'normal';
+}
+
+function getLayoutStorageKeys(mode = getCurrentLayoutMode()) {
+  const normalizedMode = normalizeLayoutMode(mode);
+  return normalizedMode === 'summary'
+    ? {
+        mode: normalizedMode,
+        preset: SUMMARY_LAYOUT_PRESET_KEY,
+        config: SUMMARY_CUSTOM_LAYOUT_CONFIG_KEY,
+        customSizes: SUMMARY_CUSTOM_LAYOUT_SIZES_KEY,
+        sizes: SUMMARY_WINDOW_SIZE_KEY
+      }
+    : {
+        mode: normalizedMode,
+        preset: LAYOUT_PRESET_KEY,
+        config: CUSTOM_LAYOUT_CONFIG_KEY,
+        customSizes: CUSTOM_LAYOUT_SIZES_KEY,
+        sizes: WINDOW_SIZE_KEY
+      };
+}
+
+function getSelectedLayoutPreset(mode = getCurrentLayoutMode()) {
+  const keys = getLayoutStorageKeys(mode);
+  return normalizeLayoutPreset(localStorage.getItem(keys.preset) || DEFAULT_LAYOUT_PRESET);
+}
+
+function loadWindowSizes(mode = getCurrentLayoutMode()) {
+  const keys = getLayoutStorageKeys(mode);
   try {
-    const raw = localStorage.getItem(WINDOW_SIZE_KEY);
+    const raw = localStorage.getItem(keys.sizes);
     return raw ? JSON.parse(raw) : {};
   } catch (e) {
     return {};
   }
 }
 
-function saveWindowSizes(sizeMap) {
+function saveWindowSizes(sizeMap, mode = getCurrentLayoutMode()) {
+  const keys = getLayoutStorageKeys(mode);
   const normalized = sizeMap && typeof sizeMap === 'object' && !Array.isArray(sizeMap) ? sizeMap : {};
   const serialized = JSON.stringify(normalized);
-  localStorage.setItem(WINDOW_SIZE_KEY, serialized);
-  if (normalizeLayoutPreset(localStorage.getItem(LAYOUT_PRESET_KEY) || DEFAULT_LAYOUT_PRESET) === 'custom') {
-    localStorage.setItem(CUSTOM_LAYOUT_SIZES_KEY, serialized);
+  localStorage.setItem(keys.sizes, serialized);
+  if (getSelectedLayoutPreset(keys.mode) === 'custom') {
+    localStorage.setItem(keys.customSizes, serialized);
   }
 }
 
-function loadCustomLayoutSizes() {
+function loadCustomLayoutSizes(mode = getCurrentLayoutMode()) {
+  const keys = getLayoutStorageKeys(mode);
   try {
-    const raw = localStorage.getItem(CUSTOM_LAYOUT_SIZES_KEY);
+    const raw = localStorage.getItem(keys.customSizes);
     const parsed = raw ? JSON.parse(raw) : {};
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
   } catch (e) {
@@ -2303,19 +2444,22 @@ function loadCustomLayoutSizes() {
   }
 }
 
-function saveCustomLayoutSizes(sizeMap) {
+function saveCustomLayoutSizes(sizeMap, mode = getCurrentLayoutMode()) {
+  const keys = getLayoutStorageKeys(mode);
   const normalized = sizeMap && typeof sizeMap === 'object' && !Array.isArray(sizeMap) ? sizeMap : {};
-  localStorage.setItem(CUSTOM_LAYOUT_SIZES_KEY, JSON.stringify(normalized));
+  localStorage.setItem(keys.customSizes, JSON.stringify(normalized));
 }
 
 function normalizeCustomLayoutConfig(config, fallbackPresetId = DEFAULT_LAYOUT_PRESET) {
   const fallbackId = normalizeLayoutPreset(fallbackPresetId) === 'custom' ? DEFAULT_LAYOUT_PRESET : normalizeLayoutPreset(fallbackPresetId);
   const fallback = getLayoutPreset(fallbackId);
   const source = config && typeof config === 'object' ? config : {};
+  const defaultCardWidth = Math.min(1200, Math.max(180, Number(source.defaultCardWidth) || Number(source.minCardWidth) || fallback.minCardWidth));
   return {
     id: 'custom',
     label: 'Custom',
-    minCardWidth: Math.min(900, Math.max(180, Number(source.minCardWidth) || fallback.minCardWidth)),
+    minCardWidth: 180,
+    defaultCardWidth,
     cardHeight: Math.min(900, Math.max(220, Number(source.cardHeight) || fallback.cardHeight)),
     gap: Math.min(40, Math.max(0, Number(source.gap) || fallback.gap)),
     stacked: false,
@@ -2323,9 +2467,10 @@ function normalizeCustomLayoutConfig(config, fallbackPresetId = DEFAULT_LAYOUT_P
   };
 }
 
-function loadCustomLayoutConfig(fallbackPresetId = DEFAULT_LAYOUT_PRESET) {
+function loadCustomLayoutConfig(fallbackPresetId = DEFAULT_LAYOUT_PRESET, mode = getCurrentLayoutMode()) {
+  const keys = getLayoutStorageKeys(mode);
   try {
-    const raw = localStorage.getItem(CUSTOM_LAYOUT_CONFIG_KEY);
+    const raw = localStorage.getItem(keys.config);
     const parsed = raw ? JSON.parse(raw) : null;
     return normalizeCustomLayoutConfig(parsed, fallbackPresetId);
   } catch (e) {
@@ -2333,15 +2478,16 @@ function loadCustomLayoutConfig(fallbackPresetId = DEFAULT_LAYOUT_PRESET) {
   }
 }
 
-function saveCustomLayoutConfig(config, fallbackPresetId = DEFAULT_LAYOUT_PRESET) {
+function saveCustomLayoutConfig(config, fallbackPresetId = DEFAULT_LAYOUT_PRESET, mode = getCurrentLayoutMode()) {
+  const keys = getLayoutStorageKeys(mode);
   const normalized = normalizeCustomLayoutConfig(config, fallbackPresetId);
-  localStorage.setItem(CUSTOM_LAYOUT_CONFIG_KEY, JSON.stringify(normalized));
+  localStorage.setItem(keys.config, JSON.stringify(normalized));
   return normalized;
 }
 
-function getActiveLayoutConfig(presetId) {
+function getActiveLayoutConfig(presetId, mode = getCurrentLayoutMode()) {
   const normalized = normalizeLayoutPreset(presetId);
-  return normalized === 'custom' ? loadCustomLayoutConfig() : getLayoutPreset(normalized);
+  return normalized === 'custom' ? loadCustomLayoutConfig(DEFAULT_LAYOUT_PRESET, mode) : getLayoutPreset(normalized);
 }
 
 function loadSettingsAccordionState() {
@@ -2466,6 +2612,36 @@ function buildSettingsSnapshot() {
   return payload;
 }
 
+function normalizeEnhancedAdministratorSnapshot(snapshot) {
+  const normalized = snapshot && typeof snapshot === 'object' ? { ...snapshot } : {};
+  try {
+    const providerRaw = normalized[PROVIDER_SELECTION_KEY];
+    const providers = typeof providerRaw === 'string' ? JSON.parse(providerRaw) : providerRaw;
+    if (!providers || providers.enhanced !== true) return normalized;
+
+    const behaviorRaw = normalized[APP_BEHAVIOR_SETTINGS_KEY];
+    const behavior = typeof behaviorRaw === 'string' ? JSON.parse(behaviorRaw) : behaviorRaw;
+    normalized[APP_BEHAVIOR_SETTINGS_KEY] = JSON.stringify(normalizeAppBehaviorSettings({
+      ...(behavior && typeof behavior === 'object' ? behavior : DEFAULT_APP_BEHAVIOR_SETTINGS),
+      launchAsAdministrator: true
+    }));
+  } catch (error) {
+    // Keep malformed legacy data unchanged; normal import validation will handle it.
+  }
+  return normalized;
+}
+
+function settingsSnapshotMatchesCurrent(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return false;
+  const current = buildSettingsSnapshot();
+  return Object.keys(snapshot).every((key) => {
+    const expected = snapshot[key];
+    const actual = Object.prototype.hasOwnProperty.call(current, key) ? current[key] : localStorage.getItem(key);
+    if (expected === null || expected === undefined) return actual === null || actual === undefined;
+    return String(actual) === String(expected);
+  });
+}
+
 async function persistCrossProcessSettingsFromSnapshot(parsed) {
   try {
     if (parsed && parsed[APP_BEHAVIOR_SETTINGS_KEY]) {
@@ -2480,6 +2656,14 @@ async function persistCrossProcessSettingsFromSnapshot(parsed) {
   }
 }
 
+async function prepareSensorCollectorForReload() {
+  updateLoopActive = false;
+  clearTimeout(updateTimer);
+  if (sensorReader && typeof sensorReader.close === 'function') {
+    await sensorReader.close({ forceAfterMs: 2000 });
+  }
+}
+
 function closeImportSettingsModal() {
   setImportSettingsModalVisible(false);
 }
@@ -2489,6 +2673,7 @@ async function applyImportedSettingsNow() {
   if (!modal) return;
   let parsed = {};
   try { parsed = JSON.parse(modal.dataset.parsed || '{}'); } catch (e) { parsed = {}; }
+  parsed = normalizeEnhancedAdministratorSnapshot(parsed);
 
   Object.keys(parsed || {}).forEach((k) => {
     try {
@@ -2526,7 +2711,12 @@ async function applyImportedSettingsNow() {
   try { if (parsed[VIEW_MODE_KEY]) applyViewMode(String(parsed[VIEW_MODE_KEY]).replace(/^"|"$/g, ''), { persist: true }); } catch (e) {}
   try {
     if (Object.prototype.hasOwnProperty.call(parsed, LAYOUT_PRESET_KEY)) {
-      applyLayoutPreset(parsed[LAYOUT_PRESET_KEY] || DEFAULT_LAYOUT_PRESET, { persist: true, resetCustomSizes: false });
+      applyLayoutPreset(parsed[LAYOUT_PRESET_KEY] || DEFAULT_LAYOUT_PRESET, { mode: 'normal', persist: true, resetCustomSizes: false });
+    }
+  } catch (e) {}
+  try {
+    if (Object.prototype.hasOwnProperty.call(parsed, SUMMARY_LAYOUT_PRESET_KEY)) {
+      applyLayoutPreset(parsed[SUMMARY_LAYOUT_PRESET_KEY] || DEFAULT_LAYOUT_PRESET, { mode: 'summary', persist: true, resetCustomSizes: false });
     }
   } catch (e) {}
   try { applyWindowOrder(); applyWindowSizes(); } catch (e) {}
@@ -2585,6 +2775,11 @@ async function applyImportedSettingsNow() {
     }
   } catch (e) {}
 
+  try {
+    syncSensorHideUntickedButton();
+    applySensorSelectionFilter();
+  } catch (e) {}
+
   await persistCrossProcessSettingsFromSnapshot(parsed);
   closeImportSettingsModal();
 }
@@ -2594,6 +2789,7 @@ async function applyImportedSettingsAndReload() {
   if (!modal) return;
   let parsed = {};
   try { parsed = JSON.parse(modal.dataset.parsed || '{}'); } catch (e) { parsed = {}; }
+  parsed = normalizeEnhancedAdministratorSnapshot(parsed);
 
   Object.keys(parsed || {}).forEach((k) => {
     try {
@@ -2606,6 +2802,7 @@ async function applyImportedSettingsAndReload() {
     } catch (e) {}
   });
   await persistCrossProcessSettingsFromSnapshot(parsed);
+  await prepareSensorCollectorForReload();
   location.reload();
 }
 
@@ -2647,6 +2844,139 @@ function setSettingsGroupExpanded(group, toggleButton, expanded) {
   toggleButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
 }
 
+const SETTINGS_GROUP_PRESENTATION = {
+  Appearance: {
+    icon: 'bi-palette2',
+    description: 'Theme, typography, dashboard layout and overlay'
+  },
+  Monitoring: {
+    icon: 'bi-activity',
+    description: 'Sources, sensor visibility, ordering and alerts'
+  },
+  'Backup / Restore': {
+    icon: 'bi-shield-check',
+    description: 'Profiles, settings import and export'
+  },
+  Connectivity: {
+    icon: 'bi-broadcast',
+    description: 'Web Monitor and Discord presence'
+  },
+  'App Behavior': {
+    icon: 'bi-window-stack',
+    description: 'Startup, system tray and application updates'
+  }
+};
+
+function setupSettingsSearch() {
+  const sidebar = document.querySelector('.sidebar');
+  const input = document.getElementById('settingsSearchInput');
+  const clearButton = document.getElementById('settingsSearchClearBtn');
+  const status = document.getElementById('settingsSearchStatus');
+  if (!sidebar || !input || input.dataset.settingsSearchReady === 'true') return;
+
+  const groups = Array.from(sidebar.querySelectorAll('.settings-group'));
+  let searchActive = false;
+
+  const restoreAccordionState = () => {
+    groups.forEach((group) => {
+      const groupToggle = group.querySelector(':scope > .settings-group-toggle-btn');
+      const wasCollapsed = group.dataset.searchWasCollapsed === 'true';
+      group.classList.toggle('is-collapsed', wasCollapsed);
+      if (groupToggle) groupToggle.setAttribute('aria-expanded', wasCollapsed ? 'false' : 'true');
+      delete group.dataset.searchWasCollapsed;
+      group.classList.remove('is-settings-search-hidden', 'is-settings-search-match');
+
+      group.querySelectorAll('.settings-section').forEach((section) => {
+        const sectionToggle = section.querySelector(':scope > .settings-toggle-btn');
+        const sectionWasCollapsed = section.dataset.searchWasCollapsed === 'true';
+        section.classList.toggle('is-collapsed', sectionWasCollapsed);
+        if (sectionToggle) sectionToggle.setAttribute('aria-expanded', sectionWasCollapsed ? 'false' : 'true');
+        delete section.dataset.searchWasCollapsed;
+        section.classList.remove('is-settings-search-hidden', 'is-settings-search-match');
+      });
+    });
+  };
+
+  const applyFilter = () => {
+    const query = normalizeSensorSearchText(input.value);
+    const hasQuery = query.length > 0;
+
+    if (hasQuery && !searchActive) {
+      groups.forEach((group) => {
+        group.dataset.searchWasCollapsed = group.classList.contains('is-collapsed') ? 'true' : 'false';
+        group.querySelectorAll('.settings-section').forEach((section) => {
+          section.dataset.searchWasCollapsed = section.classList.contains('is-collapsed') ? 'true' : 'false';
+        });
+      });
+    } else if (!hasQuery && searchActive) {
+      restoreAccordionState();
+    }
+
+    searchActive = hasQuery;
+    document.body.classList.toggle('settings-searching', hasQuery);
+    if (clearButton) clearButton.hidden = !hasQuery;
+
+    if (!hasQuery) {
+      if (status) {
+        status.hidden = true;
+        status.textContent = '';
+      }
+      return;
+    }
+
+    let matchingSections = 0;
+    groups.forEach((group) => {
+      const groupToggle = group.querySelector(':scope > .settings-group-toggle-btn');
+      const groupTitle = normalizeSensorSearchText(groupToggle?.querySelector('.settings-group-toggle-title')?.textContent || '');
+      const groupDescription = normalizeSensorSearchText(groupToggle?.querySelector('.settings-group-toggle-description')?.textContent || '');
+      const groupMatches = groupTitle.includes(query) || groupDescription.includes(query);
+      let visibleSections = 0;
+
+      group.querySelectorAll('.settings-section').forEach((section) => {
+        const sectionText = normalizeSensorSearchText(section.textContent);
+        const matches = groupMatches || sectionText.includes(query);
+        section.classList.toggle('is-settings-search-hidden', !matches);
+        section.classList.toggle('is-settings-search-match', matches && !groupMatches);
+        if (!matches) return;
+        visibleSections += 1;
+        matchingSections += 1;
+        if (!groupMatches) {
+          const sectionToggle = section.querySelector(':scope > .settings-toggle-btn');
+          if (sectionToggle) setSettingsSectionExpanded(section, sectionToggle, true);
+        }
+      });
+
+      const groupVisible = visibleSections > 0;
+      group.classList.toggle('is-settings-search-hidden', !groupVisible);
+      group.classList.toggle('is-settings-search-match', groupMatches);
+      if (groupVisible && groupToggle) setSettingsGroupExpanded(group, groupToggle, true);
+    });
+
+    if (status) {
+      status.hidden = false;
+      status.textContent = matchingSections === 0
+        ? 'No settings found'
+        : `${matchingSections} matching ${matchingSections === 1 ? 'section' : 'sections'}`;
+    }
+  };
+
+  input.dataset.settingsSearchReady = 'true';
+  input.addEventListener('input', applyFilter);
+  input.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !input.value) return;
+    event.preventDefault();
+    input.value = '';
+    applyFilter();
+  });
+  if (clearButton) {
+    clearButton.addEventListener('click', () => {
+      input.value = '';
+      applyFilter();
+      input.focus();
+    });
+  }
+}
+
 function setupSettingsGroupAccordion() {
   const groups = Array.from(document.querySelectorAll('.sidebar .settings-group'));
   if (!groups.length) return;
@@ -2672,7 +3002,16 @@ function setupSettingsGroupAccordion() {
     const toggleButton = document.createElement('button');
     toggleButton.type = 'button';
     toggleButton.className = 'settings-group-toggle-btn';
-    toggleButton.innerHTML = `<span class="settings-group-toggle-title">${escapeHtml(groupTitle)}</span><span class="settings-group-toggle-icon" aria-hidden="true">▾</span>`;
+    const presentation = SETTINGS_GROUP_PRESENTATION[groupTitle] || { icon: 'bi-sliders2-vertical', description: 'Application settings' };
+    toggleButton.innerHTML = `
+      <span class="settings-group-toggle-main">
+        <span class="settings-group-toggle-mark"><i class="bi ${escapeHtml(presentation.icon)}" aria-hidden="true"></i></span>
+        <span class="settings-group-toggle-copy">
+          <span class="settings-group-toggle-title">${escapeHtml(groupTitle)}</span>
+          <span class="settings-group-toggle-description">${escapeHtml(presentation.description)}</span>
+        </span>
+      </span>
+      <span class="settings-group-toggle-icon" aria-hidden="true"><i class="bi bi-chevron-down"></i></span>`;
 
     const isExpanded = savedState[groupKey] !== undefined ? !!savedState[groupKey] : true;
     setSettingsGroupExpanded(group, toggleButton, isExpanded);
@@ -2832,17 +3171,22 @@ function setupSidebarResize() {
 
 function applyWindowSizes() {
   const sizes = loadWindowSizes();
-  const layoutPreset = getActiveLayoutConfig(localStorage.getItem(LAYOUT_PRESET_KEY) || DEFAULT_LAYOUT_PRESET);
+  const layoutPresetId = getSelectedLayoutPreset();
+  const layoutPreset = getActiveLayoutConfig(layoutPresetId);
+  const isCustomLayout = layoutPresetId === 'custom';
   const container = document.getElementById('statsContainer');
   const containerStyles = container ? getComputedStyle(container) : null;
-  const columns = containerStyles
+  const measuredColumns = containerStyles
     ? Math.max(1, containerStyles.gridTemplateColumns.split(' ').filter((track) => (parseFloat(track) || 0) > 1).length)
     : 1;
+  const columns = isCustomLayout ? CUSTOM_LAYOUT_COLUMNS : measuredColumns;
   const gap = containerStyles ? (parseFloat(containerStyles.columnGap || containerStyles.gap || '14') || 14) : 14;
   const containerWidth = container ? container.clientWidth : window.innerWidth;
-  const columnWidth = Math.max(120, (containerWidth - (gap * (columns - 1))) / columns);
+  const columnWidth = Math.max(isCustomLayout ? 1 : 120, (containerWidth - (gap * (columns - 1))) / columns);
   const minCardWidthPx = layoutPreset.minCardWidth;
   const minSpan = Math.max(1, Math.ceil((minCardWidthPx + gap) / (columnWidth + gap)));
+  const defaultCardWidthPx = Math.max(minCardWidthPx, Number(layoutPreset.defaultCardWidth) || minCardWidthPx);
+  const defaultSpan = Math.max(minSpan, Math.ceil((defaultCardWidthPx + gap) / (columnWidth + gap)));
   let changed = false;
 
   const cards = document.querySelectorAll('.sensor-group');
@@ -2853,9 +3197,21 @@ function applyWindowSizes() {
     const savedWidth = Number(typeof savedEntry === 'object' ? savedEntry.width : NaN);
 
     if (Number.isFinite(savedHeight) && savedHeight >= 220 && savedHeight <= 900) {
-      card.style.height = `${savedHeight}px`;
+      if (isCustomLayout) {
+        const rowSpan = Math.max(1, Math.round((savedHeight + gap) / (CUSTOM_LAYOUT_ROW_HEIGHT + gap)));
+        card.style.gridRow = `span ${rowSpan}`;
+        card.style.height = 'auto';
+      } else {
+        card.style.removeProperty('grid-row');
+        card.style.height = `${savedHeight}px`;
+      }
+    } else if (isCustomLayout) {
+      const rowSpan = Math.max(1, Math.round((layoutPreset.cardHeight + gap) / (CUSTOM_LAYOUT_ROW_HEIGHT + gap)));
+      card.style.gridRow = `span ${rowSpan}`;
+      card.style.height = 'auto';
     } else {
       card.style.removeProperty('height');
+      card.style.removeProperty('grid-row');
     }
 
     let nextSpan = NaN;
@@ -2868,6 +3224,8 @@ function applyWindowSizes() {
       }
     } else if (Number.isFinite(savedSpan) && savedSpan >= 1) {
       nextSpan = savedSpan;
+    } else if (isCustomLayout) {
+      nextSpan = defaultSpan;
     }
 
     if (Number.isFinite(nextSpan)) {
@@ -2922,8 +3280,11 @@ function setupWindowResize() {
         : 1;
       const gap = containerStyles ? (parseFloat(containerStyles.columnGap || containerStyles.gap || '14') || 14) : 14;
       const containerWidth = container ? container.clientWidth : card.getBoundingClientRect().width;
-      const columnWidth = Math.max(120, (containerWidth - (gap * (columns - 1))) / columns);
-      const layoutPreset = getActiveLayoutConfig(localStorage.getItem(LAYOUT_PRESET_KEY) || DEFAULT_LAYOUT_PRESET);
+      const layoutPresetId = getSelectedLayoutPreset();
+      const isCustomLayout = layoutPresetId === 'custom';
+      const effectiveColumns = isCustomLayout ? CUSTOM_LAYOUT_COLUMNS : columns;
+      const columnWidth = Math.max(isCustomLayout ? 1 : 120, (containerWidth - (gap * (effectiveColumns - 1))) / effectiveColumns);
+      const layoutPreset = getActiveLayoutConfig(layoutPresetId);
       const minCardWidthPx = layoutPreset.minCardWidth;
       const minSpan = Math.max(1, Math.ceil((minCardWidthPx + gap) / (columnWidth + gap)));
 
@@ -2943,11 +3304,17 @@ function setupWindowResize() {
         const deltaX = moveEvent.clientX - startX;
         const delta = moveEvent.clientY - startY;
         const nextHeight = snapToStep(startHeight + delta, heightSnap, minHeight, maxHeight);
-        card.style.height = `${Math.round(nextHeight)}px`;
+        if (isCustomLayout) {
+          const nextRowSpan = Math.max(1, Math.round((nextHeight + gap) / (CUSTOM_LAYOUT_ROW_HEIGHT + gap)));
+          card.style.gridRow = `span ${nextRowSpan}`;
+          card.style.height = 'auto';
+        } else {
+          card.style.height = `${Math.round(nextHeight)}px`;
+        }
 
         const desiredWidth = snapToStep(Math.max(columnWidth, startWidth + deltaX), widthSnap, columnWidth, containerWidth);
         const rawSpan = Math.round((desiredWidth + gap) / (columnWidth + gap));
-        const nextSpan = Math.min(Math.max(minSpan, rawSpan || startSpan), columns);
+        const nextSpan = Math.min(Math.max(minSpan, rawSpan || startSpan), effectiveColumns);
         card.style.gridColumn = `span ${nextSpan}`;
       };
 
@@ -3030,10 +3397,6 @@ function setupWindowDragAndDrop() {
     card.draggable = true;
 
     card.addEventListener('dragstart', (event) => {
-      if (summaryModeEnabled) {
-        event.preventDefault();
-        return;
-      }
       draggedId = card.id;
       draggedCard = card;
       dropTargetId = null;
@@ -3052,7 +3415,6 @@ function setupWindowDragAndDrop() {
   });
 
   container.addEventListener('dragover', (event) => {
-    if (summaryModeEnabled) return;
     event.preventDefault();
     if (!draggedId) return;
 
@@ -3063,14 +3425,16 @@ function setupWindowDragAndDrop() {
     } else {
       container.classList.remove('drag-over-end');
       const rect = targetCard.getBoundingClientRect();
-      const before = event.clientY < rect.top + (rect.height / 2);
+      const centerX = rect.left + (rect.width / 2);
+      const centerY = rect.top + (rect.height / 2);
+      const useHorizontalOrder = Math.abs(event.clientY - centerY) <= Math.min(72, rect.height * 0.3);
+      const before = useHorizontalOrder ? event.clientX < centerX : event.clientY < centerY;
       setDropIndicator(targetCard, before);
     }
     event.dataTransfer.dropEffect = 'move';
   });
 
   container.addEventListener('drop', (event) => {
-    if (summaryModeEnabled) return;
     event.preventDefault();
     if (!draggedId) return;
 
@@ -3237,7 +3601,7 @@ function normalizeOverlayHotkey(value) {
     });
   const keyRaw = parts[parts.length - 1];
   const key = String(keyRaw || '').trim();
-  
+
   if (!modifiers.every(mod => validModifiers.includes(mod.toLowerCase()))) return '';
   if (!key || key.length === 0) return '';
   if (['ctrl', 'alt', 'shift', 'meta', 'command', 'cmd'].includes(key.toLowerCase())) return '';
@@ -3461,6 +3825,15 @@ function updateOverlayToggleButton(enabled) {
   overlayToggleBtn.title = enabled ? 'Hide Overlay' : 'Show Overlay';
 }
 
+function updateOverlayRangeReadouts(settings) {
+  const groupSpacingValue = document.getElementById('overlayGroupSpacingValue');
+  const scaleValue = document.getElementById('overlayScaleValue');
+  const opacityValue = document.getElementById('overlayOpacityValue');
+  if (groupSpacingValue) groupSpacingValue.textContent = `${normalizeOverlayGroupSpacing(settings.groupSpacing)} px`;
+  if (scaleValue) scaleValue.textContent = `${normalizeOverlayScale(settings.scale)}%`;
+  if (opacityValue) opacityValue.textContent = `${normalizeOverlayOpacity(settings.opacity)}%`;
+}
+
 function applyOverlaySettings() {
   const settings = loadOverlaySettings();
   const textColorInput = document.getElementById('overlayTextColor');
@@ -3533,6 +3906,7 @@ function applyOverlaySettings() {
   if (overlayHotkeyInput) {
     overlayHotkeyInput.value = settings.hotkey;
   }
+  updateOverlayRangeReadouts(settings);
 
   updateOverlayToggleButton(settings.enabled);
 
@@ -3644,68 +4018,67 @@ function normalizeViewMode(mode) {
 function applyLayoutPreset(presetId, options = {}) {
   const persist = options.persist !== false;
   const resetCustomSizes = options.resetCustomSizes === true;
+  const mode = normalizeLayoutMode(options.mode || 'normal');
+  const keys = getLayoutStorageKeys(mode);
   const normalized = normalizeLayoutPreset(presetId);
-  const previous = normalizeLayoutPreset(localStorage.getItem(LAYOUT_PRESET_KEY) || DEFAULT_LAYOUT_PRESET);
-  const activeSizes = loadWindowSizes();
+  const previous = getSelectedLayoutPreset(mode);
+  const activeSizes = loadWindowSizes(mode);
   const hasActiveSizes = Object.keys(activeSizes).length > 0;
   const root = document.documentElement;
   let preset;
 
   if (normalized === 'custom') {
-    const hasStoredConfig = !!localStorage.getItem(CUSTOM_LAYOUT_CONFIG_KEY);
+    const hasStoredConfig = !!localStorage.getItem(keys.config);
     if (!hasStoredConfig) {
       const basePresetId = previous === 'custom' || previous === 'stacked' ? DEFAULT_LAYOUT_PRESET : previous;
-      preset = saveCustomLayoutConfig(getLayoutPreset(basePresetId), basePresetId);
+      preset = saveCustomLayoutConfig(getLayoutPreset(basePresetId), basePresetId, mode);
     } else {
-      preset = loadCustomLayoutConfig(previous);
+      preset = loadCustomLayoutConfig(previous, mode);
     }
 
     if (previous !== 'custom') {
-      const savedCustomSizes = loadCustomLayoutSizes();
+      const savedCustomSizes = loadCustomLayoutSizes(mode);
       if (Object.keys(savedCustomSizes).length > 0) {
-        localStorage.setItem(WINDOW_SIZE_KEY, JSON.stringify(savedCustomSizes));
+        localStorage.setItem(keys.sizes, JSON.stringify(savedCustomSizes));
       } else if (hasActiveSizes) {
-        saveCustomLayoutSizes(activeSizes);
+        saveCustomLayoutSizes(activeSizes, mode);
       }
     }
   } else {
     preset = getLayoutPreset(normalized);
     if (resetCustomSizes) {
       if (hasActiveSizes) {
-        saveCustomLayoutSizes(activeSizes);
-        if (!localStorage.getItem(CUSTOM_LAYOUT_CONFIG_KEY)) {
+        saveCustomLayoutSizes(activeSizes, mode);
+        if (!localStorage.getItem(keys.config)) {
           const basePresetId = previous === 'stacked' || previous === 'custom' ? DEFAULT_LAYOUT_PRESET : previous;
-          saveCustomLayoutConfig(getLayoutPreset(basePresetId), basePresetId);
+          saveCustomLayoutConfig(getLayoutPreset(basePresetId), basePresetId, mode);
         }
       }
-      localStorage.removeItem(WINDOW_SIZE_KEY);
-      document.querySelectorAll('.sensor-group').forEach((card) => {
-        card.style.removeProperty('grid-column');
-        card.style.removeProperty('height');
-        card.style.removeProperty('width');
-        card.style.removeProperty('justify-self');
-      });
+      localStorage.removeItem(keys.sizes);
     }
   }
 
-  root.style.setProperty('--layout-card-min-width', `${preset.minCardWidth}px`);
-  root.style.setProperty('--layout-card-height', `${preset.cardHeight}px`);
-  root.style.setProperty('--layout-card-gap', `${preset.gap}px`);
-  document.body.classList.toggle('layout-stacked', preset.stacked === true);
-  document.body.classList.toggle('layout-custom', normalized === 'custom');
-
   if (persist) {
-    localStorage.setItem(LAYOUT_PRESET_KEY, normalized);
+    localStorage.setItem(keys.preset, normalized);
   }
 
-  const select = document.getElementById('layoutPresetSelect');
+  const select = document.getElementById(mode === 'summary' ? 'summaryLayoutPresetSelect' : 'layoutPresetSelect');
   if (select && select.value !== normalized) {
     select.value = normalized;
   }
 
-  applyWindowSizes();
-  invalidateRenderGroupCache();
-  forceNextUiRender = true;
+  if (mode === getCurrentLayoutMode()) {
+    root.style.setProperty('--layout-card-min-width', `${preset.minCardWidth}px`);
+    root.style.setProperty('--layout-card-default-width', `${Number(preset.defaultCardWidth) || preset.minCardWidth}px`);
+    root.style.setProperty('--layout-card-height', `${preset.cardHeight}px`);
+    root.style.setProperty('--layout-card-gap', `${preset.gap}px`);
+    document.body.classList.toggle('layout-stacked', preset.stacked === true);
+    document.body.classList.toggle('layout-custom', normalized === 'custom');
+
+    applyWindowSizes();
+    invalidateRenderGroupCache();
+    forceNextUiRender = true;
+  }
 
   return normalized;
 }
@@ -3798,7 +4171,7 @@ function applySummaryCardLayout() {
 function syncCardInteractionState() {
   const cards = document.querySelectorAll('.sensor-group');
   cards.forEach((card) => {
-    card.draggable = !summaryModeEnabled;
+    card.draggable = true;
   });
 }
 
@@ -3879,7 +4252,12 @@ function applySummaryMode(enabled) {
   }
 
   applyWindowOrder();
-  applyWindowSizes();
+  const activeLayoutMode = getCurrentLayoutMode();
+  applyLayoutPreset(getSelectedLayoutPreset(activeLayoutMode), {
+    mode: activeLayoutMode,
+    persist: false,
+    resetCustomSizes: false
+  });
 
   syncCardInteractionState();
 
@@ -4439,6 +4817,24 @@ function normalizeSensorSearchText(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+function sensorHideUntickedEnabled() {
+  return localStorage.getItem(SENSOR_HIDE_UNTICKED_KEY) === 'true';
+}
+
+function syncSensorHideUntickedButton() {
+  const button = document.getElementById('sensorHideUntickedBtn');
+  if (!button) return;
+
+  const enabled = sensorHideUntickedEnabled();
+  button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+  button.title = enabled
+    ? 'Show every detected sensor'
+    : 'Hide sensors that are not ticked';
+  button.innerHTML = enabled
+    ? '<i class="bi bi-eye" aria-hidden="true"></i><span>Show All</span>'
+    : '<i class="bi bi-eye-slash" aria-hidden="true"></i><span>Hide Unticked</span>';
+}
+
 function applySensorSelectionFilter() {
   const input = document.getElementById('sensorSearchInput');
   const container = document.getElementById('sensorOptions');
@@ -4447,6 +4843,8 @@ function applySensorSelectionFilter() {
 
   const query = normalizeSensorSearchText(input.value);
   const hasQuery = !!query;
+  const hideUnticked = sensorHideUntickedEnabled();
+  const hasActiveFilter = hasQuery || hideUnticked;
   if (hasQuery && !sensorSearchSessionActive) sensorSearchCollapsedGroups.clear();
   if (!hasQuery && sensorSearchSessionActive) sensorSearchCollapsedGroups.clear();
   sensorSearchSessionActive = hasQuery;
@@ -4461,7 +4859,10 @@ function applySensorSelectionFilter() {
 
     rows.forEach((row) => {
       const rowText = normalizeSensorSearchText(row.dataset.sensorSearch || row.textContent);
-      const matches = !hasQuery || groupMatches || rowText.includes(query);
+      const searchMatches = !hasQuery || groupMatches || rowText.includes(query);
+      const selectionInput = row.querySelector('input[data-sensor-id]');
+      const isTicked = !!(selectionInput && selectionInput.checked);
+      const matches = searchMatches && (!hideUnticked || isTicked);
       row.classList.toggle('is-search-hidden', !matches);
       row.setAttribute('aria-hidden', matches ? 'false' : 'true');
       row.draggable = matches;
@@ -4469,7 +4870,7 @@ function applySensorSelectionFilter() {
     });
 
     const searchCollapsed = hasQuery && sensorSearchCollapsedGroups.has(groupKey);
-    block.classList.toggle('is-search-hidden', hasQuery && matchingRows === 0);
+    block.classList.toggle('is-search-hidden', hasActiveFilter && matchingRows === 0);
     block.classList.toggle('is-searching', hasQuery);
     block.classList.toggle('is-search-collapsed', searchCollapsed);
 
@@ -4480,11 +4881,16 @@ function applySensorSelectionFilter() {
     }
 
     const count = block.querySelector('.sensor-category-count');
-    if (count) count.textContent = hasQuery ? `${matchingRows}/${rows.length}` : String(rows.length);
+    if (count) count.textContent = hasActiveFilter ? `${matchingRows}/${rows.length}` : String(rows.length);
     visibleSensorCount += matchingRows;
   });
 
-  if (emptyState) emptyState.hidden = !hasQuery || visibleSensorCount > 0;
+  if (emptyState) {
+    emptyState.textContent = hideUnticked
+      ? (hasQuery ? 'No ticked sensors match your search.' : 'No ticked sensors to show.')
+      : 'No sensors match your search.';
+    emptyState.hidden = !hasActiveFilter || visibleSensorCount > 0;
+  }
 }
 
 function renderSensorOptions(groupedSensors) {
@@ -4515,6 +4921,8 @@ function renderSensorOptions(groupedSensors) {
           const hasAlertEnabled = !!(sensorAlertRules[sensor.id] && sensorAlertRules[sensor.id].enabled !== false);
           const disabled = groupEnabled ? '' : 'disabled';
           const label = escapeHtml(getFinalDisplayLabel(sensor));
+          const hasCustomName = String(sensorCustomNames[sensor.id] || '').trim().length > 0;
+          const resetNameDisabled = hasCustomName ? '' : 'disabled';
           const searchText = escapeHtml(`${groupLabel} ${sensor.name || ''} ${getFinalDisplayLabel(sensor)} ${sensor.hardwareType || ''} ${sensor.sensorType || ''} ${sensor.units || ''}`);
           return `
             <div class="sensor-item-row" draggable="true" data-order-group="${group}" data-order-sensor-id="${sensor.id}" data-sensor-search="${searchText}">
@@ -4523,6 +4931,7 @@ function renderSensorOptions(groupedSensors) {
               <div class="sensor-item-actions">
                 <label class="checkbox-label overlay-checkbox" title="Show in overlay"><input type="checkbox" data-overlay-sensor-id="${sensor.id}" ${overlayChecked} ${disabled}><span>Overlay</span></label>
                 <button type="button" class="sensor-order-btn sensor-rename-btn" data-rename-sensor-id="${sensor.id}" aria-label="Rename ${label}" title="Rename sensor">✎</button>
+                <button type="button" class="sensor-order-btn sensor-reset-name-btn" data-reset-sensor-name-id="${sensor.id}" aria-label="Reset ${label} name" title="Reset this sensor name" ${resetNameDisabled}><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i></button>
               </div>
             </div>
           `;
@@ -4555,18 +4964,16 @@ function renderSensorOptions(groupedSensors) {
 }
 
 function listAlertCandidateSensors(groupedSensors) {
-  const sensors = [];
-  SENSOR_GROUP_ORDER.forEach((group) => {
-    (groupedSensors[group] || []).forEach((sensor) => {
-      if (!sensor || !sensor.id) return;
-      sensors.push({
+  return listEnabledAlertSensors(
+    groupedSensors,
+    SENSOR_GROUP_ORDER,
+    sensorSelection,
+    sensorCategorySelection
+  ).map(({ group, sensor }) => ({
         id: String(sensor.id),
         label: `${SENSOR_GROUP_LABELS[group] || group}: ${getFinalDisplayLabel(sensor)}`,
         sensor
-      });
-    });
-  });
-  return sensors;
+      }));
 }
 
 function refreshSensorAlertEditor(groupedSensors) {
@@ -4580,6 +4987,7 @@ function refreshSensorAlertEditor(groupedSensors) {
 
   const previousValue = sensorSelect.value;
   const candidates = listAlertCandidateSensors(groupedSensors);
+  sensorSelect._alertCandidates = candidates;
   sensorSelect.innerHTML = '<option value="">Select sensor...</option>';
   candidates.forEach((entry) => {
     const option = document.createElement('option');
@@ -4594,7 +5002,8 @@ function refreshSensorAlertEditor(groupedSensors) {
 
   const applyRuleToEditor = () => {
     const sensorId = String(sensorSelect.value || '').trim();
-    const selectedSensorEntry = candidates.find((entry) => entry.id === sensorId);
+    const currentCandidates = Array.isArray(sensorSelect._alertCandidates) ? sensorSelect._alertCandidates : [];
+    const selectedSensorEntry = currentCandidates.find((entry) => entry.id === sensorId);
     if (!sensorId || !selectedSensorEntry) {
       if (enabledToggle) enabledToggle.checked = false;
       if (operatorSelect) operatorSelect.value = '>=';
@@ -4630,8 +5039,46 @@ function buildLiveSensorCatalogSignature(groupedSensors) {
   return parts.join('|');
 }
 
-function rebuildCachedSensorCatalog(liveGroupedSensors) {
-  const displayNamedGrouped = createDisplayNamedGroupedSensors(liveGroupedSensors);
+function savePersistedSensorCatalog(groupedSensors) {
+  try {
+    const payload = createSensorCatalogCachePayload(groupedSensors, SENSOR_GROUP_ORDER);
+    localStorage.setItem(SENSOR_CATALOG_CACHE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    // Catalog caching is only a startup convenience; live discovery remains authoritative.
+  }
+}
+
+function loadPersistedSensorCatalog() {
+  try {
+    return parseSensorCatalogCache(localStorage.getItem(SENSOR_CATALOG_CACHE_KEY), SENSOR_GROUP_ORDER);
+  } catch (error) {
+    return null;
+  }
+}
+
+function restorePersistedSensorCatalogForStartup() {
+  if (loadProviderSelection().enhanced !== true) return;
+  const restored = loadPersistedSensorCatalog();
+  if (!restored || !SENSOR_GROUP_ORDER.some((group) => (restored[group] || []).length > 0)) return;
+
+  cachedOrderedSensorCatalog = applySensorOrderToGroupedSensors(restored);
+  cachedCatalogPreservingMissingSensors = true;
+  sensorCatalogSignature = '';
+  renderSensorOptions(cachedOrderedSensorCatalog);
+  latestSelectedGroupedSensors = filterSelectedSensors(cachedOrderedSensorCatalog);
+  prepareSelectedSensorsForRender(latestSelectedGroupedSensors);
+  renderAllDynamicGroups(latestSelectedGroupedSensors, { force: true });
+}
+
+function rebuildCachedSensorCatalog(liveGroupedSensors, options = {}) {
+  let displayNamedGrouped = createDisplayNamedGroupedSensors(liveGroupedSensors);
+  if (options.preserveMissing === true) {
+    displayNamedGrouped = mergeLiveAndCachedCatalog(
+      displayNamedGrouped,
+      cachedOrderedSensorCatalog,
+      SENSOR_GROUP_ORDER
+    );
+  }
   const orderedGrouped = applySensorOrderToGroupedSensors(displayNamedGrouped);
   renderSensorOptions(orderedGrouped);
 
@@ -4640,9 +5087,10 @@ function rebuildCachedSensorCatalog(liveGroupedSensors) {
     nextCache[group] = (orderedGrouped[group] || []).map((sensor) => ({ ...sensor }));
   });
   cachedOrderedSensorCatalog = nextCache;
+  if (options.persist === true) savePersistedSensorCatalog(nextCache);
 }
 
-function buildSelectedSensorsFromCachedCatalog(liveGroupedSensors) {
+function buildSelectedSensorsFromCachedCatalog(liveGroupedSensors, options = {}) {
   const selected = createEmptyGroupedBuckets();
   const liveById = new Map();
 
@@ -4665,7 +5113,14 @@ function buildSelectedSensorsFromCachedCatalog(liveGroupedSensors) {
       .filter((sensor) => !!sensorSelection[sensor.id])
       .map((catalogSensor) => {
         const live = liveById.get(catalogSensor.id);
-        if (!live) return null;
+        if (!live) {
+          if (options.preserveMissing !== true) return null;
+          return {
+            ...catalogSensor,
+            value: SENSOR_DETECTING_VALUE,
+            formatted: SENSOR_DETECTING_VALUE
+          };
+        }
         return {
           ...live,
           name: catalogSensor.name || live.name,
@@ -5004,6 +5459,7 @@ function applyCustomSensorNamesRefresh() {
   prepareSelectedSensorsForRender(latestSelectedGroupedSensors || createEmptyGroupedBuckets());
   renderSensorOptions(cachedOrderedSensorCatalog);
   renderAllDynamicGroups(latestSelectedGroupedSensors || createEmptyGroupedBuckets(), { force: true });
+  publishWebMonitorPayload(latestWebPayload.mode || 'builtin', latestWebPayload.external || 'N/A');
 }
 
 function setCustomSensorName(sensorId, name) {
@@ -5015,6 +5471,13 @@ function setCustomSensorName(sensorId, name) {
   } else {
     sensorCustomNames[id] = nextName.slice(0, 80);
   }
+  applyCustomSensorNamesRefresh();
+}
+
+function resetCustomSensorName(sensorId) {
+  const id = String(sensorId || '').trim();
+  if (!id || !Object.prototype.hasOwnProperty.call(sensorCustomNames, id)) return;
+  delete sensorCustomNames[id];
   applyCustomSensorNamesRefresh();
 }
 
@@ -5134,7 +5597,10 @@ const BASE_COLOR_DEFAULTS = {
   graph: '#4d9fff',
   blockHeader: '#0066ff',
   outline: '#444444',
-  background: '#1a1a1a'
+  background: '#1a1a1a',
+  settingsPanel: '#1a1a1a',
+  settingsPanelAccent: '#0066ff',
+  settingsPanelIcon: '#3f95ff'
 };
 const THEME_ACCENT_LIGHT_MAP = {
   blue: '#3f95ff',
@@ -5162,7 +5628,9 @@ function getThemeDefaults(themeName) {
     sensorValue: accentLight,
     icon: accentLight,
     graph: accentLight,
-    blockHeader: accent
+    blockHeader: accent,
+    settingsPanelAccent: accent,
+    settingsPanelIcon: accentLight
   };
 }
 
@@ -5199,7 +5667,10 @@ const CustomColorManager = {
         graph: normalizeHexColor(parsed.graph, defaults.graph),
         blockHeader: normalizeHexColor(parsed.blockHeader, defaults.blockHeader),
         outline: normalizeHexColor(parsed.outline, defaults.outline),
-        background: normalizeHexColor(parsed.background, defaults.background)
+        background: normalizeHexColor(parsed.background, defaults.background),
+        settingsPanel: normalizeHexColor(parsed.settingsPanel, defaults.settingsPanel),
+        settingsPanelAccent: normalizeHexColor(parsed.settingsPanelAccent, defaults.settingsPanelAccent),
+        settingsPanelIcon: normalizeHexColor(parsed.settingsPanelIcon, defaults.settingsPanelIcon)
       };
     } catch (error) {
       return { ...defaults };
@@ -5215,7 +5686,10 @@ const CustomColorManager = {
       graph: normalizeHexColor(colors && colors.graph, defaults.graph),
       blockHeader: normalizeHexColor(colors && colors.blockHeader, defaults.blockHeader),
       outline: normalizeHexColor(colors && colors.outline, defaults.outline),
-      background: normalizeHexColor(colors && colors.background, defaults.background)
+      background: normalizeHexColor(colors && colors.background, defaults.background),
+      settingsPanel: normalizeHexColor(colors && colors.settingsPanel, defaults.settingsPanel),
+      settingsPanelAccent: normalizeHexColor(colors && colors.settingsPanelAccent, defaults.settingsPanelAccent),
+      settingsPanelIcon: normalizeHexColor(colors && colors.settingsPanelIcon, defaults.settingsPanelIcon)
     };
     localStorage.setItem(CUSTOM_COLORS_KEY, JSON.stringify(normalized));
   },
@@ -5229,7 +5703,10 @@ const CustomColorManager = {
       graph: normalizeHexColor(colors && colors.graph, defaults.graph),
       blockHeader: normalizeHexColor(colors && colors.blockHeader, defaults.blockHeader),
       outline: normalizeHexColor(colors && colors.outline, defaults.outline),
-      background: normalizeHexColor(colors && colors.background, defaults.background)
+      background: normalizeHexColor(colors && colors.background, defaults.background),
+      settingsPanel: normalizeHexColor(colors && colors.settingsPanel, defaults.settingsPanel),
+      settingsPanelAccent: normalizeHexColor(colors && colors.settingsPanelAccent, defaults.settingsPanelAccent),
+      settingsPanelIcon: normalizeHexColor(colors && colors.settingsPanelIcon, defaults.settingsPanelIcon)
     };
 
     document.body.style.setProperty('--text-primary', normalized.font);
@@ -5243,6 +5720,9 @@ const CustomColorManager = {
     document.body.style.setProperty('--bg-primary', normalized.background);
     document.body.style.setProperty('--bg-secondary', adjustHexColor(normalized.background, 19));
     document.body.style.setProperty('--bg-tertiary', adjustHexColor(normalized.background, 32));
+    document.body.style.setProperty('--settings-panel-color', normalized.settingsPanel);
+    document.body.style.setProperty('--settings-panel-accent-color', normalized.settingsPanelAccent);
+    document.body.style.setProperty('--settings-panel-icon-color', normalized.settingsPanelIcon);
   },
   resetToThemeDefaults(themeName) {
     const defaults = getThemeDefaults(themeName || localStorage.getItem('theme') || 'blue');
@@ -5261,7 +5741,9 @@ const ThemeManager = {
       sensorValue: nextDefaults.sensorValue,
       icon: nextDefaults.icon,
       graph: nextDefaults.graph,
-      blockHeader: nextDefaults.blockHeader
+      blockHeader: nextDefaults.blockHeader,
+      settingsPanelAccent: nextDefaults.settingsPanelAccent,
+      settingsPanelIcon: nextDefaults.settingsPanelIcon
     };
 
     document.body.classList.remove('theme-blue', 'theme-purple', 'theme-green', 'theme-red', 'theme-cyan', 'theme-orange');
@@ -5280,6 +5762,7 @@ const SettingsManager = {
     sensorCustomNames = loadSensorCustomNames();
     setupSettingsGroupAccordion();
     setupSettingsAccordion();
+    setupSettingsSearch();
 
     const customFontColorInput = document.getElementById('customFontColor');
     const customSensorNameColorInput = document.getElementById('customSensorNameColor');
@@ -5289,12 +5772,15 @@ const SettingsManager = {
     const customBlockHeaderColorInput = document.getElementById('customBlockHeaderColor');
     const customOutlineColorInput = document.getElementById('customOutlineColor');
     const customBackgroundColorInput = document.getElementById('customBackgroundColor');
+    const customSettingsPanelColorInput = document.getElementById('customSettingsPanelColor');
+    const customSettingsPanelAccentColorInput = document.getElementById('customSettingsPanelAccentColor');
+    const customSettingsPanelIconColorInput = document.getElementById('customSettingsPanelIconColor');
     const resetThemeColorsBtn = document.getElementById('resetThemeColorsBtn');
     let customColors = CustomColorManager.getColors();
     CustomColorManager.applyColors(customColors);
 
     const syncCustomInputsFromColors = (colors) => {
-      if (!customFontColorInput || !customSensorNameColorInput || !customSensorValueColorInput || !customIconColorInput || !customGraphColorInput || !customBlockHeaderColorInput || !customOutlineColorInput || !customBackgroundColorInput) {
+      if (!customFontColorInput || !customSensorNameColorInput || !customSensorValueColorInput || !customIconColorInput || !customGraphColorInput || !customBlockHeaderColorInput || !customOutlineColorInput || !customBackgroundColorInput || !customSettingsPanelColorInput || !customSettingsPanelAccentColorInput || !customSettingsPanelIconColorInput) {
         return;
       }
       customFontColorInput.value = colors.font;
@@ -5305,6 +5791,9 @@ const SettingsManager = {
       customBlockHeaderColorInput.value = colors.blockHeader;
       customOutlineColorInput.value = colors.outline;
       customBackgroundColorInput.value = colors.background;
+      customSettingsPanelColorInput.value = colors.settingsPanel;
+      customSettingsPanelAccentColorInput.value = colors.settingsPanelAccent;
+      customSettingsPanelIconColorInput.value = colors.settingsPanelIcon;
     };
 
     const themeButtons = document.querySelectorAll('.theme-btn');
@@ -5326,7 +5815,7 @@ const SettingsManager = {
       });
     });
 
-    if (customFontColorInput && customSensorNameColorInput && customSensorValueColorInput && customIconColorInput && customGraphColorInput && customBlockHeaderColorInput && customOutlineColorInput && customBackgroundColorInput) {
+    if (customFontColorInput && customSensorNameColorInput && customSensorValueColorInput && customIconColorInput && customGraphColorInput && customBlockHeaderColorInput && customOutlineColorInput && customBackgroundColorInput && customSettingsPanelColorInput && customSettingsPanelAccentColorInput && customSettingsPanelIconColorInput) {
       syncCustomInputsFromColors(customColors);
 
       const syncCustomColors = () => {
@@ -5338,7 +5827,10 @@ const SettingsManager = {
           graph: normalizeHexColor(customGraphColorInput.value, BASE_COLOR_DEFAULTS.graph),
           blockHeader: normalizeHexColor(customBlockHeaderColorInput.value, BASE_COLOR_DEFAULTS.blockHeader),
           outline: normalizeHexColor(customOutlineColorInput.value, BASE_COLOR_DEFAULTS.outline),
-          background: normalizeHexColor(customBackgroundColorInput.value, BASE_COLOR_DEFAULTS.background)
+          background: normalizeHexColor(customBackgroundColorInput.value, BASE_COLOR_DEFAULTS.background),
+          settingsPanel: normalizeHexColor(customSettingsPanelColorInput.value, BASE_COLOR_DEFAULTS.settingsPanel),
+          settingsPanelAccent: normalizeHexColor(customSettingsPanelAccentColorInput.value, BASE_COLOR_DEFAULTS.settingsPanelAccent),
+          settingsPanelIcon: normalizeHexColor(customSettingsPanelIconColorInput.value, BASE_COLOR_DEFAULTS.settingsPanelIcon)
         };
         CustomColorManager.saveColors(customColors);
         CustomColorManager.applyColors(customColors);
@@ -5352,6 +5844,9 @@ const SettingsManager = {
       customBlockHeaderColorInput.addEventListener('input', syncCustomColors);
       customOutlineColorInput.addEventListener('input', syncCustomColors);
       customBackgroundColorInput.addEventListener('input', syncCustomColors);
+      customSettingsPanelColorInput.addEventListener('input', syncCustomColors);
+      customSettingsPanelAccentColorInput.addEventListener('input', syncCustomColors);
+      customSettingsPanelIconColorInput.addEventListener('input', syncCustomColors);
 
       if (resetThemeColorsBtn) {
         resetThemeColorsBtn.addEventListener('click', () => {
@@ -5377,10 +5872,20 @@ const SettingsManager = {
     const layoutPresetSelect = document.getElementById('layoutPresetSelect');
     if (layoutPresetSelect) {
       const savedLayoutPreset = normalizeLayoutPreset(localStorage.getItem(LAYOUT_PRESET_KEY) || DEFAULT_LAYOUT_PRESET);
-      applyLayoutPreset(savedLayoutPreset, { persist: true, resetCustomSizes: false });
+      applyLayoutPreset(savedLayoutPreset, { mode: 'normal', persist: true, resetCustomSizes: false });
       layoutPresetSelect.addEventListener('change', (event) => {
         const nextLayout = normalizeLayoutPreset(event.target.value);
-        applyLayoutPreset(nextLayout, { persist: true, resetCustomSizes: nextLayout !== 'custom' });
+        applyLayoutPreset(nextLayout, { mode: 'normal', persist: true, resetCustomSizes: nextLayout !== 'custom' });
+      });
+    }
+
+    const summaryLayoutPresetSelect = document.getElementById('summaryLayoutPresetSelect');
+    if (summaryLayoutPresetSelect) {
+      const savedSummaryLayoutPreset = normalizeLayoutPreset(localStorage.getItem(SUMMARY_LAYOUT_PRESET_KEY) || DEFAULT_LAYOUT_PRESET);
+      applyLayoutPreset(savedSummaryLayoutPreset, { mode: 'summary', persist: true, resetCustomSizes: false });
+      summaryLayoutPresetSelect.addEventListener('change', (event) => {
+        const nextLayout = normalizeLayoutPreset(event.target.value);
+        applyLayoutPreset(nextLayout, { mode: 'summary', persist: true, resetCustomSizes: nextLayout !== 'custom' });
       });
     }
 
@@ -5402,15 +5907,18 @@ const SettingsManager = {
     });
 
     const overlayLineLimitsToggle = document.getElementById('overlayLineLimitsToggle');
+    const overlayLineLimitsToggleText = document.getElementById('overlayLineLimitsToggleText');
     const overlayLineLimitGrid = document.getElementById('overlayLineLimitGrid');
     if (overlayLineLimitsToggle && overlayLineLimitGrid) {
       const expanded = String(localStorage.getItem(OVERLAY_LINE_LIMITS_EXPANDED_KEY) || '').toLowerCase() === 'true';
       overlayLineLimitGrid.classList.toggle('is-collapsed', !expanded);
-      overlayLineLimitsToggle.textContent = expanded ? 'Advanced: Hide' : 'Advanced: Show';
+      overlayLineLimitsToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      if (overlayLineLimitsToggleText) overlayLineLimitsToggleText.textContent = expanded ? 'Hide' : 'Show';
       overlayLineLimitsToggle.addEventListener('click', () => {
         const nextExpanded = overlayLineLimitGrid.classList.contains('is-collapsed');
         overlayLineLimitGrid.classList.toggle('is-collapsed', !nextExpanded);
-        overlayLineLimitsToggle.textContent = nextExpanded ? 'Advanced: Hide' : 'Advanced: Show';
+        overlayLineLimitsToggle.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
+        if (overlayLineLimitsToggleText) overlayLineLimitsToggleText.textContent = nextExpanded ? 'Hide' : 'Show';
         localStorage.setItem(OVERLAY_LINE_LIMITS_EXPANDED_KEY, nextExpanded ? 'true' : 'false');
       });
     }
@@ -5543,7 +6051,7 @@ const SettingsManager = {
       showDrives: 'drivesGroup',
       showExternal: 'externalGroup'
     };
-    
+
     localStorage.setItem('detectionMode', 'builtin');
 
     const setupGuideHeaderBtn = document.getElementById('setupGuideHeaderBtn');
@@ -5597,7 +6105,7 @@ const SettingsManager = {
           reader.onload = () => {
             try {
               const parsed = JSON.parse(String(reader.result || '{}'));
-              const data = parsed && parsed.data ? parsed.data : parsed;
+              const data = normalizeEnhancedAdministratorSnapshot(parsed && parsed.data ? parsed.data : parsed);
 
               // prepare a summary for the modal
               const summary = {};
@@ -5831,10 +6339,21 @@ const SettingsManager = {
           alert('Selected profile is invalid or missing snapshot data.');
           return;
         }
+        const profileSnapshot = normalizeEnhancedAdministratorSnapshot(profile.snapshot);
+        if (JSON.stringify(profileSnapshot) !== JSON.stringify(profile.snapshot)) {
+          profile.snapshot = profileSnapshot;
+          profile.updatedAt = Date.now();
+          saveSettingsProfiles(profiles);
+        }
 
-        Object.keys(profile.snapshot).forEach((k) => {
+        if (settingsSnapshotMatchesCurrent(profileSnapshot)) {
+          localStorage.setItem(ACTIVE_SETTINGS_PROFILE_KEY, selected);
+          return;
+        }
+
+        Object.keys(profileSnapshot).forEach((k) => {
           try {
-            const v = profile.snapshot[k];
+            const v = profileSnapshot[k];
             if (v === null || v === undefined) {
               localStorage.removeItem(k);
             } else {
@@ -5842,8 +6361,9 @@ const SettingsManager = {
             }
           } catch (e) {}
         });
-        await persistCrossProcessSettingsFromSnapshot(profile.snapshot);
+        await persistCrossProcessSettingsFromSnapshot(profileSnapshot);
         localStorage.setItem(ACTIVE_SETTINGS_PROFILE_KEY, selected);
+        await prepareSensorCollectorForReload();
         location.reload();
       });
     }
@@ -6031,26 +6551,41 @@ const SettingsManager = {
     }
 
     if (overlayOpacityInput) {
-      overlayOpacityInput.value = String(normalizeOverlayOpacity(localStorage.getItem(OVERLAY_OPACITY_KEY)));
+      const initialOpacity = normalizeOverlayOpacity(localStorage.getItem(OVERLAY_OPACITY_KEY));
+      const overlayOpacityValue = document.getElementById('overlayOpacityValue');
+      overlayOpacityInput.value = String(initialOpacity);
+      if (overlayOpacityValue) overlayOpacityValue.textContent = `${initialOpacity}%`;
       overlayOpacityInput.addEventListener('input', (e) => {
-        saveOverlaySetting(OVERLAY_OPACITY_KEY, normalizeOverlayOpacity(e.target.value));
+        const nextOpacity = normalizeOverlayOpacity(e.target.value);
+        saveOverlaySetting(OVERLAY_OPACITY_KEY, nextOpacity);
+        if (overlayOpacityValue) overlayOpacityValue.textContent = `${nextOpacity}%`;
         refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
       });
     }
 
     if (overlayGroupSpacingInput) {
-      overlayGroupSpacingInput.value = String(normalizeOverlayGroupSpacing(localStorage.getItem(OVERLAY_GROUP_SPACING_KEY)));
+      const initialGroupSpacing = normalizeOverlayGroupSpacing(localStorage.getItem(OVERLAY_GROUP_SPACING_KEY));
+      const overlayGroupSpacingValue = document.getElementById('overlayGroupSpacingValue');
+      overlayGroupSpacingInput.value = String(initialGroupSpacing);
+      if (overlayGroupSpacingValue) overlayGroupSpacingValue.textContent = `${initialGroupSpacing} px`;
       overlayGroupSpacingInput.addEventListener('input', (e) => {
-        saveOverlaySetting(OVERLAY_GROUP_SPACING_KEY, normalizeOverlayGroupSpacing(e.target.value));
+        const nextGroupSpacing = normalizeOverlayGroupSpacing(e.target.value);
+        saveOverlaySetting(OVERLAY_GROUP_SPACING_KEY, nextGroupSpacing);
+        if (overlayGroupSpacingValue) overlayGroupSpacingValue.textContent = `${nextGroupSpacing} px`;
         refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
       });
     }
 
     const overlayScaleInput = document.getElementById('overlayScale');
     if (overlayScaleInput) {
-      overlayScaleInput.value = String(normalizeOverlayScale(localStorage.getItem(OVERLAY_SCALE_KEY)));
+      const initialScale = normalizeOverlayScale(localStorage.getItem(OVERLAY_SCALE_KEY));
+      const overlayScaleValue = document.getElementById('overlayScaleValue');
+      overlayScaleInput.value = String(initialScale);
+      if (overlayScaleValue) overlayScaleValue.textContent = `${initialScale}%`;
       overlayScaleInput.addEventListener('input', (e) => {
-        saveOverlaySetting(OVERLAY_SCALE_KEY, normalizeOverlayScale(e.target.value));
+        const nextScale = normalizeOverlayScale(e.target.value);
+        saveOverlaySetting(OVERLAY_SCALE_KEY, nextScale);
+        if (overlayScaleValue) overlayScaleValue.textContent = `${nextScale}%`;
         refreshOverlayWindowState(overlayEnabledToggle && overlayEnabledToggle.checked);
       });
     }
@@ -6062,19 +6597,19 @@ const SettingsManager = {
       if (initialHotkey && ipcRenderer && ipcRenderer.invoke) {
         ipcRenderer.invoke('overlay:update-hotkey', initialHotkey).catch(() => {});
       }
-      
+
       // Prevent default input behavior and capture key combinations
       overlayHotkeyInput.addEventListener('keydown', (e) => {
         e.preventDefault();
-        
+
         const modifiers = [];
         if (e.ctrlKey) modifiers.push('Ctrl');
         if (e.altKey) modifiers.push('Alt');
         if (e.shiftKey) modifiers.push('Shift');
         if (e.metaKey) modifiers.push('Meta');
-        
+
         if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
-        
+
         let key = '';
         if (/^Key[A-Z]$/.test(e.code)) key = e.code.slice(3);
         else if (/^Digit[0-9]$/.test(e.code)) key = e.code.slice(5);
@@ -6091,7 +6626,7 @@ const SettingsManager = {
 
         const hotkey = [...modifiers, key].join('+');
         const normalized = normalizeOverlayHotkey(hotkey);
-        
+
         if (normalized) {
           overlayHotkeyInput.value = normalized;
           saveOverlaySetting(OVERLAY_HOTKEY_KEY, normalized);
@@ -6100,12 +6635,12 @@ const SettingsManager = {
           }
         }
       });
-      
+
       // Prevent typing in the input field
       overlayHotkeyInput.addEventListener('keypress', (e) => {
         e.preventDefault();
       });
-      
+
       overlayHotkeyInput.addEventListener('paste', (e) => {
         e.preventDefault();
       });
@@ -6143,6 +6678,72 @@ const SettingsManager = {
       providerAIDA64: 'aida64',
       providerHWiNFO: 'hwinfo'
     };
+    const hardwareAccessDriverStatus = document.getElementById('hardwareAccessDriverStatus');
+    const hardwareAccessDriverInstallBtn = document.getElementById('hardwareAccessDriverInstallBtn');
+    let hardwareAccessStatusRequest = 0;
+
+    const refreshHardwareAccessDriverUi = async () => {
+      if (!hardwareAccessDriverStatus || !ipcRenderer || typeof ipcRenderer.invoke !== 'function') return;
+      const requestId = ++hardwareAccessStatusRequest;
+      try {
+        const status = await ipcRenderer.invoke('hardware-access:get-status');
+        if (requestId !== hardwareAccessStatusRequest) return;
+        const enhancedEnabled = loadProviderSelection().enhanced === true;
+        if (status && status.compatible) {
+          hardwareAccessDriverStatus.textContent = `Low-level hardware access driver: Ready${status.version ? ` (PawnIO ${status.version})` : ''}.`;
+          hardwareAccessDriverStatus.classList.remove('web-status-error');
+          if (hardwareAccessDriverInstallBtn) hardwareAccessDriverInstallBtn.hidden = true;
+          return;
+        }
+
+        const detail = status && status.error
+          ? ` ${status.error}`
+          : ' Intel CPU package power and some protected motherboard readings may be unavailable.';
+        hardwareAccessDriverStatus.textContent = `Low-level hardware access driver: Not ready.${detail}`;
+        hardwareAccessDriverStatus.classList.toggle('web-status-error', enhancedEnabled);
+        if (hardwareAccessDriverInstallBtn) {
+          hardwareAccessDriverInstallBtn.hidden = !enhancedEnabled;
+          hardwareAccessDriverInstallBtn.disabled = !(status && status.installerAvailable);
+          hardwareAccessDriverInstallBtn.textContent = status && status.installed
+            ? 'Update Hardware Access Driver'
+            : 'Install Hardware Access Driver';
+        }
+      } catch (error) {
+        if (requestId !== hardwareAccessStatusRequest) return;
+        hardwareAccessDriverStatus.textContent = `Low-level hardware access driver status unavailable: ${error.message}`;
+        hardwareAccessDriverStatus.classList.add('web-status-error');
+        if (hardwareAccessDriverInstallBtn) hardwareAccessDriverInstallBtn.hidden = true;
+      }
+    };
+
+    if (hardwareAccessDriverInstallBtn) {
+      hardwareAccessDriverInstallBtn.addEventListener('click', async () => {
+        hardwareAccessDriverInstallBtn.disabled = true;
+        if (hardwareAccessDriverStatus) {
+          hardwareAccessDriverStatus.textContent = 'Restarting with administrator privileges to install the hardware access driver...';
+          hardwareAccessDriverStatus.classList.remove('web-status-error');
+        }
+        try {
+          const restartResult = await ipcRenderer.invoke('app:restart-elevated', {
+            enableLaunchAsAdministrator: true,
+            installHardwareAccessDriver: true
+          });
+          if (!restartResult || restartResult.ok !== true) {
+            hardwareAccessDriverInstallBtn.disabled = false;
+            if (hardwareAccessDriverStatus) {
+              hardwareAccessDriverStatus.textContent = restartResult?.error || 'The hardware access driver installation was cancelled.';
+              hardwareAccessDriverStatus.classList.add('web-status-error');
+            }
+          }
+        } catch (error) {
+          hardwareAccessDriverInstallBtn.disabled = false;
+          if (hardwareAccessDriverStatus) {
+            hardwareAccessDriverStatus.textContent = `Unable to start the hardware access driver installation: ${error.message}`;
+            hardwareAccessDriverStatus.classList.add('web-status-error');
+          }
+        }
+      });
+    }
 
     Object.entries(providerCheckboxes).forEach(([elementId, providerKey]) => {
       const checkbox = document.getElementById(elementId);
@@ -6164,7 +6765,10 @@ const SettingsManager = {
           checkbox.disabled = true;
 
           try {
-            const restartResult = await ipcRenderer.invoke('app:restart-elevated');
+            const restartResult = await ipcRenderer.invoke('app:restart-elevated', {
+              enableLaunchAsAdministrator: true,
+              installHardwareAccessDriver: true
+            });
             if (!restartResult || restartResult.ok !== true) {
               nextSelection.enhanced = false;
               saveProviderSelection(nextSelection);
@@ -6184,14 +6788,16 @@ const SettingsManager = {
 
         nextSelection[providerKey] = !!checkbox.checked;
         saveProviderSelection(nextSelection);
+        if (providerKey === 'enhanced') refreshHardwareAccessDriverUi();
         updateStats();
       });
     });
+    refreshHardwareAccessDriverUi();
 
     Object.entries(visibilityCheckboxes).forEach(([checkId, groupId]) => {
       const checkbox = document.getElementById(checkId);
       const group = document.getElementById(groupId);
-      
+
       const saved = localStorage.getItem(checkId);
       if (saved !== null) {
         checkbox.checked = saved === 'true';
@@ -6308,11 +6914,7 @@ const SettingsManager = {
 
       saveWebMonitorSettings(nextSettings);
       refreshWebMonitorRiskWarning();
-      if (nextSettings.enabled) {
-        await startWebMonitorServer(nextSettings);
-      } else {
-        await stopWebMonitorServer();
-      }
+      await queueWebMonitorRuntimeState(nextSettings);
     };
 
     if (webApplyBtn) {
@@ -6381,11 +6983,12 @@ const SettingsManager = {
           return;
         }
         const webEnabledCheckbox = document.getElementById('webMonitorEnabled');
+        const nextEnabled = !webMonitorDesiredEnabled;
         if (webEnabledCheckbox) {
-          // Toggle the checkbox state
-          webEnabledCheckbox.checked = !webEnabledCheckbox.checked;
+          // The header controls the requested service state, not a possibly
+          // stale checkbox value left by auto-start or a failed bind attempt.
+          webEnabledCheckbox.checked = nextEnabled;
         }
-        // Then apply the settings (which will read the checkbox state)
         applyWebSettings();
       });
     }
@@ -6398,7 +7001,12 @@ const SettingsManager = {
     if (webRequireAuth) webRequireAuth.checked = savedWebSettings.requireAuth;
     if (webAuthToken) webAuthToken.value = savedWebSettings.authToken;
     if (webReadOnlyApiMode) webReadOnlyApiMode.checked = savedWebSettings.readOnlyApiMode;
-    [webEnabled, webHost, webPort, webRequireAuth, webAuthToken, webReadOnlyApiMode].forEach((el) => {
+    if (webEnabled) {
+      webEnabled.addEventListener('change', () => {
+        applyWebSettings();
+      });
+    }
+    [webHost, webPort, webRequireAuth, webAuthToken, webReadOnlyApiMode].forEach((el) => {
       if (!el) return;
       const eventName = el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'number') ? 'input' : 'change';
       el.addEventListener(eventName, refreshWebMonitorRiskWarning);
@@ -6406,8 +7014,9 @@ const SettingsManager = {
     refreshWebMonitorRiskWarning();
     refreshWebMonitorStatusUi();
 
+    webMonitorDesiredEnabled = false;
     if (savedWebSettings.enabled && savedWebSettings.autoStart) {
-      startWebMonitorServer(savedWebSettings);
+      queueWebMonitorRuntimeState(savedWebSettings);
     }
 
     const appBehaviorControls = {
@@ -6557,10 +7166,31 @@ const SettingsManager = {
       refreshOverlayWindowState(newEnabled);
     });
 
-    getAppBehaviorSettings().then((settings) => {
-      applyAppBehaviorToUi(settings);
-      updateDiscordPresenceStatusUi({ enabled: settings.enableDiscordRichPresence, connected: settings.enableDiscordRichPresence ? null : false });
-      if (settings.autoCheckForUpdates) {
+    getAppBehaviorSettings().then(async (settings) => {
+      let effectiveSettings = settings;
+
+      // Versions prior to this migration could leave Enhanced Hardware Sensors
+      // enabled without remembering to elevate future launches. Repair that
+      // state once, then restart now so this launch also gets prompt readings.
+      if (providerSelection.enhanced === true && settings.launchAsAdministrator !== true) {
+        const runningElevated = await ipcRenderer.invoke('app:is-elevated').catch(() => false);
+        if (runningElevated) {
+          effectiveSettings = await setAppBehaviorSettings({
+            ...settings,
+            launchAsAdministrator: true
+          });
+        } else {
+          const restartResult = await ipcRenderer.invoke('app:restart-elevated', {
+            enableLaunchAsAdministrator: true
+          }).catch((error) => ({ ok: false, error: error.message }));
+          if (restartResult && restartResult.ok === true) return;
+          effectiveSettings = restartResult?.settings || settings;
+        }
+      }
+
+      applyAppBehaviorToUi(effectiveSettings);
+      updateDiscordPresenceStatusUi({ enabled: effectiveSettings.enableDiscordRichPresence, connected: effectiveSettings.enableDiscordRichPresence ? null : false });
+      if (effectiveSettings.autoCheckForUpdates) {
         setTimeout(() => {
           performUpdateCheck({ automatic: true }).catch(() => {});
         }, 900);
@@ -6929,6 +7559,7 @@ const SettingsManager = {
     sensorCategoryCollapse = loadSensorCategoryCollapse();
     sensorOrderByGroup = loadSensorOrder();
     sensorAlertRules = loadSensorAlertRules();
+    restorePersistedSensorCatalogForStartup();
     const alertSensorSelect = document.getElementById('alertSensorSelect');
     const alertRuleEnabled = document.getElementById('alertRuleEnabled');
     const alertOperatorSelect = document.getElementById('alertOperatorSelect');
@@ -6982,12 +7613,22 @@ const SettingsManager = {
 
     const sensorOptions = document.getElementById('sensorOptions');
     const sensorSearchInput = document.getElementById('sensorSearchInput');
+    const sensorHideUntickedBtn = document.getElementById('sensorHideUntickedBtn');
     if (sensorSearchInput) {
       sensorSearchInput.addEventListener('input', applySensorSelectionFilter);
       sensorSearchInput.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape' || !sensorSearchInput.value) return;
         event.preventDefault();
         sensorSearchInput.value = '';
+        applySensorSelectionFilter();
+      });
+    }
+    if (sensorHideUntickedBtn) {
+      syncSensorHideUntickedButton();
+      sensorHideUntickedBtn.addEventListener('click', () => {
+        const enabled = !sensorHideUntickedEnabled();
+        localStorage.setItem(SENSOR_HIDE_UNTICKED_KEY, enabled ? 'true' : 'false');
+        syncSensorHideUntickedButton();
         applySensorSelectionFilter();
       });
     }
@@ -7180,6 +7821,15 @@ const SettingsManager = {
       }, true);
 
       sensorOptions.addEventListener('click', (e) => {
+        const resetNameButton = e.target.closest('[data-reset-sensor-name-id]');
+        if (resetNameButton) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (resetNameButton.disabled) return;
+          resetCustomSensorName(resetNameButton.dataset.resetSensorNameId);
+          return;
+        }
+
         const renameButton = e.target.closest('[data-rename-sensor-id]');
         if (renameButton) {
           e.preventDefault();
@@ -7232,6 +7882,7 @@ const SettingsManager = {
         if (target && target.dataset && target.dataset.sensorGroup) {
           sensorCategorySelection[target.dataset.sensorGroup] = !!target.checked;
           saveSensorCategorySelection();
+          refreshSensorAlertEditor(cachedOrderedSensorCatalog || createEmptyGroupedBuckets());
           sensorCatalogSignature = '';
           liveSensorCatalogSignature = '';
           updateStats();
@@ -7240,6 +7891,8 @@ const SettingsManager = {
         if (target && target.dataset && target.dataset.sensorId) {
           sensorSelection[target.dataset.sensorId] = !!target.checked;
           saveSensorSelection();
+          refreshSensorAlertEditor(cachedOrderedSensorCatalog || createEmptyGroupedBuckets());
+          applySensorSelectionFilter();
           updateStats();
           return;
         }
@@ -7331,12 +7984,12 @@ const SettingsManager = {
     // Restore saved settings
     const savedTheme = ThemeManager.getTheme();
     const savedRefreshRate = localStorage.getItem('refreshRate');
-    
+
     if (savedTheme !== 'blue') {
       document.querySelector(`[data-theme="${savedTheme}"]`).click();
     }
     CustomColorManager.applyColors(CustomColorManager.getColors());
-    
+
     if (savedRefreshRate) {
       updateInterval = clampRefreshInterval(savedRefreshRate);
       refreshSlider.value = String(updateInterval);
@@ -7388,10 +8041,10 @@ async function updateStats(forceRender = false) {
       } else {
         const standardCount = Number(diagnostics.standardSensorCount) || 0;
         const enhancedCount = Number(diagnostics.enhancedSensorCount) || 0;
-        if (providerSelection.enhanced === true && diagnostics.enhancedAvailable === true) {
+        if (providerSelection.enhanced === true && diagnostics.enhancedInitializing === true) {
+          builtinStatus.textContent = `Built-in collector active: ${standardCount} standard + ${enhancedCount} enhanced sensors; more hardware is still being detected.`;
+        } else if (providerSelection.enhanced === true && diagnostics.enhancedAvailable === true) {
           builtinStatus.textContent = `Built-in collector active: ${standardCount} standard + ${enhancedCount} enhanced sensors.`;
-        } else if (providerSelection.enhanced === true && diagnostics.enhancedInitializing === true) {
-          builtinStatus.textContent = `Built-in collector active: ${standardCount} standard sensors; enhanced hardware is still being detected.`;
         } else if (providerSelection.enhanced === true) {
           const warning = String(diagnostics.warning || '').trim();
           builtinStatus.textContent = warning
@@ -7400,9 +8053,58 @@ async function updateStats(forceRender = false) {
         } else {
           builtinStatus.textContent = `Built-in collector active: ${standardCount} standard sensors.`;
         }
+
+        const hardwareAccessStatus = document.getElementById('hardwareAccessDriverStatus');
+        if (hardwareAccessStatus && providerSelection.enhanced === true && diagnostics.intelCpuDetected === true && diagnostics.enhancedInitializing !== true) {
+          const unavailablePowerDomains = Array.isArray(diagnostics.unavailableCpuPowerDomains)
+            ? diagnostics.unavailableCpuPowerDomains.map((name) => String(name || '').trim()).filter(Boolean)
+            : [];
+          const unavailableDetail = unavailablePowerDomains.length
+            ? ` Domains not reporting energy data are hidden: ${unavailablePowerDomains.join(', ')}.`
+            : '';
+          if (diagnostics.cpuPackagePowerAvailable === true) {
+            hardwareAccessStatus.textContent = `Low-level hardware access driver: Ready${diagnostics.hardwareAccessDriverVersion ? ` (PawnIO ${diagnostics.hardwareAccessDriverVersion})` : ''}; Intel CPU package power is active.${unavailableDetail}`;
+            hardwareAccessStatus.classList.remove('web-status-error');
+          } else if (diagnostics.hardwareAccessDriverInstalled === true) {
+            hardwareAccessStatus.textContent = `Low-level hardware access driver: Ready${diagnostics.hardwareAccessDriverVersion ? ` (PawnIO ${diagnostics.hardwareAccessDriverVersion})` : ''}, but this Intel CPU did not report package power.${unavailableDetail}`;
+            hardwareAccessStatus.classList.add('web-status-error');
+          }
+        }
       }
     }
-    
+
+    const nativeFpsStatus = document.getElementById('nativeFpsStatus');
+    if (nativeFpsStatus) {
+      const diagnostics = data && data.external && data.external.diagnostics;
+      nativeFpsStatus.classList.remove('web-status-error');
+      const gpuVendor = String(diagnostics && diagnostics.nativeFpsGpuVendor || '').trim();
+      const captureMethod = String(diagnostics && diagnostics.nativeFpsCaptureMethod || '').trim();
+      const methodDetail = gpuVendor || captureMethod
+        ? ` (${[gpuVendor, captureMethod].filter(Boolean).join(', ')})`
+        : '';
+      const recoveredSessions = Math.max(0, Number(diagnostics && diagnostics.nativeFpsRecoveredTraceSessions) || 0);
+      const recoveryDetail = recoveredSessions > 0
+        ? ` Recovered ${recoveredSessions} abandoned capture session${recoveredSessions === 1 ? '' : 's'}.`
+        : '';
+      if (providerSelection.builtin === false) {
+        nativeFpsStatus.textContent = 'Native FPS collector is disabled with Built-in Sensors.';
+      } else if (!diagnostics || diagnostics.nativeFpsAvailable !== true) {
+        nativeFpsStatus.textContent = 'Native FPS collector is unavailable. Reinstall SiR System Monitor to restore the bundled component.';
+        nativeFpsStatus.classList.add('web-status-error');
+      } else if (String(diagnostics.nativeFpsError || '').trim()) {
+        nativeFpsStatus.textContent = `Native FPS collector error${methodDetail}: ${String(diagnostics.nativeFpsError).trim()}${recoveryDetail}`;
+        nativeFpsStatus.classList.add('web-status-error');
+      } else if (String(diagnostics.nativeFpsApplication || '').trim()) {
+        nativeFpsStatus.textContent = `Native FPS active${methodDetail}: ${String(diagnostics.nativeFpsApplication).trim()} (PID ${Number(diagnostics.nativeFpsProcessId) || 0}).${recoveryDetail}`;
+      } else if (diagnostics.nativeFpsRunning === true) {
+        nativeFpsStatus.textContent = String(diagnostics.nativeFpsWarning || '').trim()
+          ? `Native FPS ready${methodDetail}; focus a running game to begin reading frames. Administrator mode improves process detection.${recoveryDetail}`
+          : `Native FPS ready${methodDetail}; focus a running game to begin reading frames.${recoveryDetail}`;
+      } else {
+        nativeFpsStatus.textContent = `Native FPS collector is starting${methodDetail}...${recoveryDetail}`;
+      }
+    }
+
     // update external group title
     const titleEl = document.querySelector('#externalGroup .sensor-group-title');
     if (titleEl) {
@@ -7440,7 +8142,7 @@ async function updateStats(forceRender = false) {
       const normalizedFrameTime = (Number.isFinite(externalFrameTimeRaw) && externalFrameTimeRaw > 0)
         ? externalFrameTimeRaw
         : (Number.isFinite(externalFps) && externalFps > 0 ? (1000 / externalFps) : 0);
-      
+
       // MSI Afterburner format (FPS info)
       if (Number.isFinite(externalFps) && externalFps > 0) {
         externalInfo.push(`FPS: ${externalFps.toFixed(0)}`);
@@ -7455,14 +8157,23 @@ async function updateStats(forceRender = false) {
           fps: Number.isFinite(externalFps) ? externalFps : data.external.fps,
           frameTime: Number.isFinite(normalizedFrameTime) ? normalizedFrameTime : data.external.frameTime
         });
+        const enhancedStillInitializing = providerSelection.enhanced === true &&
+          data.external.diagnostics?.enhancedInitializing === true;
 
         const nextCatalogSignature = buildLiveSensorCatalogSignature(groupedWithRealtime);
-        if (!liveSensorCatalogSignature || liveSensorCatalogSignature !== nextCatalogSignature) {
-          rebuildCachedSensorCatalog(groupedWithRealtime);
+        const catalogDiscoveryModeChanged = cachedCatalogPreservingMissingSensors !== enhancedStillInitializing;
+        if (!liveSensorCatalogSignature || liveSensorCatalogSignature !== nextCatalogSignature || catalogDiscoveryModeChanged) {
+          rebuildCachedSensorCatalog(groupedWithRealtime, {
+            preserveMissing: enhancedStillInitializing,
+            persist: providerSelection.enhanced === true && !enhancedStillInitializing
+          });
           liveSensorCatalogSignature = nextCatalogSignature;
+          cachedCatalogPreservingMissingSensors = enhancedStillInitializing;
         }
 
-        const selected = buildSelectedSensorsFromCachedCatalog(groupedWithRealtime);
+        const selected = buildSelectedSensorsFromCachedCatalog(groupedWithRealtime, {
+          preserveMissing: enhancedStillInitializing
+        });
         prepareSelectedSensorsForRender(selected);
         latestSelectedGroupedSensors = selected;
         updateSensorHistory(selected);
@@ -7482,7 +8193,7 @@ async function updateStats(forceRender = false) {
         renderAllDynamicGroups(latestSelectedGroupedSensors, { force: forceRender });
         evaluateSensorAlerts(latestSelectedGroupedSensors);
       }
-      
+
       const externalText = externalInfo.length > 0 ? externalInfo.join(' | ') : 'No data';
       if (webMonitorRuntime.running) {
         publishWebMonitorPayload(mode, externalText);
@@ -7552,6 +8263,8 @@ function applyUiTooltips() {
     setupGuideHeaderBtn: 'Open setup and provider guidance.',
     monitoringModeBtn: 'Open or close the settings sidebar.',
     refreshRate: 'Set how often sensor data refreshes (milliseconds).',
+    layoutPresetSelect: 'Choose the sensor-card layout used in normal mode.',
+    summaryLayoutPresetSelect: 'Choose the independent sensor-card layout used in Summary Mode.',
     groupLineLimit: 'Legacy control (kept for compatibility if present).',
     latencyHost: 'Host/IP used for ping statistics.',
     overlayEnabledToggle: 'Enable the always-on-top overlay window.',
@@ -7580,6 +8293,9 @@ function applyUiTooltips() {
     customIconColor: 'Sensor-group icon color.',
     customOutlineColor: 'Border/outline color.',
     customBackgroundColor: 'Background color.',
+    customSettingsPanelColor: 'Independent background color for the settings panel.',
+    customSettingsPanelAccentColor: 'Accent color used by settings controls, highlights, and active states.',
+    customSettingsPanelIconColor: 'Icon color used throughout the settings panel.',
     resetThemeColorsBtn: 'Reset custom colors to current theme defaults.',
     showFps: 'Show/hide FPS group card.',
     showCpu: 'Show/hide CPU group card.',
@@ -7592,6 +8308,7 @@ function applyUiTooltips() {
     showDrives: 'Show/hide Drives group card.',
     showExternal: 'Show/hide Other group card.',
     resetSensorNamesBtn: 'Clear all custom sensor names.',
+    sensorHideUntickedBtn: 'Hide unticked sensors in Sensor Selection without changing which sensors are enabled.',
     alertSensorSelect: 'Select a sensor to configure alert thresholds.',
     alertRuleEnabled: 'Enable or disable alert rule for selected sensor.',
     alertOperatorSelect: 'Alert comparison operator.',
@@ -7609,6 +8326,7 @@ function applyUiTooltips() {
     deleteSettingsProfileBtn: 'Delete the selected settings profile.',
     providerBuiltin: 'Enable the bundled SiR sensor collector (no separate monitoring app required).',
     providerEnhanced: 'Enable expanded hardware access through the bundled LibreHardwareMonitor library.',
+    hardwareAccessDriverInstallBtn: 'Install the bundled low-level driver used for Intel CPU package power and other protected hardware readings.',
     providerRTSS: 'Enable RTSS/MSI shared-memory provider.',
     providerAIDA64: 'Enable AIDA64 shared-memory provider.',
     providerHWiNFO: 'Enable HWiNFO/LHM shared-memory provider.',
@@ -7688,5 +8406,3 @@ window.addEventListener('beforeunload', () => {
   stopWebMonitorServer();
   if (sensorReader && typeof sensorReader.close === 'function') sensorReader.close();
 });
-
-

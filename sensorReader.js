@@ -6,6 +6,9 @@ const os = require('os');
 const path = require('path');
 const RTSSReader = require('./rtssReader');
 
+const HOST_RETRY_DELAY_MS = 1500;
+const HOST_SNAPSHOT_HOLD_MS = 8000;
+
 class BuiltinSensorHostClient {
   constructor() {
     this.child = null;
@@ -15,6 +18,9 @@ class BuiltinSensorHostClient {
     this.enhanced = false;
     this.lastFailureAt = 0;
     this.lastError = '';
+    this.lastSnapshot = null;
+    this.lastSnapshotAt = 0;
+    this.lastSnapshotEnhanced = false;
   }
 
   resolveExecutablePath() {
@@ -26,14 +32,38 @@ class BuiltinSensorHostClient {
     return candidates.find((candidate) => fs.existsSync(candidate)) || null;
   }
 
-  stop() {
+  stop(options = {}) {
     const child = this.child;
     this.child = null;
     this.buffer = '';
     this.rejectPending(new Error('Built-in sensor host stopped.'));
-    if (!child) return;
-    try { child.stdin.end(); } catch (e) {}
-    try { child.kill(); } catch (e) {}
+    if (!child) return Promise.resolve();
+
+    const forceAfterMs = Math.max(100, Math.min(5000, Number(options.forceAfterMs) || 1000));
+    return new Promise((resolve) => {
+      let settled = false;
+      let forceTimer = null;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (forceTimer) clearTimeout(forceTimer);
+        resolve();
+      };
+
+      child.once('exit', finish);
+      child.once('close', finish);
+      try { child.stdin.end(); } catch (e) {}
+      if (child.exitCode !== null || child.killed) {
+        finish();
+        return;
+      }
+
+      forceTimer = setTimeout(() => {
+        try { child.kill(); } catch (e) {}
+        setTimeout(finish, 100);
+      }, forceAfterMs);
+      if (forceTimer && typeof forceTimer.unref === 'function') forceTimer.unref();
+    });
   }
 
   rejectPending(error) {
@@ -115,14 +145,27 @@ class BuiltinSensorHostClient {
     if (!entry) return;
     this.pending.delete(Number(message.id));
     clearTimeout(entry.timer);
-    if (message.ok && message.snapshot) entry.resolve(message.snapshot);
+    if (message.ok && message.snapshot) {
+      this.lastSnapshot = message.snapshot;
+      this.lastSnapshotAt = Date.now();
+      this.lastSnapshotEnhanced = message.snapshot?.diagnostics?.enhancedRequested === true;
+      entry.resolve(message.snapshot);
+    }
     else entry.reject(new Error(message.error || 'Built-in sensor host request failed.'));
+  }
+
+  getHeldSnapshot(enhanced) {
+    if (!this.lastSnapshot || this.lastSnapshotEnhanced !== enhanced) return null;
+    if ((Date.now() - this.lastSnapshotAt) > HOST_SNAPSHOT_HOLD_MS) return null;
+    return this.lastSnapshot;
   }
 
   async getSnapshot(options = {}) {
     const enhanced = options.enhanced === true;
-    if (!this.child && (Date.now() - this.lastFailureAt) < 10000) return null;
-    if (!this.start(enhanced) || !this.child) return null;
+    if (!this.child && (Date.now() - this.lastFailureAt) < HOST_RETRY_DELAY_MS) {
+      return this.getHeldSnapshot(enhanced);
+    }
+    if (!this.start(enhanced) || !this.child) return this.getHeldSnapshot(enhanced);
 
     const id = this.nextRequestId++;
     return new Promise((resolve, reject) => {
@@ -138,6 +181,10 @@ class BuiltinSensorHostClient {
         this.pending.delete(id);
         reject(error);
       }
+    }).catch((error) => {
+      const heldSnapshot = this.getHeldSnapshot(enhanced);
+      if (heldSnapshot) return heldSnapshot;
+      throw error;
     });
   }
 }
@@ -190,7 +237,7 @@ class SensorReader {
       };
 
       const request = https.get('https://api.ipify.org', {
-        headers: { 'User-Agent': 'SiR-System-Monitor/1.2.6' }
+        headers: { 'User-Agent': 'SiR-System-Monitor/1.3.0' }
       }, (response) => {
         let body = '';
         response.setEncoding('utf8');
@@ -302,19 +349,24 @@ class SensorReader {
       const unitMatch = !units || String(sensor.units).toLowerCase() === units.toLowerCase();
       return unitMatch && pattern.test(String(sensor.name || ''));
     });
+    const byType = (group, sensorType) => (groupedSensors[group] || []).filter((sensor) =>
+      String(sensor.sensorType || '').toLowerCase() === String(sensorType || '').toLowerCase()
+    );
 
     const fpsSensor = byName('fps', /\bfps\b/i, 'FPS');
     const frameTimeSensor = byName('fps', /frame\s*time|frametime/i, 'ms');
     const fanSpeeds = (groupedSensors.fans || [])
       .filter((sensor) => String(sensor.units).toLowerCase() === 'rpm')
       .map((sensor) => ({ name: sensor.name, value: sensor.value, units: sensor.units }));
+    const cpuPowerSensors = byType('cpu', 'Power');
+    const cpuPackagePowerSensor = cpuPowerSensors.find((sensor) => /package/i.test(String(sensor.name || ''))) || cpuPowerSensors[0];
 
     return {
       fps: valueOf(fpsSensor) || 0,
       frameTime: valueOf(frameTimeSensor) || 0,
       cpuTemp: positiveValueOf(byName('cpu', /tctl|tdie|package|cpu.*temp/i, 'C')),
       cpuLoad: valueOf(byId('builtin_os_cpu_load')),
-      cpuPower: positiveValueOf(byName('cpu', /package|cpu.*power/i, 'W')),
+      cpuPower: valueOf(cpuPackagePowerSensor),
       cpuFreq: positiveValueOf(byName('cpu', /average|cpu.*clock|cpu.*frequency/i, 'MHz')),
       gpuTemp: positiveValueOf(byName('gpu', /gpu core|gpu.*temp/i, 'C')),
       gpuLoad: valueOf(byName('gpu', /gpu core|gpu.*load/i, '%')),
@@ -405,14 +457,15 @@ class SensorReader {
     }
   }
 
-  close() {
-    if (this.builtinHost) this.builtinHost.stop();
+  close(options = {}) {
+    const hostStop = this.builtinHost ? this.builtinHost.stop(options) : Promise.resolve();
     if (this.wanIpRequestTimeout) clearTimeout(this.wanIpRequestTimeout);
     this.wanIpRequestTimeout = null;
     if (this.wanIpHttpRequest) {
       try { this.wanIpHttpRequest.destroy(); } catch (_error) {}
     }
     this.wanIpHttpRequest = null;
+    return hostStop;
   }
 }
 
