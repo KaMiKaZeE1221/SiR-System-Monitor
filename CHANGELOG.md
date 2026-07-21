@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.2.6 - 2026-07-21
+
+### Added
+- Added the bundled `SiR.SensorHost` collector for CPU load, memory, drive, and network telemetry without a separate monitoring application.
+- Added optional Enhanced Hardware Sensors using the bundled LibreHardwareMonitor library for supported GPU, temperature, clock, power, voltage, fan, and FPS readings.
+- Added isolated line-delimited JSON IPC between Electron and the persistent sensor host.
+- Added sensor-host build, integration-test, benchmark, and packaging support.
+- Added a searchable Sensor Selection list.
+- Added a built-in overall CPU Clock Speed sensor, with enhanced average-clock data used when available.
+- Enabled native enhanced telemetry for supported digital PSUs and clearly labelled motherboard +12 V, +5 V, and +3.3 V rails.
+- Added direct native USB telemetry for Thermaltake DPS/iRGB PSUs using VID `264A`, PID `2329`, including AC input voltage, rail voltage/current/power, total output power, temperature, and fan speed.
+- Added protocol-aware, read-only native telemetry for 15 Corsair HXi/RMi USB IDs, covering HX550i through current HX1200i/HX1500i generations.
+- Added native PMBus-over-HID telemetry for NZXT E500, E650, and E850 digital PSUs, including five output rails, temperature, fan speed, and total output power.
+- Added an auditable hardware support registry and packaged `HARDWARE-SUPPORT.md` covering direct PSU IDs, intentional incompatible-protocol exclusions, and common enhanced-mode controller families.
+- Added an administrator restart confirmation when enabling Enhanced Hardware Sensors.
+- Changed the Enhanced Hardware Sensors confirmation to an in-app dialog that follows the selected theme and custom colors.
+- Added shared Compact, Balanced, Wide, and Stacked sensor-card layout presets under Appearance.
+- Added a Custom layout mode that enables card resize handles and preserves its manual geometry separately from fixed presets.
+- Added layout preset, card order, card dimensions, graph state, sidebar width, and complete overlay preference coverage to settings profiles and exported settings.
+- Added a saved Startup & Tray option to request administrator privileges whenever the app launches.
+
+### Changed
+- Changed the default data source to Built-in Sensors; RTSS, AIDA64, HWiNFO, and LHM shared-memory sources are now optional compatibility providers.
+- Added curated default selection for built-in sensors so expanded hardware discovery does not flood the dashboard.
+- Moved standard sensor sampling away from synchronous per-refresh PowerShell processes.
+- Corrected network transferred-data units and added automatic binary scaling for B/s through TB/s and MB through TB.
+- Changed built-in memory read/write telemetry to useful Windows memory activity rates and added automatic B/s through TB/s scaling across desktop, web, and overlay views.
+- Corrected Sensor Selection category collapsing while a search is active.
+- Applied the SiR product name, AppUserModelID, and icon identity to Windows task grouping and Electron subprocesses.
+- Unified desktop and Web Monitor card width, height, spacing, padding, and box sizing so both views follow the selected layout consistently.
+- Changed active Web Monitor, Discord, and Overlay header controls to follow the selected theme accent instead of using hard-coded green styling.
+- Kept direct PSU polling telemetry-only, cached sub-second repeat requests, and throttled unavailable-device retries to protect host and application performance.
+
+### Fixed
+- Fixed sensor reordering being disabled by an active Sensor Selection search.
+- Fixed filtered reordering so hidden sensors retain their relative positions.
+- Stabilized drag edge-scrolling and allowed mouse-wheel, trackpad, arrow-key, and page-key scrolling while a sensor is grabbed.
+- Removed the obsolete Web Monitor empty-state instruction that referred to MSI mode.
+- Fixed grouped-line overlay values being clipped by measuring the longest configured line and widening the OSD panel without wrapping it.
+- Fixed the grouped-line overlay briefly collapsing and re-expanding on every sensor refresh.
+- Fixed the installer finish-page administrator option by launching through the desktop user with an explicit elevation request and application-side fallback.
+
 ## 1.2.5 - 2026-05-13
 
 ### Added
