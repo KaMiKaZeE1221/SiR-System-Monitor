@@ -1,248 +1,334 @@
-# SiR System Monitor
+<div align="center">
+  <h1>SiR System Monitor</h1>
+  <p><strong>Real-time hardware monitoring for Windows, your desktop, your overlay, and your browser.</strong></p>
+  <p>
+    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.2.7" src="https://img.shields.io/badge/version-1.2.7-f97316?style=for-the-badge"></a>
+    <a href="#requirements"><img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&amp;logo=windows"></a>
+    <a href="./LICENSE.txt"><img alt="GNU GPL v3" src="https://img.shields.io/badge/license-GPL--3.0-3DA639?style=for-the-badge"></a>
+  </p>
+  <p>
+    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest">Download</a> ·
+    <a href="./CHANGELOG.md">What's new</a> ·
+    <a href="./sensor-host/HARDWARE-SUPPORT.md">Hardware support</a> ·
+    <a href="#screenshots">Screenshots</a>
+  </p>
+</div>
 
-A Windows Electron desktop app for real-time hardware telemetry, overlay display, and optional browser-based monitoring.
+![SiR System Monitor dashboard using the Orange theme](./Screenshots/SiR_System_Monitor_Orange.png)
 
-## :books: Contents
-- [Overview](#computer-overview)
-- [Core Features](#sparkles-core-features)
-- [Requirements](#white_check_mark-requirements)
-- [Settings Overview](#gear-settings-overview)
-- [Backup and Restore](#floppy_disk-backup-and-restore)
-- [Data Sources](#test_tube-data-sources)
-- [Overlay Notes](#window-overlay-notes)
-- [Web Monitor](#globe_with_meridians-web-monitor)
-- [Updater](#arrows_counterclockwise-updater)
-- [Troubleshooting](#rescue_worker_helmet-troubleshooting)
-- [Screenshots](#framed_picture-screenshots)
+SiR System Monitor is an open-source Windows desktop app that combines live system telemetry, a configurable sensor dashboard, an on-screen display, alerts, and an optional browser monitor. Its bundled collector handles everyday monitoring without requiring another hardware-monitoring app to remain open.
 
-## :computer: Overview
-SiR System Monitor is designed for users who want a fast, configurable view of system telemetry without needing to keep multiple monitoring apps in the foreground.
+## At a glance
 
-The app includes its own isolated sensor collector and can optionally merge shared-memory telemetry from RTSS, AIDA64, HWiNFO, and Libre Hardware Monitor. Sensor data is presented through grouped live cards, configurable sensor visibility, summary mode, overlay output, and web sharing.
+| | |
+|---|---|
+| **Built-in monitoring** | CPU, memory, storage, network, latency, system information, and supported digital PSUs without a separate monitoring app. |
+| **Enhanced hardware access** | A bundled LibreHardwareMonitor backend adds supported temperatures, clocks, power, voltage, fans, SMART data, GPUs, and controllers. |
+| **A dashboard that fits you** | Choose which sensors appear, search, rename, reorder, resize, group, and include them in the overlay. |
+| **Desktop and web layouts** | Use Compact, Balanced, Wide, or Stacked presets in both views, or build a freely resized Custom layout. |
+| **Overlay and alerts** | Keep selected readings over other apps and highlight warning or critical threshold events. |
+| **Profiles and portability** | Save named profiles or export the complete setup to JSON for backup and transfer. |
 
-## :sparkles: Core Features
-- :bar_chart: Live grouped sensors:
-  - FPS
-  - CPU
-  - GPU
-  - RAM
-  - PSU
-  - Fans
-  - Network
-  - Ping
-  - Drives
-  - Other
-- :dart: Dedicated FPS + Frame Time panel
-- :jigsaw: Per-sensor controls:
-  - Enable/disable
-  - Overlay include/exclude
-  - Drag-and-drop ordering
-  - Inline rename
-  - Reset custom names
-- :window: Monitoring Mode and Summary Mode
-- :triangular_ruler: Card layout controls:
-  - Shared `Compact`, `Balanced`, `Wide`, and `Stacked` presets for desktop and Web Monitor
-  - `Custom` mode for independently resizing cards with their lower-right corner handles
-  - Resize card width and height in both Main view and Summary Mode
-  - Fine-grained width snapping for tighter layout control
-- :art: Appearance customization:
-  - Theme presets
-  - Style presets (`Classic`, `Neon`, `Minimal`, `Terminal`, `Accent Rail`, `Soft Glass`, `Split Header`, `Status Tags`)
-  - Font family and size
-  - Bold text and monospace value options
-  - Optional global glow-disable mode
-  - Temperature unit (`C` / `F`)
-  - Full UI color controls
-- :tools: Overlay customization:
-  - On/off toggle
-  - Global hotkey toggle
-  - Position and monitor selection
-  - Font size, scaling, spacing, opacity
-  - Per-category line limits
-  - Category reorder and reset
-- :globe_with_meridians: Web monitor UI and JSON endpoint
-- :blue_book: In-app setup guide
-- :package: Installer + portable build support
+Sensor groups include **FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, and Other**. FPS and frame-time values appear when an enabled source provides them.
 
-## :white_check_mark: Requirements
-- Windows 10 or newer
-- No separate monitoring application is required for built-in CPU, memory, drive, and network sensors.
-- `Enhanced Hardware Sensors` optionally enables the bundled LibreHardwareMonitor library for supported temperatures, clocks, power, GPU, and fan sensors. Some low-level sensors can require administrator access or a compatible hardware-access driver.
-- RTSS, AIDA64, HWiNFO, and Libre Hardware Monitor shared memory remain optional compatibility sources.
+## What's new in 1.2.7
 
-## :gear: Settings Overview
-All settings are persisted locally and survive app restarts.
+- Faster, progressive hardware discovery with `Detecting...` placeholders during cold starts.
+- Improved launch visibility so sensor discovery no longer hides or minimizes the app unexpectedly.
+- Enhanced Hardware Sensors now also enables **Launch app as administrator** and carries that setting through profiles and imports.
+- Sensor Alert selection now lists only sensors that are actually enabled.
+- Faster collector recovery and smoother profile switching without a long sensor blackout.
 
-### :art: Appearance
-- Theme and style presets
-- Sensor-card layout presets plus a persistent Custom resize mode shared with the Web Monitor
-- Font and text options
-- Disable glow effects toggle
-- Temperature unit
-- Custom colors:
-  - Font
-  - Sensor labels
-  - Sensor values
-  - Icon
-  - Graph
-  - Block headers
-  - Outline
-  - Background
-- Overlay settings
+See the [full changelog](./CHANGELOG.md) for every change and fix.
 
-### :chart_with_upwards_trend: Monitoring
-- Refresh rate (`1000-5000 ms`)
-- Ping host target
-- Visible sensor groups
-- Sensor Selection controls
-- Per-sensor alert rules:
-  - Condition operator (`>=`, `>`, `<=`, `<`)
-  - Threshold
-  - Cooldown
-  - Severity (`Warning` / `Critical`)
+## Download
 
-### :electric_plug: Data Sources
-- Built-in and enhanced sensor toggles
-- Optional provider toggles for shared-memory sources
+Get the latest Windows installer or portable build from [GitHub Releases](https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest).
 
-### :globe_with_meridians: Connectivity
-- Web monitor host/port
-- Open monitor URL action
-- Optional access token auth for remote clients
-- API-only read-only mode
-- Discord Rich Presence toggle
-- Header `Web` control includes integrated quick-open browser action when running
+| Build | Best for |
+|---|---|
+| **Setup** | A normal installation with Start menu, desktop shortcut, launch options, and automatic-update support. |
+| **Portable** | Running without a full installation or keeping a self-contained copy. |
 
-### :brain: App Behavior
-- Launch at startup
-- Start minimized
-- Minimize/close to tray
-- Auto-check updates on startup
-- Startup delay (`0-300 seconds`)
-- Manual update controls
+### Requirements
 
-## :floppy_disk: Backup and Restore
-Built-in **Export** and **Import** are available under `Settings -> Backup & Restore`.
+- Windows 10 or Windows 11, 64-bit
+- Administrator access only when **Enhanced Hardware Sensors** or **Launch app as administrator** is enabled
+- Network access only for update checks, WAN IP lookup, Discord Rich Presence, or clients using the Web Monitor
 
-- Export creates a JSON snapshot of your current settings.
-- Import opens a preview before applying changes.
-- Apply options:
-  - `Apply Now`
-  - `Apply & Reload`
+> [!NOTE]
+> Built-in Sensors require no separate monitoring software. Enhanced Hardware Sensors are also bundled with SiR System Monitor, but Windows may request administrator access for low-level hardware communication.
 
-The export includes appearance preferences, sensor-card layout/order/custom sizes, monitoring options, provider toggles, web monitor settings, complete overlay configuration, and update-related behavior.
+## Quick start
 
-### Profiles
-Also available in `Settings -> Backup & Restore -> Profiles`:
-- Save current app state as a named profile
-- Apply a saved profile
-- Rename a saved profile
-- Delete a profile
-- Quick profile naming field to control Save/Rename actions
+1. Install SiR System Monitor or launch the portable build.
+2. Leave **Settings → Data Sources → Built-in Sensors** enabled.
+3. Open **Monitoring → Visible Sensors** and **Sensor Selection** to choose and arrange the readings you want.
+4. Choose a card preset under **Appearance → Layout**, or select **Custom** to resize cards from their lower-right corners.
+5. Enable **Enhanced Hardware Sensors** only if you want the additional readings supported by your hardware.
+6. Optionally configure the overlay, alerts, Web Monitor, startup behavior, and a settings profile.
 
-## :test_tube: Data Sources
-Primary runtime provider path:
-- Built-in SiR sensor host
-- Optional enhanced hardware access through the bundled LibreHardwareMonitor library
-- Optional RTSS, AIDA64, HWiNFO, and Libre Hardware Monitor shared-memory fallbacks
+## Sensor sources
 
-### :compass: Recommended first-time setup
-1. Keep `Built-in Sensors` enabled in `Settings -> Data Sources`.
-2. Enable `Enhanced Hardware Sensors` if you want supported temperatures, clocks, power, and fan readings.
-3. Enable an optional shared-memory provider only when you need its additional sensors or RTSS FPS data.
-4. Enable desired groups in `Monitoring -> Visible Sensors`.
-5. Configure per-sensor options in `Monitoring -> Sensor Selection`.
-6. Configure overlay behavior in `Appearance -> On-Screen Overlay`.
-7. Configure host/port in `Connectivity -> Web Monitor`.
-8. Configure startup and update behavior in `App Behavior`.
+SiR uses an isolated, persistent collector so standard sensor refreshes do not repeatedly launch PowerShell or another full monitoring application.
 
-### Provider tips
-- The built-in sensor host is persistent and batched; it does not launch PowerShell for every refresh.
-- Enhanced sensor availability varies by motherboard, firmware, driver, permissions, and security configuration.
-- RTSS/MSI Afterburner is the most common source for FPS/frame-time telemetry.
-- HWiNFO and AIDA64 often expose overlapping sensors, so enabling only what you need helps keep the sensor list cleaner.
-- If a provider is closed or shared memory is disabled, its sensors will not populate.
+| Source | External app required? | Typical use |
+|---|:---:|---|
+| **Built-in Sensors** | No | CPU utilization and overall clock, memory capacity and activity, storage, network, latency, system data, and supported direct digital PSU telemetry. |
+| **Enhanced Hardware Sensors** | No | Supported CPU/GPU temperatures and clocks, power, voltage, fans, motherboard controllers, storage SMART data, and additional hardware telemetry. Administrator access may be required. |
+| **RTSS / MSI** | Yes, optional | Additional FPS, frame-time, and compatible shared-memory telemetry. |
+| **AIDA64** | Yes, optional | Extra sensors exposed through AIDA64 shared memory. |
+| **HWiNFO / LHM Shared Memory** | Yes, optional | Compatibility access to sensors published by HWiNFO or a running LHM shared-memory provider. |
 
-## :window: Overlay Notes
-- Uses your selected sensors and updates live.
-- Can be toggled from:
-  - Header `Overlay: On/Off` button
-  - Global overlay hotkey
-- Category order is user-configurable.
-- Grouped-line style shortens `Network` to `NET`.
-- Per-category line limits can reduce overlay clutter on smaller displays.
-- Active sensor alerts are visually highlighted in overlay rows/groups.
+Only enable compatibility providers you use. This keeps the sensor catalogue cleaner and avoids duplicate readings from overlapping sources.
 
-## :globe_with_meridians: Web Monitor
-When enabled:
-- UI: `http://<host>:<port>/`
-- JSON: `http://<host>:<port>/api/monitor`
+### Enhanced Hardware Sensors
 
-Security options:
-- `Require Access Token` to protect remote access
-- `Generate New Token` for one-click credential rotation
-- `Copy Token` for sharing with trusted clients
-- `Read-only mode (API only)` to disable the HTML dashboard and expose only JSON
-- Active sensor alerts are visually highlighted in web monitor rows.
+Enabling Enhanced Hardware Sensors displays a themed confirmation before SiR:
 
-Layout and UI notes:
-- Web monitor cards use the selected desktop layout preset for matching default width, height, spacing, padding, and box sizing.
-- Manually resized desktop card dimensions are mapped into the responsive Web Monitor grid as custom overrides.
-- Web monitor header branding uses a higher-quality icon source for improved sharpness.
-- Web monitor tab favicon is restored with ICO-first fallback behavior.
+1. Saves the enhanced-sensor setting.
+2. Enables **Startup & Tray → Launch app as administrator**.
+3. Restarts and asks Windows for administrator access.
 
-Token support:
-- Query: `?token=...`
+Availability still depends on the hardware, firmware, driver, Windows permissions, and whether another application has exclusive access to the device.
+
+## Dashboard and appearance
+
+### Sensor controls
+
+Each sensor can be:
+
+- Enabled or hidden
+- Included in or excluded from the overlay
+- Reordered with drag and drop
+- Renamed inline and reset to its original name
+- Found quickly with Sensor Selection search
+- Used by an alert rule when the sensor is enabled
+
+### Layouts
+
+The selected layout is shared by the desktop dashboard and Web Monitor.
+
+| Layout | Purpose |
+|---|---|
+| **Compact** | Fits more cards and data into a smaller area. |
+| **Balanced** | A general-purpose balance of density and readability. |
+| **Wide** | Gives long sensor names and values more horizontal space. |
+| **Stacked** | Uses a more vertical card arrangement. |
+| **Custom** | Unlocks independent width and height resizing for each card. |
+
+Custom geometry, card order, layout choice, and Summary Mode sizing are saved locally and included in profiles and exported settings.
+
+### Themes and styles
+
+- Multiple color themes and full custom colors
+- `Classic`, `Neon`, `Minimal`, `Terminal`, `Accent Rail`, `Soft Glass`, `Split Header`, and `Status Tags` styles
+- Font family, size, bold text, and monospace value controls
+- Celsius or Fahrenheit temperature display
+- Optional glow-effect disable switch
+
+## On-screen overlay
+
+The overlay shows selected readings above other applications and can be toggled from the header or a global hotkey.
+
+- Position and monitor selection
+- Font size, scaling, spacing, and opacity
+- Configurable category order and per-category line limits
+- Single-line grouped layouts that size themselves to fit their contents
+- Theme-aware warning and critical alert highlighting
+
+## Web Monitor and API
+
+The optional Web Monitor mirrors the selected dashboard layout in a browser and exposes the same live data as JSON.
+
+| Endpoint | Address |
+|---|---|
+| Dashboard | `http://<host>:<port>/` |
+| JSON API | `http://<host>:<port>/api/monitor` |
+
+Available controls include:
+
+- Local-only or all-interface binding
+- Optional access-token authentication
+- Token generation, copying, and rotation
+- API-only mode, which disables the HTML dashboard
+- Alert highlighting and shared desktop layout presets
+
+Access tokens are accepted through:
+
+- Query string: `?token=...`
 - Header: `x-sir-token: ...`
 - Header: `Authorization: Bearer <token>`
 
-Host guidance:
-- `127.0.0.1` for local-only access
-- `0.0.0.0` for WAN/LAN access (Allow WAN at your own risk!)
+Use `127.0.0.1` for access from the same PC. Use `0.0.0.0` only when another trusted device on the network must connect, then restrict access with the Windows Firewall and an access token.
 
-Security note:
-- If you expose the monitor beyond localhost, use firewall rules and trusted networks only.
+> [!WARNING]
+> Binding to `0.0.0.0` listens on every available network interface. Do not expose the Web Monitor directly to the public internet.
 
-## :arrows_counterclockwise: Updater
-Current flow:
-1. Open `Settings -> App Behavior -> App Updates`.
-2. Click **Check for Updates**.
-3. If available, choose **Download Update**.
-4. After download, choose **Restart to Install**.
+## Alerts, profiles, and saved settings
 
-If release metadata is missing, the app falls back to **Open Latest Release**.
+Sensor Alerts support `>=`, `>`, `<=`, and `<` conditions, configurable cooldowns, and Warning or Critical severity. Triggered sensors are highlighted in the desktop dashboard, overlay, and Web Monitor.
 
-## Discord Rich Presence
-- Presence now includes the currently running app version (`vX.X.X`) in status text.
+Under **Settings → Backup & Restore**, you can:
 
-## :rescue_worker_helmet: Troubleshooting
-### :question: Missing sensors
-- Verify `Built-in Sensors` is enabled in `Settings -> Data Sources`.
-- Try `Enhanced Hardware Sensors` for supported temperature, fan, voltage, clock, and power readings.
-- If using an optional provider, ensure its app is running and shared-memory output is enabled.
-- See [`sensor-host/HARDWARE-SUPPORT.md`](sensor-host/HARDWARE-SUPPORT.md) for the direct digital PSU USB IDs and enhanced controller families included in v1.2.6 and above.
+- Save, apply, rename, and delete named profiles
+- Export the current setup to JSON
+- Preview an imported profile before applying it
+- Apply immediately or apply and reload
 
-### :video_game: FPS / Frame Time not updating
-- Ensure RTSS/MSI Afterburner is running.
-- Keep RTSS provider enabled.
-- Check that another overlay/OSD tool is not conflicting with RTSS output.
+Profiles and exports include appearance settings, layouts, custom card sizes, card order, sensor choices, alert rules, data sources, Web Monitor options, overlay configuration, startup behavior, and update preferences.
 
-### :globe_with_meridians: Browser monitor unreachable
-- Verify host/port in `Settings -> Connectivity`.
-- For WAN/LAN use, set host to `0.0.0.0` and allow firewall access.
-- Test local access first (`127.0.0.1`) before trying another device.
+## Digital PSU support
 
-### :zap: Performance concerns
-- Keep refresh rate at `1000 ms` or higher.
-- Disable unused providers and overlays.
-- Reduce visible sensor groups if rendering appears heavy.
+The bundled collector includes read-only telemetry for supported USB digital power supplies. It never changes fan curves, rail configuration, over-current protection, or other PSU settings.
 
-## :framed_picture: Screenshots
-More screenshots: [Imgur Album](https://imgur.com/a/pkG1Cyb)
+| Family | Supported models / IDs |
+|---|---|
+| **Thermaltake DPS / iRGB** | USB ID `264A:2329`; the model is queried from the device. |
+| **Corsair HXi / RMi** | 15 protocol-compatible IDs covering HX550i through current HX1200i/HX1500i generations and RM550i through RM1000i. |
+| **NZXT E-series** | E500, E650, and E850 PMBus-over-HID devices. |
 
-![Orange Theme](./Screenshots/SiR_System_Monitor_Orange.png)
-![Blue Theme](./Screenshots/SiR_System_Monitor_Blue.png)
-![Cyan Theme](./Screenshots/SiR_System_Monitor_Cyan.png)
-![Green Theme](./Screenshots/SiR_System_Monitor_Green.png)
-![Purple Theme](./Screenshots/SiR_System_Monitor_Purple.png)
-![Red Theme](./Screenshots/SiR_System_Monitor_Red.png)
+See [Native hardware sensor coverage](./sensor-host/HARDWARE-SUPPORT.md) for the complete USB ID registry, intentionally excluded devices, enhanced controller families, and protocol references.
+
+## Updates
+
+Open **Settings → App Behavior → App Updates** to:
+
+1. Check for updates.
+2. Download an available update.
+3. Restart to install it.
+
+Automatic startup checks can be disabled. If a release does not include the metadata needed for an in-app download, **Open Latest Release** provides a browser fallback.
+
+## Troubleshooting
+
+<details>
+<summary><strong>Sensors are missing or still detecting</strong></summary>
+
+- Confirm **Built-in Sensors** is enabled.
+- Give enhanced hardware discovery a moment to complete after a cold start; groups are published progressively.
+- Try **Enhanced Hardware Sensors** for compatible temperature, fan, clock, voltage, power, GPU, SMART, and controller readings.
+- If using RTSS, AIDA64, HWiNFO, or LHM shared memory, make sure that provider is running and its shared-memory output is enabled.
+- Another vendor utility may have exclusive access to a USB controller or PSU.
+- Check the [hardware support reference](./sensor-host/HARDWARE-SUPPORT.md) for direct PSU and enhanced-controller coverage.
+
+</details>
+
+<details>
+<summary><strong>FPS or Frame Time is not updating</strong></summary>
+
+- FPS data appears only when an enabled source exposes it for the running application.
+- For RTSS compatibility, start RTSS/MSI Afterburner, enable the RTSS provider in SiR, and confirm RTSS is detecting the target application.
+- Check whether another overlay or capture tool is interfering with the same game or OSD source.
+
+</details>
+
+<details>
+<summary><strong>The Web Monitor cannot be reached</strong></summary>
+
+- Test `127.0.0.1` from the host PC first.
+- Verify the configured host and port under **Settings → Connectivity**.
+- For another device on the LAN, bind to `0.0.0.0` and allow the selected port through Windows Firewall.
+- Include the correct token when authentication is enabled.
+
+</details>
+
+<details>
+<summary><strong>Performance is heavier than expected</strong></summary>
+
+- Keep the refresh interval at `1000 ms` or higher.
+- Disable compatibility providers you are not actively using.
+- Reduce visible sensor groups or overlay entries if rendering is the bottleneck.
+- Use Built-in Sensors alone when low-level enhanced telemetry is not needed.
+
+</details>
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="./Screenshots/SiR_System_Monitor_SummaryView.png" alt="Summary Mode"><br><sub><strong>Summary Mode</strong> — live minimum and maximum values</sub></td>
+    <td width="50%"><img src="./Screenshots/SiR_System_Monitor_SensorSelection.png" alt="Sensor Selection settings"><br><sub><strong>Sensor Selection</strong> — choose, rename, and arrange readings</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="./Screenshots/SiR_System_Monitor_AppearanceSettings.png" alt="Appearance settings"><br><sub><strong>Appearance</strong> — themes, styles, fonts, layouts, and colors</sub></td>
+    <td width="50%"><img src="./Screenshots/SiR_System_Monitor_WebMonitorSettings.png" alt="Web Monitor settings"><br><sub><strong>Web Monitor</strong> — browser access, API, and security controls</sub></td>
+  </tr>
+</table>
+
+<details>
+<summary><strong>View more color themes</strong></summary>
+
+<table>
+  <tr>
+    <td width="50%"><img src="./Screenshots/SiR_System_Monitor_Blue.png" alt="Blue theme"></td>
+    <td width="50%"><img src="./Screenshots/SiR_System_Monitor_Cyan.png" alt="Cyan theme"></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="./Screenshots/SiR_System_Monitor_Green.png" alt="Green theme"></td>
+    <td width="50%"><img src="./Screenshots/SiR_System_Monitor_Purple.png" alt="Purple theme"></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="./Screenshots/SiR_System_Monitor_Red.png" alt="Red theme"></td>
+  </tr>
+</table>
+
+</details>
+
+More screenshots are available in the [Imgur album](https://imgur.com/a/pkG1Cyb).
+
+## Build from source
+
+### Prerequisites
+
+- Windows 10 or 11, 64-bit
+- A current Node.js LTS release and npm
+- Windows PowerShell
+- The 64-bit .NET Framework C# compiler at `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe`
+- Internet access on the first sensor-host build to download the pinned LibreHardwareMonitor 0.9.6 archive
+
+### Run locally
+
+```powershell
+git clone https://github.com/KaMiKaZeE1221/SiR-System-Monitor.git
+Set-Location SiR-System-Monitor
+npm ci
+npm start
+```
+
+`npm start` builds the bundled sensor host before launching Electron.
+
+### Useful commands
+
+| Command | Purpose |
+|---|---|
+| `npm start` | Build the sensor host and run the app. |
+| `npm run test:sensors` | Build and run the hardware catalogue and sensor-host integration tests. |
+| `npm run test:sensors:enhanced` | Exercise the enhanced sensor path. |
+| `npm run test:sensors:startup` | Measure staged sensor startup behavior. |
+| `npm run test:layout` | Verify desktop and Web Monitor layout presets. |
+| `npm run test:version` | Verify version consistency across release files. |
+| `npm run dist:win` | Build the Windows installer and portable package. |
+
+### Project map
+
+```text
+main.js           Electron main process, windows, tray, updates, and web server
+app.js            Dashboard behavior, settings, profiles, and sensor rendering
+sensorReader.js   Built-in collector and optional provider aggregation
+rtssReader.js     RTSS, AIDA64, HWiNFO, and LHM shared-memory compatibility
+sensor-host/      Bundled native sensor collector source and hardware registry
+overlay.*         On-screen overlay window, behavior, and styling
+scripts/          Build, test, benchmark, and release helpers
+Screenshots/      README and project screenshots
+```
+
+## License
+
+SiR System Monitor is licensed under the [GNU General Public License v3.0](./LICENSE.txt). Third-party components remain subject to their own licenses and notices.
+
+---
+
+<div align="center">
+  Built by <strong>SiR_KaMiKaZeE</strong> · <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest">Latest release</a> · <a href="./CHANGELOG.md">Changelog</a>
+</div>
