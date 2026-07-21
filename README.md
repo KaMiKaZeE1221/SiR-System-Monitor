@@ -18,7 +18,7 @@ A Windows Electron desktop app for real-time hardware telemetry, overlay display
 ## :computer: Overview
 SiR System Monitor is designed for users who want a fast, configurable view of system telemetry without needing to keep multiple monitoring apps in the foreground.
 
-The app reads shared-memory telemetry from RTSS, AIDA64, HWiNFO, and Libre Hardware Monitor (when available), then presents it through grouped live cards, configurable sensor visibility, summary mode, overlay output, and web sharing.
+The app includes its own isolated sensor collector and can optionally merge shared-memory telemetry from RTSS, AIDA64, HWiNFO, and Libre Hardware Monitor. Sensor data is presented through grouped live cards, configurable sensor visibility, summary mode, overlay output, and web sharing.
 
 ## :sparkles: Core Features
 - :bar_chart: Live grouped sensors:
@@ -41,6 +41,8 @@ The app reads shared-memory telemetry from RTSS, AIDA64, HWiNFO, and Libre Hardw
   - Reset custom names
 - :window: Monitoring Mode and Summary Mode
 - :triangular_ruler: Card layout controls:
+  - Shared `Compact`, `Balanced`, `Wide`, and `Stacked` presets for desktop and Web Monitor
+  - `Custom` mode for independently resizing cards with their lower-right corner handles
   - Resize card width and height in both Main view and Summary Mode
   - Fine-grained width snapping for tighter layout control
 - :art: Appearance customization:
@@ -64,17 +66,16 @@ The app reads shared-memory telemetry from RTSS, AIDA64, HWiNFO, and Libre Hardw
 
 ## :white_check_mark: Requirements
 - Windows 10 or newer
-- At least one sensor provider:
-  - RTSS / MSI Afterburner
-  - AIDA64 (Shared Memory enabled)
-  - HWiNFO (Shared Memory enabled)
-  - Libre Hardware Monitor (Shared Memory enabled)
+- No separate monitoring application is required for built-in CPU, memory, drive, and network sensors.
+- `Enhanced Hardware Sensors` optionally enables the bundled LibreHardwareMonitor library for supported temperatures, clocks, power, GPU, and fan sensors. Some low-level sensors can require administrator access or a compatible hardware-access driver.
+- RTSS, AIDA64, HWiNFO, and Libre Hardware Monitor shared memory remain optional compatibility sources.
 
 ## :gear: Settings Overview
 All settings are persisted locally and survive app restarts.
 
 ### :art: Appearance
 - Theme and style presets
+- Sensor-card layout presets plus a persistent Custom resize mode shared with the Web Monitor
 - Font and text options
 - Disable glow effects toggle
 - Temperature unit
@@ -101,7 +102,8 @@ All settings are persisted locally and survive app restarts.
   - Severity (`Warning` / `Critical`)
 
 ### :electric_plug: Data Sources
-- Provider toggles for shared-memory sources
+- Built-in and enhanced sensor toggles
+- Optional provider toggles for shared-memory sources
 
 ### :globe_with_meridians: Connectivity
 - Web monitor host/port
@@ -128,7 +130,7 @@ Built-in **Export** and **Import** are available under `Settings -> Backup & Res
   - `Apply Now`
   - `Apply & Reload`
 
-The export includes appearance preferences, monitoring options, provider toggles, web monitor settings, overlay configuration, and update-related behavior.
+The export includes appearance preferences, sensor-card layout/order/custom sizes, monitoring options, provider toggles, web monitor settings, complete overlay configuration, and update-related behavior.
 
 ### Profiles
 Also available in `Settings -> Backup & Restore -> Profiles`:
@@ -140,21 +142,23 @@ Also available in `Settings -> Backup & Restore -> Profiles`:
 
 ## :test_tube: Data Sources
 Primary runtime provider path:
-- RTSS
-- AIDA64
-- HWiNFO
-- Libre Hardware Monitor
+- Built-in SiR sensor host
+- Optional enhanced hardware access through the bundled LibreHardwareMonitor library
+- Optional RTSS, AIDA64, HWiNFO, and Libre Hardware Monitor shared-memory fallbacks
 
 ### :compass: Recommended first-time setup
-1. Enable only the providers you actively use in `Settings -> Data Sources`.
-2. Confirm shared-memory output is enabled in each provider app.
-3. Enable desired groups in `Monitoring -> Visible Sensors`.
-4. Configure per-sensor options in `Monitoring -> Sensor Selection`.
-5. Configure overlay behavior in `Appearance -> On-Screen Overlay`.
-6. Configure host/port in `Connectivity -> Web Monitor`.
-7. Configure startup and update behavior in `App Behavior`.
+1. Keep `Built-in Sensors` enabled in `Settings -> Data Sources`.
+2. Enable `Enhanced Hardware Sensors` if you want supported temperatures, clocks, power, and fan readings.
+3. Enable an optional shared-memory provider only when you need its additional sensors or RTSS FPS data.
+4. Enable desired groups in `Monitoring -> Visible Sensors`.
+5. Configure per-sensor options in `Monitoring -> Sensor Selection`.
+6. Configure overlay behavior in `Appearance -> On-Screen Overlay`.
+7. Configure host/port in `Connectivity -> Web Monitor`.
+8. Configure startup and update behavior in `App Behavior`.
 
 ### Provider tips
+- The built-in sensor host is persistent and batched; it does not launch PowerShell for every refresh.
+- Enhanced sensor availability varies by motherboard, firmware, driver, permissions, and security configuration.
 - RTSS/MSI Afterburner is the most common source for FPS/frame-time telemetry.
 - HWiNFO and AIDA64 often expose overlapping sensors, so enabling only what you need helps keep the sensor list cleaner.
 - If a provider is closed or shared memory is disabled, its sensors will not populate.
@@ -182,7 +186,8 @@ Security options:
 - Active sensor alerts are visually highlighted in web monitor rows.
 
 Layout and UI notes:
-- Web monitor card widths are mapped from desktop card width settings for cross-view consistency.
+- Web monitor cards use the selected desktop layout preset for matching default width, height, spacing, padding, and box sizing.
+- Manually resized desktop card dimensions are mapped into the responsive Web Monitor grid as custom overrides.
 - Web monitor header branding uses a higher-quality icon source for improved sharpness.
 - Web monitor tab favicon is restored with ICO-first fallback behavior.
 
@@ -212,9 +217,10 @@ If release metadata is missing, the app falls back to **Open Latest Release**.
 
 ## :rescue_worker_helmet: Troubleshooting
 ### :question: Missing sensors
-- Ensure provider apps are running.
-- Verify source toggles in `Settings -> Data Sources`.
-- Confirm shared-memory output is enabled in each provider.
+- Verify `Built-in Sensors` is enabled in `Settings -> Data Sources`.
+- Try `Enhanced Hardware Sensors` for supported temperature, fan, voltage, clock, and power readings.
+- If using an optional provider, ensure its app is running and shared-memory output is enabled.
+- See [`sensor-host/HARDWARE-SUPPORT.md`](sensor-host/HARDWARE-SUPPORT.md) for the direct digital PSU USB IDs and enhanced controller families included in v1.2.6.
 
 ### :video_game: FPS / Frame Time not updating
 - Ensure RTSS/MSI Afterburner is running.
