@@ -1,5 +1,72 @@
 # Changelog
 
+## 1.2.9 - 2026-07-21
+
+### Added
+- Added explicit diagnostics for Intel RAPL domains that do not report usable energy-counter data.
+- Added automatic GPU-vendor and FPS capture-method diagnostics, with AMD displayed-frame timing and presented-frame fallback.
+- Added an individual reset-name button beside every detected sensor's rename button.
+- Added a persistent `Hide Unticked` / `Show All` control beside Sensor Selection search. It combines with search, hides empty categories, and is included in settings profiles and exports.
+
+### Changed
+- Intel CPU Package, Cores, Memory/DRAM, and Platform/PSys power sensors are now published only after their corresponding RAPL energy counters produce a valid reading.
+- Moved Sensor Sources into the Monitoring group and removed the separate Data Sources group.
+- Reworked Custom card sizing into a 36-column, fine-grained dense layout shared by the desktop app and Web Monitor. Shorter cards can now have later cards packed directly beneath them instead of reserving the tallest card's full row.
+- Updated the Sensor Sources status to distinguish an active Intel package-power sensor from optional processor/platform domains that are not exposed by the current CPU, firmware, or driver.
+
+### Fixed
+- Fixed unsupported Intel CPU Memory and Platform power domains appearing as permanent `0 W` sensors. Valid domains remain available after their first real sample, and a later genuine zero remains visible instead of being mistaken for an unsupported sensor.
+- Fixed native FPS and frame time remaining at zero on affected AMD systems by detecting installed adapters, enabling hybrid/display tracking for AMD, and preferring `MsBetweenDisplayChange` with `MsBetweenPresents` and QPC timing as fallbacks.
+- Fixed forced PresentMon shutdowns leaving abandoned ETW trace sessions that could eventually prevent new captures from starting with Windows error 1450. The sensor host now shuts down its trace cleanly and recovers orphaned SiR sessions before starting.
+- Fixed Custom layout width resizing jumping by entire large grid columns and fixed blank vertical areas beneath shorter cards.
+- Fixed Native FPS and Native Frame Time remaining at zero across AMD and NVIDIA systems because capture-relative PresentMon timestamps were being compared with the system-wide stopwatch timeline and discarded before a valid sample window could form.
+
+## 1.2.8 - 2026-07-21
+
+### Added
+- Added a lightweight persisted sensor catalogue so enabled sensor rows can appear immediately as `Detecting...` during cold enhanced-hardware discovery without presenting stale readings as live data.
+- Added startup timing, forced collector recovery, enabled-alert filtering, sensor catalogue cache, enhanced-administrator migration, and window visibility regression coverage.
+
+### Changed
+- Split enhanced hardware discovery into independent processor, graphics, motherboard/controller, and storage/network phases so one slow hardware family no longer blocks every enhanced sensor group.
+- Reduced the native sensor-host failure retry delay from ten seconds to 1.5 seconds and temporarily retains the latest valid snapshot during a transient collector restart.
+- Enhanced Hardware Sensors now also enables `Launch app as administrator`, including one-time migration for existing installations and normalization of legacy profiles/imported settings.
+- Updated the themed Enhanced Hardware Sensors confirmation to explain that Windows will request administrator access on future launches.
+- Sensor Alert selection now contains only individually enabled sensors from enabled categories and refreshes immediately when those selections change.
+
+### Fixed
+- Fixed enhanced sensor cards disappearing for roughly ten seconds after applying or switching profiles by avoiding unnecessary reloads and gracefully closing the collector before required reloads.
+- Fixed cold-launch sensor visibility by progressively publishing each detected hardware family and preserving placeholder rows until live values arrive.
+- Fixed a startup window race where a manually opened window could minimize itself back to the tray when sensor detection completed.
+- Fixed normal non-tray launches remaining hidden until the full sensor catalogue had loaded; the main window now appears at DOM readiness.
+
+## 1.2.7 - 2026-07-21
+
+### Added
+- Added a lightweight persisted sensor catalogue so enabled sensor rows can appear immediately as `Detecting...` during cold enhanced-hardware discovery without presenting stale readings as live data.
+- Added startup timing, forced collector recovery, enabled-alert filtering, sensor catalogue cache, enhanced-administrator migration, and window visibility regression coverage.
+- Added a consent-driven, hash-verified bundled PawnIO driver installer for Intel RAPL package-power and other protected Enhanced Hardware Sensor readings, with driver and package-power diagnostics in Data Sources.
+- Added signed, hash-verified PresentMon 2.4.1 presentation-event capture to the native sensor host, providing common `Native FPS` and `Native Frame Time` sensors for AMD, NVIDIA, and Intel GPUs without a separate installation.
+
+### Changed
+- Split enhanced hardware discovery into independent processor, graphics, motherboard/controller, and storage/network phases so one slow hardware family no longer blocks every enhanced sensor group.
+- Reduced the native sensor-host failure retry delay from ten seconds to 1.5 seconds and temporarily retains the latest valid snapshot during a transient collector restart.
+- Enhanced Hardware Sensors now also enables `Launch app as administrator`, including one-time migration for existing installations and normalization of legacy profiles/imported settings.
+- Updated the themed Enhanced Hardware Sensors confirmation to explain that Windows will request administrator access on future launches.
+- Sensor Alert selection now contains only individually enabled sensors from enabled categories and refreshes immediately when those selections change.
+- Changed CPU aggregate power selection to use sensor type and prefer the package-power domain instead of relying on ambiguous label matching.
+
+### Fixed
+- Fixed enhanced sensor cards disappearing for roughly ten seconds after applying or switching profiles by avoiding unnecessary reloads and gracefully closing the collector before required reloads.
+- Fixed cold-launch sensor visibility by progressively publishing each detected hardware family and preserving placeholder rows until live values arrive.
+- Fixed a startup window race where a manually opened window could minimize itself back to the tray when sensor detection completed.
+- Fixed normal non-tray launches remaining hidden until the full sensor catalogue had loaded; the main window now appears at DOM readiness.
+- Fixed **Enable Browser View** not immediately starting or stopping the Web Monitor, and synchronized the header Web button with the requested runtime state so it can enable a service whose settings checkbox was previously off.
+- Serialized Web Monitor start/stop transitions to prevent rapid setting and header changes from racing each other.
+- Fixed Intel CPU package-power readings being absent or represented by invalid zero sensors when the required low-level driver was unavailable, and disambiguated CPU sensors that share a base name across temperature, voltage, clock, and power types.
+- Fixed native FPS being limited to AMD's vendor-specific LibreHardwareMonitor sensor; FPS now follows the foreground rendering process across supported GPU vendors and keeps the last active game selected while the dashboard is focused.
+- Fixed custom sensor names not updating in the Web Monitor until SiR was restarted; rename changes are now applied to and immediately republished in the live browser payload.
+
 ## 1.2.6 - 2026-07-21
 
 ### Added
