@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.3.0 - 2026-07-22
+
+### Added
+- Added an independent Summary Mode layout selector under Appearance, with Compact, Balanced, Wide, Stacked, and Custom choices matching normal mode.
+- Added independent Summary Mode card ordering so cards can be rearranged without changing their normal dashboard order.
+- Added dedicated settings-panel background, accent, and icon colors while keeping the rest of the dashboard palette independent.
+- Added current settings-layout and overlay-editor screenshots to the README.
+- Intel RAPL diagnostics for domains that do not report usable energy-counter data.
+- automatic GPU-vendor and FPS capture-method diagnostics, including AMD displayed-frame timing and presented-frame fallback.
+- individual reset-name button beside every detected sensor rename control.
+- persistent `Hide Unticked` / `Show All` Sensor Selection filter, including profile and export support.
+- settings-wide search that opens matching controls without overwriting saved accordion state.
+
+### Changed
+- Normal and Summary modes now keep separate layout presets, Custom layout configurations, per-card dimensions, and card order.
+- The Web Monitor payload now carries both normal and Summary card geometry/order and applies the correct arrangement when browser Summary Mode is toggled.
+- Extended settings profiles and exported settings to include Summary layout configuration, Summary card sizes/order, and all settings-panel colors.
+- validation that publishes Intel CPU Package, Cores, Memory/DRAM, and Platform/PSys power sensors only after their RAPL domains produce a valid reading.
+- move of Sensor Sources into Monitoring and removal of the separate Data Sources group.
+- 36-column Custom layout with fine width control and dense packing below shorter cards in the desktop app and Web Monitor.
+- Sensor Sources diagnostics that distinguish active Intel package power from optional unavailable processor/platform domains.
+- settings-workspace redesign with flat category surfaces, responsive fields, modern switches, and clearer action hierarchy.
+- single-surface On-Screen Overlay editor for placement, sizing, arrangement, content, and colors.
+
+### Fixed
+- Fixed resizing cards in Summary Mode also changing the corresponding cards in the normal dashboard.
+- Fixed Web Monitor Summary Mode inheriting the normal dashboard's card dimensions or order instead of its own layout.
+- fix for unsupported Intel Memory and Platform power domains appearing permanently as `0 W` sensors.
+- AMD native FPS/frame-time fixes using installed-adapter detection, hybrid/display tracking, and displayed/presented/QPC timing fallbacks.
+- PresentMon cleanup and stale ETW-session recovery fix for forced capture shutdowns and Windows error 1450.
+- Custom layout fixes for coarse width jumps and blank areas below shorter cards.
+- fix for AMD and NVIDIA Native FPS/Frame Time samples being discarded because capture-relative and system-wide timestamps were compared incorrectly.
+
 ## 1.2.9 - 2026-07-21
 
 ### Added
@@ -7,12 +40,15 @@
 - Added automatic GPU-vendor and FPS capture-method diagnostics, with AMD displayed-frame timing and presented-frame fallback.
 - Added an individual reset-name button beside every detected sensor's rename button.
 - Added a persistent `Hide Unticked` / `Show All` control beside Sensor Selection search. It combines with search, hides empty categories, and is included in settings profiles and exports.
+- Added settings-wide search that locates and opens matching controls across every category without overwriting the user's saved accordion state.
 
 ### Changed
 - Intel CPU Package, Cores, Memory/DRAM, and Platform/PSys power sensors are now published only after their corresponding RAPL energy counters produce a valid reading.
 - Moved Sensor Sources into the Monitoring group and removed the separate Data Sources group.
 - Reworked Custom card sizing into a 36-column, fine-grained dense layout shared by the desktop app and Web Monitor. Shorter cards can now have later cards packed directly beneath them instead of reserving the tallest card's full row.
 - Updated the Sensor Sources status to distinguish an active Intel package-power sensor from optional processor/platform domains that are not exposed by the current CPU, firmware, or driver.
+- Redesigned the complete settings workspace with one surface per category, flat expandable setting rows, clearer category descriptions, modern switch controls, responsive field grids, and a neutral/primary action hierarchy.
+- Rebuilt On-Screen Overlay settings as a single structured editor with placement, sizing, arrangement, content, and color sections instead of the previous triple-nested card layout.
 
 ### Fixed
 - Fixed unsupported Intel CPU Memory and Platform power domains appearing as permanent `0 W` sensors. Valid domains remain available after their first real sample, and a later genuine zero remains visible instead of being mistaken for an unsupported sensor.
@@ -101,6 +137,7 @@
 - Kept direct PSU polling telemetry-only, cached sub-second repeat requests, and throttled unavailable-device retries to protect host and application performance.
 
 ### Fixed
+- Fixed installed builds missing `resources/app-update.yml`, and added a writable GitHub-feed fallback so update checks no longer fail with a local `ENOENT` error.
 - Fixed sensor reordering being disabled by an active Sensor Selection search.
 - Fixed filtered reordering so hidden sensors retain their relative positions.
 - Stabilized drag edge-scrolling and allowed mouse-wheel, trackpad, arrow-key, and page-key scrolling while a sensor is grabbed.
