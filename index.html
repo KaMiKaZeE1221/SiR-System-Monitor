@@ -38,6 +38,18 @@
       </div>
 
       <div class="settings-section">
+        <label class="settings-label" for="layoutPresetSelect"><i class="bi bi-grid-3x3-gap-fill settings-label-icon" aria-hidden="true"></i><span>Layout</span></label>
+        <select id="layoutPresetSelect" class="detection-select">
+          <option value="compact">Compact — 220 px cards</option>
+          <option value="balanced">Balanced — 300 px cards</option>
+          <option value="wide">Wide — 420 px cards</option>
+          <option value="stacked">Stacked — full-width cards</option>
+          <option value="custom">Custom — resize cards freely</option>
+        </select>
+        <div class="settings-note">Fixed presets apply matching dimensions to the app and Web Monitor. Choose Custom to resize cards with their lower-right corner handles; your custom arrangement is saved separately.</div>
+      </div>
+
+      <div class="settings-section">
         <label class="settings-label"><i class="bi bi-fonts settings-label-icon" aria-hidden="true"></i><span>Font Settings</span></label>
         <div class="settings-field-grid">
           <select id="fontSizeSelect" class="detection-select">
@@ -344,7 +356,9 @@
 
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-list-check settings-label-icon" aria-hidden="true"></i><span>Sensor Selection</span></label>
+        <input id="sensorSearchInput" class="detection-select sensor-search-input" type="search" placeholder="Search sensors or categories..." autocomplete="off" aria-label="Search sensor selection">
         <div id="sensorOptions" class="visibility-options"></div>
+        <div id="sensorSearchEmpty" class="settings-note sensor-search-empty" aria-live="polite" hidden>No sensors match your search.</div>
         <div class="settings-note">Use the checkboxes above to show or hide groups, and drag individual sensors to reorder them.</div>
         <div class="web-monitor-actions settings-inline-gap-sm">
           <button id="resetSensorNamesBtn" class="test-btn" type="button">Reset Custom Sensor Names</button>
@@ -365,10 +379,10 @@
         <div class="settings-note">Condition and Threshold</div>
         <div class="settings-field-grid">
           <select id="alertOperatorSelect" class="detection-select">
-            <option value=">=">>=</option>
-            <option value=">">></option>
-            <option value="<="><=</option>
-            <option value="<"><</option>
+            <option value="&gt;=">&gt;=</option>
+            <option value="&gt;">&gt;</option>
+            <option value="&lt;=">&lt;=</option>
+            <option value="&lt;">&lt;</option>
           </select>
           <input id="alertThresholdInput" class="detection-select" type="number" step="0.1" placeholder="Threshold">
         </div>
@@ -423,22 +437,31 @@
       <div class="settings-group-title">Data Sources</div>
 
       <div class="settings-section">
-        <label class="settings-label"><i class="bi bi-hdd-stack-fill settings-label-icon" aria-hidden="true"></i><span>Shared Memory Sources</span></label>
-        <div class="settings-note">SiR uses Shared Memory mode with RTSS/AIDA64/HWiNFO/LHM providers.</div>
+        <label class="settings-label"><i class="bi bi-hdd-stack-fill settings-label-icon" aria-hidden="true"></i><span>Sensor Sources</span></label>
+        <div class="settings-note">Built-in sensors need no separate monitoring app. Enhanced access adds temperatures, clocks, power and fans where the hardware permits it. Enabling it asks for confirmation, then restarts the app with administrator privileges.</div>
         <div class="visibility-options">
           <label class="checkbox-label">
-            <input type="checkbox" id="providerRTSS" checked>
-            <span>RTSS / MSI</span>
+            <input type="checkbox" id="providerBuiltin" checked>
+            <span>Built-in Sensors</span>
           </label>
           <label class="checkbox-label">
-            <input type="checkbox" id="providerAIDA64" checked>
-            <span>AIDA64</span>
+            <input type="checkbox" id="providerEnhanced">
+            <span>Enhanced Hardware Sensors</span>
           </label>
           <label class="checkbox-label">
-            <input type="checkbox" id="providerHWiNFO" checked>
-            <span>HWiNFO / LHM</span>
+            <input type="checkbox" id="providerRTSS">
+            <span>RTSS / MSI (Optional)</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="providerAIDA64">
+            <span>AIDA64 (Optional)</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="providerHWiNFO">
+            <span>HWiNFO / LHM Shared Memory (Optional)</span>
           </label>
         </div>
+        <div id="builtinSensorStatus" class="settings-note" aria-live="polite">Built-in collector starts with monitoring.</div>
       </div>
     </div>
 
@@ -505,6 +528,10 @@
             <span>Start app with Windows</span>
           </label>
           <label class="checkbox-label">
+            <input type="checkbox" id="launchAsAdministrator">
+            <span>Launch app as administrator</span>
+          </label>
+          <label class="checkbox-label">
             <input type="checkbox" id="startMinimized">
             <span>Start minimized</span>
           </label>
@@ -521,7 +548,7 @@
           <label for="startupDelaySeconds">Startup delay (seconds)</label>
           <input type="number" id="startupDelaySeconds" class="detection-select" min="0" max="60" step="1" value="0" placeholder="0">
         </div>
-        <div class="settings-note">Delay app window startup by this many seconds (0-60).</div>
+        <div class="settings-note">Delay app window startup by this many seconds (0-60). Administrator launch takes effect on the next start and displays a Windows UAC prompt.</div>
         <div class="settings-note">When close to tray is enabled, use the tray icon menu to quit the app.</div>
       </div>
 
@@ -650,20 +677,21 @@
         </label>
 
         <div class="setup-guide-highlight">
-          <strong>Quick start:</strong> enable the provider(s) you use, pick visible groups, then fine-tune with Sensor Selection and Overlay Settings.
+          <strong>Quick start:</strong> keep Built-in Sensors enabled, optionally enable Enhanced Hardware Sensors, then fine-tune with Sensor Selection and Overlay Settings.
         </div>
 
         <div class="setup-guide-highlight">
-          <strong>Recommended setup order:</strong> Provider app setup -> launch provider(s) -> launch SiR -> verify live groups -> tune overlay/web monitor -> save a backup export.
+          <strong>Recommended setup order:</strong> launch SiR -> verify built-in groups -> optionally enable enhanced or compatibility sources -> tune overlay/web monitor -> save a backup export.
         </div>
 
         <details class="setup-guide-dropdown" open>
           <summary><i class="bi bi-hdd-stack-fill" aria-hidden="true"></i><span>1) Choose Sensor Providers</span></summary>
           <div class="setup-guide-dropdown-body">
             <ul>
-              <li>SiR reads sensors from shared memory providers: <strong>RTSS/MSI</strong>, <strong>AIDA64</strong>, and <strong>HWiNFO/LHM</strong>.</li>
-              <li>In <strong>Settings → Data Sources → Shared Memory Sources</strong>, keep only the providers you actually use enabled.</li>
-              <li>Provider apps must be running while SiR is open.</li>
+              <li><strong>Built-in Sensors</strong> provides CPU load, memory, drives, and network telemetry without another monitoring app.</li>
+              <li><strong>Enhanced Hardware Sensors</strong> adds supported GPU, temperature, clock, power, voltage, and fan readings.</li>
+              <li>In <strong>Settings → Data Sources → Sensor Sources</strong>, enable compatibility providers only when you need their additional readings.</li>
+              <li>Optional provider apps must be running only when their source is enabled.</li>
               <li>If multiple providers expose similar sensors, keep one preferred source active first to avoid duplicate/noisy categories while building your layout.</li>
               <li>After initial setup, only enable additional providers when you specifically need their unique metrics.</li>
             </ul>
@@ -671,12 +699,13 @@
         </details>
 
         <details class="setup-guide-dropdown">
-          <summary><i class="bi bi-sliders2-vertical" aria-hidden="true"></i><span>2) Provider Setup Details</span></summary>
+          <summary><i class="bi bi-sliders2-vertical" aria-hidden="true"></i><span>2) Optional Provider Details</span></summary>
           <div class="setup-guide-dropdown-body">
             <ul>
               <li><strong>AIDA64:</strong> File → Preferences → External Applications → enable <strong>Shared Memory</strong>.</li>
               <li><strong>HWiNFO/LHM:</strong> enable shared-memory sensor output in their settings.</li>
               <li><strong>RTSS/MSI:</strong> best for live <strong>FPS</strong> and <strong>Frame Time</strong> telemetry.</li>
+              <li><strong>Enhanced access:</strong> availability depends on hardware, firmware, Windows security settings, and permissions.</li>
               <li><strong>If values look stale:</strong> restart the provider first, then restart SiR so shared-memory mappings are refreshed in order.</li>
               <li>When using startup automation, ensure provider apps start before SiR (or use SiR startup delay) so mappings are available at first poll.</li>
               <li>After changing provider sensor configuration, wait a few refresh cycles before troubleshooting to allow cache/history to repopulate.</li>
@@ -731,7 +760,7 @@
           <div class="setup-guide-dropdown-body">
             <ul>
               <li>Use <strong>Auto-check for updates on startup</strong> to automatically check GitHub releases each launch.</li>
-              <li><strong>Startup Delay</strong> can prevent heavy sensor providers from racing app startup; increase delay if sensors are missing right after login.</li>
+              <li><strong>Startup Delay</strong> is usually unnecessary for built-in sensors, but can help optional provider apps finish loading after login.</li>
               <li>If in-app downloading is unavailable for a release, use <strong>Open Latest Release</strong> as the fallback path.</li>
               <li>For fast logins, start with 3-5 seconds delay and only raise it if providers initialize slowly.</li>
               <li>After changing startup/tray behavior, perform one full restart test to confirm expected launch/minimize behavior.</li>
@@ -743,13 +772,14 @@
           <summary><i class="bi bi-life-preserver" aria-hidden="true"></i><span>7) Troubleshooting Missing/Stale Sensors</span></summary>
           <div class="setup-guide-dropdown-body">
             <ul>
-              <li>Confirm the right provider toggle is enabled in SiR.</li>
-              <li>Re-check provider shared-memory options and restart the provider app.</li>
+              <li>Confirm <strong>Built-in Sensors</strong> is enabled in SiR.</li>
+              <li>Enable <strong>Enhanced Hardware Sensors</strong> for supported temperatures, clocks, power, voltage, and fans.</li>
+              <li>For optional sources, re-check provider shared-memory options and restart the provider app.</li>
               <li>For FPS/Frame Time issues, verify RTSS/MSI is running and actively updating.</li>
               <li>If needed, restart SiR after provider configuration changes.</li>
               <li>If a single group is empty, verify that group is enabled in <strong>Visible Sensors</strong> and not filtered out in <strong>Sensor Selection</strong>.</li>
               <li>If only Ping looks wrong, verify the configured Ping Host and wait for several samples before judging min/avg/max.</li>
-              <li>If data appears frozen while minimized, restore the app and confirm providers are still running.</li>
+              <li>If optional-provider data appears frozen, restore the app and confirm that provider is still running.</li>
               <li>If a recent import changed behavior unexpectedly, restore your previous exported settings backup.</li>
             </ul>
           </div>
@@ -759,7 +789,7 @@
           <summary><i class="bi bi-check2-circle" aria-hidden="true"></i><span>8) Final Validation Checklist</span></summary>
           <div class="setup-guide-dropdown-body">
             <ul>
-              <li>At least one provider is enabled and running.</li>
+              <li>Built-in Sensors is enabled and CPU/RAM values update without another monitoring app.</li>
               <li>CPU/GPU/FPS/Ping groups show changing values (not static zeros).</li>
               <li>Overlay toggle and hotkey both work as expected.</li>
               <li>Web monitor opens from the app and displays live updates.</li>
@@ -794,6 +824,26 @@
     </div>
   </div>
 
+  <div id="enhancedSensorsConfirmModal" class="setup-guide-modal is-hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="enhancedSensorsConfirmTitle" aria-describedby="enhancedSensorsConfirmDescription">
+    <div class="setup-guide-dialog confirmation-dialog" role="document">
+      <div class="setup-guide-header confirmation-header">
+        <h2 id="enhancedSensorsConfirmTitle"><i class="bi bi-shield-lock-fill confirmation-icon" aria-hidden="true"></i><span>Enable Enhanced Hardware Sensors?</span></h2>
+        <button type="button" class="setup-guide-close" data-cancel-enhanced-sensors aria-label="Cancel and close">&times;</button>
+      </div>
+      <div class="setup-guide-body confirmation-body" id="enhancedSensorsConfirmDescription">
+        <p>Enhanced Hardware Sensors reads low-level temperatures, fan speeds, clocks, power, and other hardware data.</p>
+        <div class="setup-guide-highlight confirmation-restart-note">
+          <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+          <span>SiR System Monitor will save this setting, close, and restart with administrator privileges. Windows will then show a User Account Control prompt.</span>
+        </div>
+      </div>
+      <div class="setup-guide-footer confirmation-modal-footer">
+        <button type="button" class="test-btn confirmation-cancel-btn" data-cancel-enhanced-sensors>Cancel</button>
+        <button type="button" class="test-btn" id="confirmEnhancedSensorsBtn">Restart as Administrator</button>
+      </div>
+    </div>
+  </div>
+
   <div id="importSettingsModal" class="setup-guide-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="importSettingsTitle">
     <div class="setup-guide-dialog" role="document">
       <div class="setup-guide-header">
@@ -814,4 +864,3 @@
   <script src="app.js"></script>
 </body>
 </html>
-

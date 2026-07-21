@@ -1,4 +1,18 @@
 const SensorReader = require('./sensorReader');
+const {
+  classifyNetworkSensor,
+  resolveNetworkDisplayUnits,
+  scaleBinaryNetworkValue
+} = require('./networkUnits');
+const {
+  DEFAULT_LAYOUT_PRESET,
+  LAYOUT_PRESET_STORAGE_KEY,
+  CUSTOM_LAYOUT_CONFIG_STORAGE_KEY,
+  CUSTOM_LAYOUT_SIZES_STORAGE_KEY,
+  normalizeLayoutPreset,
+  getLayoutPreset
+} = require('./layoutPresets');
+const { reorderVisibleSensors } = require('./sensorOrder');
 const http = require('http');
 const os = require('os');
 const fs = require('fs');
@@ -61,6 +75,8 @@ let overlaySensorSelection = {};
 let sensorCategorySelection = {};
 let sensorCategoryCollapse = {};
 let sensorOrderByGroup = {};
+let sensorSearchSessionActive = false;
+const sensorSearchCollapsedGroups = new Set();
 let overlayCategoryOrderCache = null;
 let sensorCatalogSignature = '';
 let updateInProgress = false;
@@ -90,6 +106,9 @@ const MONITORING_MODE_KEY = 'monitoringMode';
 const SUMMARY_MODE_KEY = 'summaryMode';
 const DEBUG_MODE_KEY = 'debugMode';
 const VIEW_MODE_KEY = 'viewMode';
+const LAYOUT_PRESET_KEY = LAYOUT_PRESET_STORAGE_KEY;
+const CUSTOM_LAYOUT_CONFIG_KEY = CUSTOM_LAYOUT_CONFIG_STORAGE_KEY;
+const CUSTOM_LAYOUT_SIZES_KEY = CUSTOM_LAYOUT_SIZES_STORAGE_KEY;
 const GRAPH_EXPANDED_KEY = 'graphExpandedSensors';
 const WEB_MONITOR_SETTINGS_KEY = 'webMonitorSettings';
 const OVERLAY_ENABLED_KEY = 'overlayEnabled';
@@ -131,6 +150,9 @@ const SETTINGS_SNAPSHOT_KEYS = [
   SENSOR_CUSTOM_NAMES_KEY,
   'customColors',
   VIEW_MODE_KEY,
+  LAYOUT_PRESET_KEY,
+  CUSTOM_LAYOUT_CONFIG_KEY,
+  CUSTOM_LAYOUT_SIZES_KEY,
   'theme',
   FONT_SIZE_KEY,
   FONT_FAMILY_KEY,
@@ -148,11 +170,19 @@ const SETTINGS_SNAPSHOT_KEYS = [
   OVERLAY_VALUE_COLOR_KEY,
   OVERLAY_BG_COLOR_KEY,
   OVERLAY_OPACITY_KEY,
+  OVERLAY_GROUP_SPACING_KEY,
+  OVERLAY_SCALE_KEY,
   OVERLAY_WIDTH_PRESET_KEY,
   OVERLAY_WIDTH_KEY,
   OVERLAY_POSITION_KEY,
   OVERLAY_STYLE_KEY,
   OVERLAY_SHOW_UNITS_KEY,
+  OVERLAY_MONITOR_KEY,
+  OVERLAY_HOTKEY_KEY,
+  OVERLAY_DRAG_UNLOCK_KEY,
+  OVERLAY_CUSTOM_X_KEY,
+  OVERLAY_CUSTOM_Y_KEY,
+  OVERLAY_CUSTOM_POSITION_ENABLED_KEY,
   OVERLAY_GROUP_LINE_LIMITS_KEY,
   OVERLAY_LINE_LIMITS_EXPANDED_KEY,
   OVERLAY_CATEGORY_ORDER_KEY,
@@ -161,6 +191,10 @@ const SETTINGS_SNAPSHOT_KEYS = [
   WEB_MONITOR_SETTINGS_KEY,
   APP_BEHAVIOR_SETTINGS_KEY,
   SENSOR_ALERT_RULES_KEY,
+  WINDOW_ORDER_KEY,
+  WINDOW_SIZE_KEY,
+  SIDEBAR_WIDTH_KEY,
+  GRAPH_EXPANDED_KEY,
   'showFps',
   'showCpu',
   'showGpu',
@@ -482,7 +516,7 @@ let latestWebPayload = {
   app: 'SiR System Monitor',
   version: APP_VERSION,
   updatedAt: Date.now(),
-  mode: 'wmi',
+  mode: 'builtin',
   external: 'N/A',
   groups: {},
   settings: {}
@@ -500,6 +534,7 @@ const DEFAULT_WEB_MONITOR_SETTINGS = {
 
 const DEFAULT_APP_BEHAVIOR_SETTINGS = {
   launchAtStartup: false,
+  launchAsAdministrator: false,
   startMinimized: false,
   minimizeToTray: false,
   closeToTray: false,
@@ -583,6 +618,7 @@ function normalizeAppBehaviorSettings(input) {
 
   return {
     launchAtStartup: !!input?.launchAtStartup,
+    launchAsAdministrator: !!input?.launchAsAdministrator,
     startMinimized: !!input?.startMinimized,
     minimizeToTray: !!input?.minimizeToTray,
     closeToTray: !!input?.closeToTray,
@@ -750,8 +786,12 @@ function buildWebMonitorHtml(authToken = '') {
       --border-color: #444;
       --accent: #0066ff;
       --accent-light: #4d9fff;
+      --layout-card-min-width: 300px;
+      --layout-card-height: 360px;
+      --layout-card-gap: 14px;
     }
-    body { margin: 0; font-family: var(--font-family); background: var(--bg-primary); color: var(--text-primary); }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--font-family); background: var(--bg-primary); color: var(--text-primary); line-height: 1.35; }
     body.no-glow *, body.no-glow *::before, body.no-glow *::after { text-shadow: none !important; box-shadow: none !important; filter: none !important; }
     .wrap { max-width: 100%; margin: 0 auto; padding: 10px; }
     .header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; }
@@ -760,12 +800,13 @@ function buildWebMonitorHtml(authToken = '') {
     .meta { color: var(--text-secondary); font-size: calc(13px * var(--font-scale)); }
     .summary-toggle { border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); border-radius: 7px; padding: 6px 10px; cursor: pointer; font-size: calc(12px * var(--font-scale)); font-weight: var(--font-weight-bold); }
     .summary-toggle:hover { background: var(--border-color); color: var(--text-primary); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
-    .card { border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); padding: 10px; overflow: hidden; display: flex; flex-direction: column; }
-    .card h3 { margin: 0 0 10px; font-size: calc(13px * var(--font-scale)); letter-spacing: .08em; color: var(--block-header-color); text-transform: uppercase; font-weight: var(--font-weight-bold); display: flex; align-items: center; gap: 8px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--layout-card-min-width)), 1fr)); gap: var(--layout-card-gap); }
+    body.layout-stacked .grid { grid-template-columns: minmax(0, 1fr); }
+    .card { border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); padding: 14px; height: var(--layout-card-height); overflow: hidden; display: flex; flex-direction: column; }
+    .card h3 { margin: 0 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--bg-tertiary); font-size: calc(13px * var(--font-scale)); letter-spacing: .08em; color: var(--block-header-color); text-transform: uppercase; font-weight: var(--font-weight-bold); display: flex; align-items: center; gap: 8px; }
     .group-icon { color: var(--icon-color); font-size: calc(14px * var(--font-scale)); line-height: 1; }
-    .rows { overflow-y: auto; min-height: 0; flex: 1 1 auto; scrollbar-gutter: stable both-edges; padding-bottom: 12px; scroll-padding-bottom: 12px; }
-    .row { display: block; border-bottom: 1px solid var(--border-color); padding: 6px 0; font-size: calc(13px * var(--font-scale)); }
+    .rows { overflow-y: auto; min-height: 0; flex: 1 1 auto; scrollbar-gutter: stable both-edges; padding-right: 8px; padding-bottom: 28px; scroll-padding-bottom: 28px; }
+    .row { display: block; border-bottom: 1px solid var(--border-color); padding: 9px 0; font-size: calc(13px * var(--font-scale)); }
     .row.row-alert-warning { border-left: 2px solid #f7cf62; padding-left: 8px; }
     .row.row-alert-critical { border-left: 2px solid #ff6b6b; padding-left: 8px; }
     .row.row-alert-warning .label, .row.row-alert-warning .value { color: #f7cf62; }
@@ -780,7 +821,6 @@ function buildWebMonitorHtml(authToken = '') {
     .graph-line { fill: none; stroke: var(--graph-color); stroke-width: 2; vector-effect: non-scaling-stroke; }
     .graph-meta { margin-top: 3px; display: flex; justify-content: space-between; gap: 6px; color: var(--text-secondary); font-size: calc(10px * var(--font-scale)); }
     body.summary-mode .wrap { max-width: 100%; }
-    body.summary-mode .grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
     body.summary-mode .value { display: none; }
     body.summary-mode .row { display: grid; grid-template-columns: minmax(130px, 38%) 1fr; align-items: center; gap: 10px; }
     body.summary-mode .row-main { justify-content: flex-start; min-width: 0; }
@@ -793,17 +833,14 @@ function buildWebMonitorHtml(authToken = '') {
     .summary-value { color: var(--sensor-value-color); font-family: var(--value-font-family); font-weight: var(--font-weight-bold); min-width: 0; text-align: right; font-variant-numeric: tabular-nums; }
     .summary-sep { opacity: .65; }
     body.view-compact .wrap { max-width: 100%; }
-    body.view-compact .grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
     body.view-compact .card {
-      padding: 11px;
+      padding: 12px;
       border-radius: 18px;
       border-color: color-mix(in srgb, var(--accent-light) 40%, var(--border-color));
       box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-light) 25%, transparent), 0 10px 24px color-mix(in srgb, var(--accent) 18%, transparent);
       background: linear-gradient(180deg, color-mix(in srgb, var(--bg-secondary) 90%, var(--accent) 10%), var(--bg-secondary));
     }
-    body.view-compact .row { padding: 6px 0; }
     body.view-wide .wrap { max-width: 100%; }
-    body.view-wide .grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
     body.view-wide .card {
       padding: 14px;
       border-radius: 2px;
@@ -813,7 +850,6 @@ function buildWebMonitorHtml(authToken = '') {
     }
     body.view-wide .card h3 { letter-spacing: 0.12em; }
     body.view-terminal .wrap { max-width: 100%; }
-    body.view-terminal .grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
     body.view-terminal .card {
       border-radius: 0;
       border-width: 1px;
@@ -826,14 +862,12 @@ function buildWebMonitorHtml(authToken = '') {
       font-size: calc(12px * var(--font-scale));
     }
     body.view-terminal .row { border-bottom-style: dashed; }
-    body.view-rail .grid { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
     body.view-rail .card {
       border-radius: 12px;
       border-left: 4px solid var(--accent-light);
       box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 14%, transparent);
     }
     body.view-rail .card h3 { letter-spacing: 0.1em; }
-    body.view-glass .grid { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
     body.view-glass .card {
       border-radius: 16px;
       border-color: color-mix(in srgb, var(--accent-light) 26%, var(--border-color));
@@ -842,7 +876,6 @@ function buildWebMonitorHtml(authToken = '') {
       box-shadow: 0 10px 24px color-mix(in srgb, black 35%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.06);
     }
     body.view-glass .row { border-bottom-color: color-mix(in srgb, var(--border-color) 70%, transparent); }
-    body.view-split .grid { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
     body.view-split .card {
       padding-top: 0;
       border-radius: 12px;
@@ -850,12 +883,11 @@ function buildWebMonitorHtml(authToken = '') {
       box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 10%, transparent);
     }
     body.view-split .card h3 {
-      margin: 0 -10px 10px;
-      padding: 10px;
+      margin: 0 -14px 10px;
+      padding: 10px 14px;
       background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 28%, var(--bg-secondary)), color-mix(in srgb, var(--bg-secondary) 92%, var(--bg-primary)));
       border-bottom: 1px solid color-mix(in srgb, var(--accent-light) 40%, var(--border-color));
     }
-    body.view-status .grid { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
     body.view-status .card {
       position: relative;
       border-radius: 12px;
@@ -880,13 +912,6 @@ function buildWebMonitorHtml(authToken = '') {
     body.view-status .row.row-alert-critical .value {
       color: #ff8d8d;
     }
-    body.summary-mode.view-compact .grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
-    body.summary-mode.view-wide .grid { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
-    body.summary-mode.view-terminal .grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
-    body.summary-mode.view-rail .grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
-    body.summary-mode.view-glass .grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
-    body.summary-mode.view-split .grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
-    body.summary-mode.view-status .grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
   </style>
 </head>
 <body>
@@ -936,7 +961,9 @@ function buildWebMonitorHtml(authToken = '') {
       rowsByKey: new Map(),
       rowScrollByGroup: new Map(),
       summaryMode: false,
-      viewMode: 'standard'
+      viewMode: 'standard',
+      layoutPreset: 'balanced',
+      layoutSignature: ''
     };
 
     const SUMMARY_MODE_STORAGE_KEY = 'sirWebSummaryMode';
@@ -968,6 +995,27 @@ function buildWebMonitorHtml(authToken = '') {
       }
     }
 
+    function applyLayoutPreset(presetId, config) {
+      const supported = ['compact', 'balanced', 'wide', 'stacked', 'custom'];
+      const requested = String(presetId || '').toLowerCase();
+      const normalized = supported.includes(requested) ? requested : 'balanced';
+      const nextConfig = config && typeof config === 'object' ? config : {};
+      const minCardWidth = Math.min(900, Math.max(180, Number(nextConfig.minCardWidth) || 300));
+      const cardHeight = Math.min(900, Math.max(220, Number(nextConfig.cardHeight) || 360));
+      const gap = Math.min(40, Math.max(0, Number(nextConfig.gap) || 14));
+      const root = document.documentElement;
+      const signature = [normalized, minCardWidth, cardHeight, gap, nextConfig.stacked === true ? '1' : '0'].join('|');
+
+      if (domState.layoutSignature === signature) return;
+
+      domState.layoutPreset = normalized;
+      domState.layoutSignature = signature;
+      document.body.classList.toggle('layout-stacked', normalized === 'stacked' || nextConfig.stacked === true);
+      root.style.setProperty('--layout-card-min-width', minCardWidth + 'px');
+      root.style.setProperty('--layout-card-height', cardHeight + 'px');
+      root.style.setProperty('--layout-card-gap', gap + 'px');
+    }
+
     function resolveGroupIconClass(group) {
       const modeIcons = groupIconsByMode[domState.viewMode] || groupIconsByMode.standard;
       return modeIcons[group] || groupIconsByMode.standard[group] || 'bi-circle-fill';
@@ -992,7 +1040,7 @@ function buildWebMonitorHtml(authToken = '') {
           const sensors = Array.isArray(groups[group]) ? groups[group] : [];
           const rowKey = sensors.map((sensor) => String(sensor.id) + ':' + (sensor.expanded ? '1' : '0')).join(',');
           const groupLayout = layout[group] || {};
-          return group + '#h' + (groupLayout.height || 360) + '#s' + (groupLayout.span || 1) + '#w' + (groupLayout.width || 0) + '#' + rowKey + '#summary:' + (domState.summaryMode ? '1' : '0') + '#view:' + domState.viewMode;
+          return group + '#h' + (groupLayout.height || 0) + '#s' + (groupLayout.span || 0) + '#w' + (groupLayout.width || 0) + '#' + rowKey + '#summary:' + (domState.summaryMode ? '1' : '0') + '#view:' + domState.viewMode + '#layout:' + domState.layoutSignature;
         })
         .join('|');
     }
@@ -1130,6 +1178,7 @@ function buildWebMonitorHtml(authToken = '') {
       if (!settings || typeof settings !== 'object') return;
 
       applyViewMode(settings.viewMode || 'standard');
+      applyLayoutPreset(settings.layoutPreset || 'balanced', settings.layoutConfig || {});
 
       const palette = settings.palette || {};
       if (palette.bgPrimary) root.style.setProperty('--bg-primary', palette.bgPrimary);
@@ -1199,7 +1248,7 @@ function buildWebMonitorHtml(authToken = '') {
       domState.rowsByKey.clear();
       grid.innerHTML = '';
       const gridStyles = getComputedStyle(grid);
-      const columns = Math.max(1, (gridStyles.gridTemplateColumns || '').split(' ').filter(Boolean).length);
+      const columns = Math.max(1, (gridStyles.gridTemplateColumns || '').split(' ').filter((track) => (parseFloat(track) || 0) > 1).length);
       const gap = parseFloat(gridStyles.columnGap || gridStyles.gap || '10') || 10;
       const containerWidth = Math.max(1, grid.clientWidth || window.innerWidth || 1200);
       const columnWidth = Math.max(120, (containerWidth - (gap * (columns - 1))) / columns);
@@ -1216,10 +1265,11 @@ function buildWebMonitorHtml(authToken = '') {
           const rawSpan = Math.round((desiredWidth + gap) / (columnWidth + gap));
           const webSpan = Math.min(Math.max(1, rawSpan), columns);
           card.style.gridColumn = 'span ' + webSpan;
-        } else {
-          card.style.gridColumn = 'span 1';
         }
-        card.style.height = (groupLayout.height || 360) + 'px';
+        const desiredHeight = Number(groupLayout.height);
+        if (Number.isFinite(desiredHeight) && desiredHeight >= 220 && desiredHeight <= 900) {
+          card.style.height = desiredHeight + 'px';
+        }
 
         const title = document.createElement('h3');
         const iconClass = resolveGroupIconClass(group);
@@ -1281,9 +1331,6 @@ function buildWebMonitorHtml(authToken = '') {
         rowsWrap.scrollTop = previousScroll;
       });
 
-      if (!grid.children.length) {
-        grid.innerHTML = '<div class="empty">No selected sensors available. Choose MSI mode and enable sensors in the desktop app.</div>';
-      }
     }
 
     function updateGridValues(groups, orderedGroups) {
@@ -1342,7 +1389,7 @@ function buildWebMonitorHtml(authToken = '') {
 
       applySyncedSettings(payload.settings || {});
       const rawMode = String(payload.mode || '').toLowerCase();
-      const modeLabel = rawMode === 'msi' ? 'Shared Memory' : (payload.mode || 'N/A');
+      const modeLabel = rawMode === 'builtin' ? 'Built-in Sensors' : (rawMode === 'msi' ? 'Shared Memory' : (payload.mode || 'N/A'));
       const version = String(payload.version || APP_VERSION || 'N/A').trim() || 'N/A';
       meta.textContent = 'Mode: ' + modeLabel + ' | Version: ' + version + ' | Updated: ' + toLocalTime(payload.updatedAt);
 
@@ -1386,6 +1433,9 @@ function buildWebMonitorHtml(authToken = '') {
 
     const authToken = "${embeddedToken}";
     let loading = false;
+    window.addEventListener('resize', () => {
+      domState.structureKey = '';
+    });
     async function load() {
       if (loading) return;
       loading = true;
@@ -1422,6 +1472,8 @@ function shouldCollectSummaryStats() {
 
 function publishWebMonitorPayload(mode, externalText) {
   const sizeMap = loadWindowSizes();
+  const selectedLayoutPreset = normalizeLayoutPreset(localStorage.getItem(LAYOUT_PRESET_KEY) || DEFAULT_LAYOUT_PRESET);
+  const selectedLayoutConfig = getActiveLayoutConfig(selectedLayoutPreset);
   const windowOrder = loadWindowOrder();
   const orderedGroups = windowOrder
     .map((cardId) => CARD_GROUP_IDS[cardId])
@@ -1434,14 +1486,19 @@ function publishWebMonitorPayload(mode, externalText) {
     const cardId = GROUP_CARD_IDS[group];
     const saved = sizeMap[cardId];
     const savedHeight = Number(typeof saved === 'object' ? saved.height : saved);
-    const savedSpan = Number(typeof saved === 'object' ? saved.span : 1);
+    const savedSpan = Number(typeof saved === 'object' && saved !== null ? saved.span : NaN);
     const savedWidth = Number(typeof saved === 'object' ? saved.width : NaN);
 
-    groupLayout[group] = {
-      height: Number.isFinite(savedHeight) && savedHeight >= 220 && savedHeight <= 900 ? savedHeight : 360,
-      span: Number.isFinite(savedSpan) && savedSpan >= 1 ? savedSpan : 1,
-      width: Number.isFinite(savedWidth) && savedWidth >= 180 ? savedWidth : undefined
-    };
+    groupLayout[group] = {};
+    if (Number.isFinite(savedHeight) && savedHeight >= 220 && savedHeight <= 900) {
+      groupLayout[group].height = savedHeight;
+    }
+    if (Number.isFinite(savedSpan) && savedSpan >= 1) {
+      groupLayout[group].span = savedSpan;
+    }
+    if (Number.isFinite(savedWidth) && savedWidth >= 180) {
+      groupLayout[group].width = savedWidth;
+    }
   });
 
   const selectedTheme = (localStorage.getItem('theme') || 'blue').toLowerCase();
@@ -1540,6 +1597,8 @@ function publishWebMonitorPayload(mode, externalText) {
       temperatureUnit: selectedTempUnit,
       summaryMode: summaryModeEnabled,
       viewMode: normalizeViewMode(localStorage.getItem(VIEW_MODE_KEY) || 'standard'),
+      layoutPreset: selectedLayoutPreset,
+      layoutConfig: selectedLayoutConfig,
       groupOrder,
       groupLayout,
       palette
@@ -2118,21 +2177,14 @@ function applySensorOrderToGroupedSensors(groupedSensors) {
   return ordered;
 }
 
-function moveSensorOrderByDrop(group, sensorId, targetSensorId, placeAfter) {
+function moveSensorOrderByDrop(group, sensorId, targetSensorId, placeAfter, visibleSensorIds) {
   if (!group || !sensorId || !targetSensorId || sensorId === targetSensorId) return;
 
   const list = Array.isArray(sensorOrderByGroup[group]) ? [...sensorOrderByGroup[group]] : [];
-  const fromIndex = list.indexOf(sensorId);
-  const targetIndex = list.indexOf(targetSensorId);
-  if (fromIndex === -1 || targetIndex === -1) return;
+  const next = reorderVisibleSensors(list, sensorId, targetSensorId, placeAfter, visibleSensorIds);
+  if (JSON.stringify(next) === JSON.stringify(list)) return;
 
-  const [moved] = list.splice(fromIndex, 1);
-  let insertIndex = list.indexOf(targetSensorId);
-  if (insertIndex === -1) return;
-  if (placeAfter) insertIndex += 1;
-  list.splice(insertIndex, 0, moved);
-
-  sensorOrderByGroup[group] = list;
+  sensorOrderByGroup[group] = next;
   saveSensorOrder();
   sensorCatalogSignature = '';
   liveSensorCatalogSignature = '';
@@ -2142,19 +2194,72 @@ function moveSensorOrderByDrop(group, sensorId, targetSensorId, placeAfter) {
 function loadProviderSelection() {
   try {
     const raw = localStorage.getItem(PROVIDER_SELECTION_KEY);
+    if (!raw) {
+      return { builtin: true, enhanced: false, rtss: false, aida64: false, hwinfo: false };
+    }
     const parsed = raw ? JSON.parse(raw) : {};
+    if (!Object.prototype.hasOwnProperty.call(parsed, 'builtin')) {
+      return { builtin: true, enhanced: false, rtss: false, aida64: false, hwinfo: false };
+    }
     return {
-      rtss: parsed.rtss !== false,
-      aida64: parsed.aida64 !== false,
-      hwinfo: parsed.hwinfo !== false
+      builtin: parsed.builtin !== false,
+      enhanced: parsed.enhanced === true,
+      rtss: parsed.rtss === true,
+      aida64: parsed.aida64 === true,
+      hwinfo: parsed.hwinfo === true
     };
   } catch (e) {
-    return { rtss: true, aida64: true, hwinfo: true };
+    return { builtin: true, enhanced: false, rtss: false, aida64: false, hwinfo: false };
   }
 }
 
 function saveProviderSelection(selection) {
   localStorage.setItem(PROVIDER_SELECTION_KEY, JSON.stringify(selection));
+}
+
+function showEnhancedSensorsConfirmation() {
+  const modal = document.getElementById('enhancedSensorsConfirmModal');
+  const confirmButton = document.getElementById('confirmEnhancedSensorsBtn');
+  const cancelButtons = modal ? Array.from(modal.querySelectorAll('[data-cancel-enhanced-sensors]')) : [];
+  if (!modal || !confirmButton || !cancelButtons.length) return Promise.resolve(false);
+
+  const previousFocus = document.activeElement;
+  modal.classList.remove('is-hidden');
+  modal.setAttribute('aria-hidden', 'false');
+
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const finish = (accepted) => {
+      if (settled) return;
+      settled = true;
+      modal.classList.add('is-hidden');
+      modal.setAttribute('aria-hidden', 'true');
+      confirmButton.removeEventListener('click', accept);
+      cancelButtons.forEach((button) => button.removeEventListener('click', cancel));
+      modal.removeEventListener('click', cancelFromBackdrop);
+      document.removeEventListener('keydown', cancelFromEscape);
+      if (!accepted && previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
+      resolve(accepted);
+    };
+
+    const accept = () => finish(true);
+    const cancel = () => finish(false);
+    const cancelFromBackdrop = (event) => {
+      if (event.target === modal) cancel();
+    };
+    const cancelFromEscape = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      cancel();
+    };
+
+    confirmButton.addEventListener('click', accept);
+    cancelButtons.forEach((button) => button.addEventListener('click', cancel));
+    modal.addEventListener('click', cancelFromBackdrop);
+    document.addEventListener('keydown', cancelFromEscape);
+    requestAnimationFrame(() => confirmButton.focus());
+  });
 }
 
 function loadWindowOrder() {
@@ -2180,7 +2285,63 @@ function loadWindowSizes() {
 }
 
 function saveWindowSizes(sizeMap) {
-  localStorage.setItem(WINDOW_SIZE_KEY, JSON.stringify(sizeMap || {}));
+  const normalized = sizeMap && typeof sizeMap === 'object' && !Array.isArray(sizeMap) ? sizeMap : {};
+  const serialized = JSON.stringify(normalized);
+  localStorage.setItem(WINDOW_SIZE_KEY, serialized);
+  if (normalizeLayoutPreset(localStorage.getItem(LAYOUT_PRESET_KEY) || DEFAULT_LAYOUT_PRESET) === 'custom') {
+    localStorage.setItem(CUSTOM_LAYOUT_SIZES_KEY, serialized);
+  }
+}
+
+function loadCustomLayoutSizes() {
+  try {
+    const raw = localStorage.getItem(CUSTOM_LAYOUT_SIZES_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveCustomLayoutSizes(sizeMap) {
+  const normalized = sizeMap && typeof sizeMap === 'object' && !Array.isArray(sizeMap) ? sizeMap : {};
+  localStorage.setItem(CUSTOM_LAYOUT_SIZES_KEY, JSON.stringify(normalized));
+}
+
+function normalizeCustomLayoutConfig(config, fallbackPresetId = DEFAULT_LAYOUT_PRESET) {
+  const fallbackId = normalizeLayoutPreset(fallbackPresetId) === 'custom' ? DEFAULT_LAYOUT_PRESET : normalizeLayoutPreset(fallbackPresetId);
+  const fallback = getLayoutPreset(fallbackId);
+  const source = config && typeof config === 'object' ? config : {};
+  return {
+    id: 'custom',
+    label: 'Custom',
+    minCardWidth: Math.min(900, Math.max(180, Number(source.minCardWidth) || fallback.minCardWidth)),
+    cardHeight: Math.min(900, Math.max(220, Number(source.cardHeight) || fallback.cardHeight)),
+    gap: Math.min(40, Math.max(0, Number(source.gap) || fallback.gap)),
+    stacked: false,
+    custom: true
+  };
+}
+
+function loadCustomLayoutConfig(fallbackPresetId = DEFAULT_LAYOUT_PRESET) {
+  try {
+    const raw = localStorage.getItem(CUSTOM_LAYOUT_CONFIG_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return normalizeCustomLayoutConfig(parsed, fallbackPresetId);
+  } catch (e) {
+    return normalizeCustomLayoutConfig(null, fallbackPresetId);
+  }
+}
+
+function saveCustomLayoutConfig(config, fallbackPresetId = DEFAULT_LAYOUT_PRESET) {
+  const normalized = normalizeCustomLayoutConfig(config, fallbackPresetId);
+  localStorage.setItem(CUSTOM_LAYOUT_CONFIG_KEY, JSON.stringify(normalized));
+  return normalized;
+}
+
+function getActiveLayoutConfig(presetId) {
+  const normalized = normalizeLayoutPreset(presetId);
+  return normalized === 'custom' ? loadCustomLayoutConfig() : getLayoutPreset(normalized);
 }
 
 function loadSettingsAccordionState() {
@@ -2195,6 +2356,12 @@ function loadSettingsAccordionState() {
 
 function saveSettingsAccordionState(state) {
   localStorage.setItem(SETTINGS_ACCORDION_STATE_KEY, JSON.stringify(state || {}));
+}
+
+function updateSettingsAccordionState(key, expanded) {
+  const state = loadSettingsAccordionState();
+  state[String(key || '')] = !!expanded;
+  saveSettingsAccordionState(state);
 }
 
 function isSetupGuideSuppressed() {
@@ -2357,6 +2524,12 @@ async function applyImportedSettingsNow() {
   } catch (e) {}
 
   try { if (parsed[VIEW_MODE_KEY]) applyViewMode(String(parsed[VIEW_MODE_KEY]).replace(/^"|"$/g, ''), { persist: true }); } catch (e) {}
+  try {
+    if (Object.prototype.hasOwnProperty.call(parsed, LAYOUT_PRESET_KEY)) {
+      applyLayoutPreset(parsed[LAYOUT_PRESET_KEY] || DEFAULT_LAYOUT_PRESET, { persist: true, resetCustomSizes: false });
+    }
+  } catch (e) {}
+  try { applyWindowOrder(); applyWindowSizes(); } catch (e) {}
   try { if (parsed[FONT_SIZE_KEY]) applyFontSize(String(parsed[FONT_SIZE_KEY]).replace(/^"|"$/g, '')); } catch (e) {}
   try { const fontSizeSelect = document.getElementById('fontSizeSelect'); if (fontSizeSelect && parsed[FONT_SIZE_KEY]) fontSizeSelect.value = String(parsed[FONT_SIZE_KEY]).replace(/^"|"$/g, ''); } catch (e) {}
   try { if (parsed[FONT_FAMILY_KEY]) applyFontFamily(String(parsed[FONT_FAMILY_KEY]).replace(/^"|"$/g, '')); } catch (e) {}
@@ -2507,8 +2680,7 @@ function setupSettingsGroupAccordion() {
     toggleButton.addEventListener('click', () => {
       const nextExpanded = group.classList.contains('is-collapsed');
       setSettingsGroupExpanded(group, toggleButton, nextExpanded);
-      savedState[groupKey] = nextExpanded;
-      saveSettingsAccordionState(savedState);
+      updateSettingsAccordionState(groupKey, nextExpanded);
     });
 
     group.dataset.groupAccordionReady = 'true';
@@ -2559,8 +2731,7 @@ function setupSettingsAccordion() {
     toggleButton.addEventListener('click', () => {
       const nextExpanded = section.classList.contains('is-collapsed');
       setSettingsSectionExpanded(section, toggleButton, nextExpanded);
-      savedState[sectionKey] = nextExpanded;
-      saveSettingsAccordionState(savedState);
+      updateSettingsAccordionState(sectionKey, nextExpanded);
     });
 
     section.dataset.accordionReady = 'true';
@@ -2661,15 +2832,16 @@ function setupSidebarResize() {
 
 function applyWindowSizes() {
   const sizes = loadWindowSizes();
+  const layoutPreset = getActiveLayoutConfig(localStorage.getItem(LAYOUT_PRESET_KEY) || DEFAULT_LAYOUT_PRESET);
   const container = document.getElementById('statsContainer');
   const containerStyles = container ? getComputedStyle(container) : null;
   const columns = containerStyles
-    ? Math.max(1, containerStyles.gridTemplateColumns.split(' ').filter(Boolean).length)
+    ? Math.max(1, containerStyles.gridTemplateColumns.split(' ').filter((track) => (parseFloat(track) || 0) > 1).length)
     : 1;
   const gap = containerStyles ? (parseFloat(containerStyles.columnGap || containerStyles.gap || '14') || 14) : 14;
   const containerWidth = container ? container.clientWidth : window.innerWidth;
   const columnWidth = Math.max(120, (containerWidth - (gap * (columns - 1))) / columns);
-  const minCardWidthPx = 220;
+  const minCardWidthPx = layoutPreset.minCardWidth;
   const minSpan = Math.max(1, Math.ceil((minCardWidthPx + gap) / (columnWidth + gap)));
   let changed = false;
 
@@ -2682,30 +2854,28 @@ function applyWindowSizes() {
 
     if (Number.isFinite(savedHeight) && savedHeight >= 220 && savedHeight <= 900) {
       card.style.height = `${savedHeight}px`;
+    } else {
+      card.style.removeProperty('height');
     }
 
     let nextSpan = NaN;
-    if (Number.isFinite(savedSpan) && savedSpan >= 1) {
-      nextSpan = savedSpan;
-    } else if (Number.isFinite(savedWidth) && savedWidth >= 200) {
+    if (Number.isFinite(savedWidth) && savedWidth >= 200) {
       const inferredSpan = Math.round((savedWidth + gap) / (columnWidth + gap));
       nextSpan = Math.min(Math.max(minSpan, inferredSpan), columns);
-      sizes[card.id] = {
-        height: Number.isFinite(savedHeight) ? savedHeight : 360,
-        span: nextSpan,
-        width: Math.round((nextSpan * (columnWidth + gap)) - gap)
-      };
-      changed = true;
-    } else {
-      nextSpan = minSpan;
+      if (Number.isFinite(savedSpan) && savedSpan !== nextSpan) {
+        sizes[card.id] = { ...savedEntry, span: nextSpan };
+        changed = true;
+      }
+    } else if (Number.isFinite(savedSpan) && savedSpan >= 1) {
+      nextSpan = savedSpan;
     }
 
     if (Number.isFinite(nextSpan)) {
       const clampedSpan = Math.min(Math.max(minSpan, Math.round(nextSpan)), columns);
       card.style.gridColumn = `span ${clampedSpan}`;
-      if (!savedEntry || (typeof savedEntry === 'object' && !Number.isFinite(Number(savedEntry.width)))) {
+      if (savedEntry && (typeof savedEntry !== 'object' || !Number.isFinite(Number(savedEntry.width)))) {
         sizes[card.id] = {
-          height: Number.isFinite(savedHeight) ? savedHeight : 360,
+          height: Number.isFinite(savedHeight) ? savedHeight : layoutPreset.cardHeight,
           span: clampedSpan,
           width: Math.round((clampedSpan * (columnWidth + gap)) - gap)
         };
@@ -2723,7 +2893,6 @@ function applyWindowSizes() {
 
 function setupWindowResize() {
   const cards = Array.from(document.querySelectorAll('.sensor-group'));
-  const sizeMap = loadWindowSizes();
   const heightSnap = 20;
   const widthSnap = 1;
 
@@ -2749,12 +2918,13 @@ function setupWindowResize() {
       const container = document.getElementById('statsContainer');
       const containerStyles = container ? getComputedStyle(container) : null;
       const columns = containerStyles
-        ? Math.max(1, containerStyles.gridTemplateColumns.split(' ').filter(Boolean).length)
+        ? Math.max(1, containerStyles.gridTemplateColumns.split(' ').filter((track) => (parseFloat(track) || 0) > 1).length)
         : 1;
       const gap = containerStyles ? (parseFloat(containerStyles.columnGap || containerStyles.gap || '14') || 14) : 14;
       const containerWidth = container ? container.clientWidth : card.getBoundingClientRect().width;
       const columnWidth = Math.max(120, (containerWidth - (gap * (columns - 1))) / columns);
-      const minCardWidthPx = 220;
+      const layoutPreset = getActiveLayoutConfig(localStorage.getItem(LAYOUT_PRESET_KEY) || DEFAULT_LAYOUT_PRESET);
+      const minCardWidthPx = layoutPreset.minCardWidth;
       const minSpan = Math.max(1, Math.ceil((minCardWidthPx + gap) / (columnWidth + gap)));
 
       const startX = event.clientX;
@@ -2790,6 +2960,7 @@ function setupWindowResize() {
         const finalHeight = snapToStep(card.getBoundingClientRect().height, heightSnap, minHeight, maxHeight);
         const finalSpanMatch = (card.style.gridColumn || '').match(/span\s+(\d+)/i);
         const finalSpan = finalSpanMatch ? Math.max(minSpan, parseInt(finalSpanMatch[1], 10)) : minSpan;
+        const sizeMap = loadWindowSizes();
         sizeMap[card.id] = {
           height: finalHeight,
           span: finalSpan,
@@ -3419,7 +3590,6 @@ function sendOverlayPayload(payload) {
   ipcRenderer.send('overlay:update', {
     settings,
     sensors: payload,
-    height: calculateOverlayHeight(payload, settings),
     position: settings.position
   });
 }
@@ -3469,6 +3639,75 @@ function normalizeViewMode(mode) {
   const normalized = String(mode || '').trim().toLowerCase();
   if (normalized === 'compact' || normalized === 'wide' || normalized === 'terminal' || normalized === 'rail' || normalized === 'glass' || normalized === 'split' || normalized === 'status') return normalized;
   return 'standard';
+}
+
+function applyLayoutPreset(presetId, options = {}) {
+  const persist = options.persist !== false;
+  const resetCustomSizes = options.resetCustomSizes === true;
+  const normalized = normalizeLayoutPreset(presetId);
+  const previous = normalizeLayoutPreset(localStorage.getItem(LAYOUT_PRESET_KEY) || DEFAULT_LAYOUT_PRESET);
+  const activeSizes = loadWindowSizes();
+  const hasActiveSizes = Object.keys(activeSizes).length > 0;
+  const root = document.documentElement;
+  let preset;
+
+  if (normalized === 'custom') {
+    const hasStoredConfig = !!localStorage.getItem(CUSTOM_LAYOUT_CONFIG_KEY);
+    if (!hasStoredConfig) {
+      const basePresetId = previous === 'custom' || previous === 'stacked' ? DEFAULT_LAYOUT_PRESET : previous;
+      preset = saveCustomLayoutConfig(getLayoutPreset(basePresetId), basePresetId);
+    } else {
+      preset = loadCustomLayoutConfig(previous);
+    }
+
+    if (previous !== 'custom') {
+      const savedCustomSizes = loadCustomLayoutSizes();
+      if (Object.keys(savedCustomSizes).length > 0) {
+        localStorage.setItem(WINDOW_SIZE_KEY, JSON.stringify(savedCustomSizes));
+      } else if (hasActiveSizes) {
+        saveCustomLayoutSizes(activeSizes);
+      }
+    }
+  } else {
+    preset = getLayoutPreset(normalized);
+    if (resetCustomSizes) {
+      if (hasActiveSizes) {
+        saveCustomLayoutSizes(activeSizes);
+        if (!localStorage.getItem(CUSTOM_LAYOUT_CONFIG_KEY)) {
+          const basePresetId = previous === 'stacked' || previous === 'custom' ? DEFAULT_LAYOUT_PRESET : previous;
+          saveCustomLayoutConfig(getLayoutPreset(basePresetId), basePresetId);
+        }
+      }
+      localStorage.removeItem(WINDOW_SIZE_KEY);
+      document.querySelectorAll('.sensor-group').forEach((card) => {
+        card.style.removeProperty('grid-column');
+        card.style.removeProperty('height');
+        card.style.removeProperty('width');
+        card.style.removeProperty('justify-self');
+      });
+    }
+  }
+
+  root.style.setProperty('--layout-card-min-width', `${preset.minCardWidth}px`);
+  root.style.setProperty('--layout-card-height', `${preset.cardHeight}px`);
+  root.style.setProperty('--layout-card-gap', `${preset.gap}px`);
+  document.body.classList.toggle('layout-stacked', preset.stacked === true);
+  document.body.classList.toggle('layout-custom', normalized === 'custom');
+
+  if (persist) {
+    localStorage.setItem(LAYOUT_PRESET_KEY, normalized);
+  }
+
+  const select = document.getElementById('layoutPresetSelect');
+  if (select && select.value !== normalized) {
+    select.value = normalized;
+  }
+
+  applyWindowSizes();
+  invalidateRenderGroupCache();
+  forceNextUiRender = true;
+
+  return normalized;
 }
 
 function applyDesktopGroupIconsForViewMode(mode) {
@@ -3618,7 +3857,7 @@ function applyDebugMode(enabled) {
 
   const panel = document.getElementById('debugPanel');
   if (panel && debugModeEnabled) {
-    renderDebugPanel(lastDebugExternalData, localStorage.getItem('detectionMode') || 'msi');
+    renderDebugPanel(lastDebugExternalData, localStorage.getItem('detectionMode') || 'builtin');
   }
 }
 
@@ -3699,7 +3938,7 @@ function ensureSensorDefaults(groupedSensors) {
   Object.values(groupedSensors || {}).forEach((list) => {
     (list || []).forEach((sensor) => {
       if (sensorSelection[sensor.id] === undefined) {
-        sensorSelection[sensor.id] = true;
+        sensorSelection[sensor.id] = sensor.defaultEnabled !== false;
       }
       if (overlaySensorSelection[sensor.id] === undefined) {
         overlaySensorSelection[sensor.id] = !!sensorSelection[sensor.id];
@@ -3754,7 +3993,7 @@ function formatSensorNumericValue(sensor, numericValue) {
     decimals = 2;
   } else if (u === 'gb' || u === 'mb' || u === 'kb' || u === 'tb') {
     decimals = 2;
-  } else if (u === 'mb/s' || u === 'gb/s' || u === 'kb/s' || u === 'b/s' || u === 'mbps' || u === 'gbps' || u === 'kbps') {
+  } else if (u === 'tb/s' || u === 'mb/s' || u === 'gb/s' || u === 'kb/s' || u === 'b/s' || u === 'mbps' || u === 'gbps' || u === 'kbps') {
     decimals = 2;
   }
 
@@ -3830,33 +4069,17 @@ function normalizeValueForDisplay(sensor, numericValue) {
   }
 
   if (group === 'network') {
-    if ((name.includes('download rate') || name.includes('upload rate')) && (!sensor.units || !String(sensor.units).trim())) {
-      displayUnits = 'KB/s';
-    }
-    if (name.includes('connection speed') && (!sensor.units || !String(sensor.units).trim())) {
-      displayUnits = 'Mbps';
-    }
+    const networkKind = classifyNetworkSensor(sensor);
+    displayUnits = resolveNetworkDisplayUnits(sensor, displayUnits);
+    const scaled = scaleBinaryNetworkValue(value, displayUnits, networkKind);
+    value = scaled.value;
+    displayUnits = scaled.units;
+  }
 
-    const lowerDisplayUnits = String(displayUnits || '').toLowerCase();
-    if (lowerDisplayUnits === 'kb/s' && Math.abs(value) >= 1024) {
-      value = value / 1024;
-      displayUnits = 'MB/s';
-    }
-    if (String(displayUnits || '').toLowerCase() === 'mb/s' && Math.abs(value) >= 1024) {
-      value = value / 1024;
-      displayUnits = 'GB/s';
-    }
-
-    const isNetworkTotal =
-      name.includes('total download') ||
-      name.includes('total upload') ||
-      name.includes('total dl') ||
-      name.includes('total up');
-
-    if (isNetworkTotal && String(displayUnits || '').toLowerCase() === 'mb' && Math.abs(value) >= 1024) {
-      value = value / 1024;
-      displayUnits = 'GB';
-    }
+  if (group === 'ram' && /^(b|kb|mb|gb|tb)\/s$/i.test(String(displayUnits || ''))) {
+    const scaled = scaleBinaryNetworkValue(value, displayUnits, 'rate');
+    value = scaled.value;
+    displayUnits = scaled.units;
   }
 
   if (group === 'ram' && name.includes('memory speed')) {
@@ -3934,6 +4157,9 @@ function normalizeSensorUnits(sensor) {
     gb: 'GB',
     mb: 'MB',
     kb: 'KB',
+    b: 'B',
+    byte: 'B',
+    bytes: 'B',
     tb: 'TB',
     'b/s': 'B/s',
     'mb/s': 'MB/s',
@@ -3944,6 +4170,7 @@ function normalizeSensorUnits(sensor) {
     mbps: 'Mbps',
     gbps: 'Gbps',
     kbps: 'Kbps',
+    mwh: 'mWh',
     x: 'X',
     hz: 'Hz'
   };
@@ -3960,12 +4187,39 @@ function resolveDisplayUnits(sensor) {
   const sensorId = String(sensor && sensor.id ? sensor.id : '').toLowerCase();
   const value = Number(sensor && sensor.value);
   const hasFiniteValue = Number.isFinite(value);
+  const sensorType = String(sensor && sensor.sensorType ? sensor.sensorType : '').trim().toLowerCase();
+  const provider = String(sensor && sensor.provider ? sensor.provider : '').trim().toLowerCase();
 
   if (name.includes('dram:fsb ratio') || name.includes('ratio')) return '';
   if (name.includes('timing')) return '';
   if (name.includes('multiplier')) return 'X';
 
   if (group === 'fans') return 'RPM';
+
+  // Built-in hardware sensors include an authoritative type. Prefer it over
+  // value/name heuristics so a GPU clock can never be relabelled as voltage
+  // merely because an idle clock happens to be a small number.
+  if (provider === 'builtin') {
+    const unitsBySensorType = {
+      temperature: '\u00B0C',
+      load: '%',
+      control: '%',
+      clock: 'MHz',
+      fan: 'RPM',
+      power: 'W',
+      voltage: 'V',
+      current: 'A',
+      data: 'GB',
+      smalldata: 'MB',
+      throughput: 'B/s',
+      energy: 'mWh',
+      frequency: 'Hz',
+      address: ''
+    };
+    if (Object.prototype.hasOwnProperty.call(unitsBySensorType, sensorType)) {
+      return unitsBySensorType[sensorType];
+    }
+  }
 
   if (name.includes('memory clock') || name.includes('gpu memory clock') || name === 'memory clock') return 'MHz';
   if (name.includes('memory speed') && !name.includes('connection')) return 'GHz';
@@ -4018,16 +4272,7 @@ function resolveDisplayUnits(sensor) {
   }
 
   if (group === 'network') {
-    if (name.includes('ip address') || name.includes('mac address')) return '';
-    if (name.includes('link speed')) return normalized || 'Mbps';
-    if (name.includes('connection speed')) return normalized || 'Mbps';
-    if (name.includes('download rate') || name.includes('upload rate')) return normalized || 'KB/s';
-    if (name.includes('current dl rate') || name.includes('current up rate')) return normalized || 'KB/s';
-    if (name.includes('tx') || name.includes('rx') || name.includes('throughput')) return normalized || 'Mbps';
-    if (name.includes('total download') || name.includes('total upload') || name.includes('total dl') || name.includes('total up')) return 'MB';
-    if (name.includes('speed')) return normalizedLower === 'mb/s' ? 'Mbps' : (normalized || 'Mbps');
-    if (name.includes('usage') || name.includes('utilization') || name.includes('load')) return '%';
-    return normalized || '';
+    return resolveNetworkDisplayUnits(sensor, normalized);
   }
 
   if (group === 'latency') {
@@ -4096,7 +4341,10 @@ function resolveDisplayUnits(sensor) {
 
 function inferUnitsFromSensor(sensor) {
   const name = String(sensor && sensor.name ? sensor.name : '').toLowerCase();
+  const group = String(sensor && sensor.group ? sensor.group : '').toLowerCase();
   if (!name) return '';
+
+  if (group === 'network') return resolveNetworkDisplayUnits(sensor, '');
 
   if (name.includes('ip address') || name.includes('bios version') || name.includes('motherboard name') || name.includes('serial')) return '';
   if (name.includes('dimm') || name.includes('dram') || (name.includes('memory') && (name.includes('temp') || name.includes('temperature')))) return 'C';
@@ -4187,6 +4435,58 @@ function renderAllDynamicGroups(selected, options = {}) {
   renderDynamicGroup('externalSensorsDynamic', selected.other);
 }
 
+function normalizeSensorSearchText(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function applySensorSelectionFilter() {
+  const input = document.getElementById('sensorSearchInput');
+  const container = document.getElementById('sensorOptions');
+  const emptyState = document.getElementById('sensorSearchEmpty');
+  if (!input || !container) return;
+
+  const query = normalizeSensorSearchText(input.value);
+  const hasQuery = !!query;
+  if (hasQuery && !sensorSearchSessionActive) sensorSearchCollapsedGroups.clear();
+  if (!hasQuery && sensorSearchSessionActive) sensorSearchCollapsedGroups.clear();
+  sensorSearchSessionActive = hasQuery;
+  let visibleSensorCount = 0;
+
+  container.querySelectorAll('.sensor-category-block').forEach((block) => {
+    const groupKey = String(block.dataset.sensorGroupKey || '').trim();
+    const groupText = normalizeSensorSearchText(block.dataset.sensorGroupSearch);
+    const groupMatches = hasQuery && groupText.includes(query);
+    const rows = Array.from(block.querySelectorAll('.sensor-item-row'));
+    let matchingRows = 0;
+
+    rows.forEach((row) => {
+      const rowText = normalizeSensorSearchText(row.dataset.sensorSearch || row.textContent);
+      const matches = !hasQuery || groupMatches || rowText.includes(query);
+      row.classList.toggle('is-search-hidden', !matches);
+      row.setAttribute('aria-hidden', matches ? 'false' : 'true');
+      row.draggable = matches;
+      if (matches) matchingRows += 1;
+    });
+
+    const searchCollapsed = hasQuery && sensorSearchCollapsedGroups.has(groupKey);
+    block.classList.toggle('is-search-hidden', hasQuery && matchingRows === 0);
+    block.classList.toggle('is-searching', hasQuery);
+    block.classList.toggle('is-search-collapsed', searchCollapsed);
+
+    const toggle = block.querySelector('[data-toggle-sensor-group]');
+    if (toggle) {
+      const persistentCollapsed = block.classList.contains('is-collapsed');
+      toggle.setAttribute('aria-expanded', (hasQuery ? !searchCollapsed : !persistentCollapsed) ? 'true' : 'false');
+    }
+
+    const count = block.querySelector('.sensor-category-count');
+    if (count) count.textContent = hasQuery ? `${matchingRows}/${rows.length}` : String(rows.length);
+    visibleSensorCount += matchingRows;
+  });
+
+  if (emptyState) emptyState.hidden = !hasQuery || visibleSensorCount > 0;
+}
+
 function renderSensorOptions(groupedSensors) {
   const container = document.getElementById('sensorOptions');
   if (!container) return;
@@ -4207,6 +4507,7 @@ function renderSensorOptions(groupedSensors) {
       const sensors = groupedSensors[group] || [];
       if (!sensors.length) return '';
       const groupEnabled = sensorCategorySelection[group] !== false;
+      const groupLabel = SENSOR_GROUP_LABELS[group] || group;
       const items = sensors
         .map((sensor, index) => {
           const checked = sensorSelection[sensor.id] ? 'checked' : '';
@@ -4214,8 +4515,9 @@ function renderSensorOptions(groupedSensors) {
           const hasAlertEnabled = !!(sensorAlertRules[sensor.id] && sensorAlertRules[sensor.id].enabled !== false);
           const disabled = groupEnabled ? '' : 'disabled';
           const label = escapeHtml(getFinalDisplayLabel(sensor));
+          const searchText = escapeHtml(`${groupLabel} ${sensor.name || ''} ${getFinalDisplayLabel(sensor)} ${sensor.hardwareType || ''} ${sensor.sensorType || ''} ${sensor.units || ''}`);
           return `
-            <div class="sensor-item-row" draggable="true" data-order-group="${group}" data-order-sensor-id="${sensor.id}">
+            <div class="sensor-item-row" draggable="true" data-order-group="${group}" data-order-sensor-id="${sensor.id}" data-sensor-search="${searchText}">
               <span class="sensor-drag-handle" title="Drag to reorder" aria-hidden="true">⋮⋮</span>
               <label class="checkbox-label sensor-item-label"><input type="checkbox" data-sensor-id="${sensor.id}" ${checked} ${disabled}><span class="sensor-name">${label}</span>${hasAlertEnabled ? '<span class="sensor-alert-enabled-indicator" title="Alert enabled">✓</span>' : ''}</label>
               <div class="sensor-item-actions">
@@ -4227,11 +4529,10 @@ function renderSensorOptions(groupedSensors) {
         })
         .join('');
       const categoryChecked = groupEnabled ? 'checked' : '';
-      const groupLabel = SENSOR_GROUP_LABELS[group] || group;
       const iconClass = SENSOR_GROUP_ICONS[group] || 'bi-circle-fill';
       const isCollapsed = sensorCategoryCollapse[group] === true;
       return `
-        <div class="sensor-category-block${groupEnabled ? '' : ' is-disabled'}${isCollapsed ? ' is-collapsed' : ''}">
+        <div class="sensor-category-block${groupEnabled ? '' : ' is-disabled'}${isCollapsed ? ' is-collapsed' : ''}" data-sensor-group-key="${group}" data-sensor-group-search="${escapeHtml(`${group} ${groupLabel}`)}">
           <div class="sensor-category-head-row">
             <label class="checkbox-label sensor-category-header">
               <input type="checkbox" data-sensor-group="${group}" ${categoryChecked}>
@@ -4249,6 +4550,7 @@ function renderSensorOptions(groupedSensors) {
     .join('');
 
   container.innerHTML = html || '<div class="settings-note">No other sensors detected</div>';
+  applySensorSelectionFilter();
   refreshSensorAlertEditor(groupedSensors);
 }
 
@@ -5072,6 +5374,16 @@ const SettingsManager = {
       restartUpdateTimer();
     });
 
+    const layoutPresetSelect = document.getElementById('layoutPresetSelect');
+    if (layoutPresetSelect) {
+      const savedLayoutPreset = normalizeLayoutPreset(localStorage.getItem(LAYOUT_PRESET_KEY) || DEFAULT_LAYOUT_PRESET);
+      applyLayoutPreset(savedLayoutPreset, { persist: true, resetCustomSizes: false });
+      layoutPresetSelect.addEventListener('change', (event) => {
+        const nextLayout = normalizeLayoutPreset(event.target.value);
+        applyLayoutPreset(nextLayout, { persist: true, resetCustomSizes: nextLayout !== 'custom' });
+      });
+    }
+
     const overlayGroupLineLimits = getOverlayGroupLineLimits();
     SENSOR_GROUP_ORDER.forEach((group) => {
       const input = document.getElementById(`overlayLineLimit_${group}`);
@@ -5232,7 +5544,7 @@ const SettingsManager = {
       showExternal: 'externalGroup'
     };
     
-    localStorage.setItem('detectionMode', 'msi');
+    localStorage.setItem('detectionMode', 'builtin');
 
     const setupGuideHeaderBtn = document.getElementById('setupGuideHeaderBtn');
     if (setupGuideHeaderBtn) {
@@ -5257,7 +5569,7 @@ const SettingsManager = {
         try {
           const payload = buildSettingsSnapshot();
 
-          const blob = new Blob([JSON.stringify({ exportedAt: Date.now(), data: payload }, null, 2)], { type: 'application/json' });
+          const blob = new Blob([JSON.stringify({ formatVersion: 2, appVersion: APP_VERSION, exportedAt: Date.now(), data: payload }, null, 2)], { type: 'application/json' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
@@ -5292,6 +5604,7 @@ const SettingsManager = {
               try {
                 if (data.theme) summary.theme = String(data.theme).replace(/^\"|\"$/g, '');
                 if (data[VIEW_MODE_KEY]) summary.viewMode = String(data[VIEW_MODE_KEY]).replace(/^\"|\"$/g, '');
+                if (data[LAYOUT_PRESET_KEY]) summary.layout = String(data[LAYOUT_PRESET_KEY]).replace(/^\"|\"$/g, '');
                 if (data[FONT_SIZE_KEY]) summary.fontSize = String(data[FONT_SIZE_KEY]).replace(/^\"|\"$/g, '');
               } catch (e) {}
 
@@ -5487,6 +5800,8 @@ const SettingsManager = {
 
           const profiles = loadSettingsProfiles();
           profiles[name] = {
+            formatVersion: 2,
+            appVersion: APP_VERSION,
             updatedAt: Date.now(),
             snapshot: buildSettingsSnapshot()
           };
@@ -5819,9 +6134,11 @@ const SettingsManager = {
       });
     }
 
-    // Shared memory provider toggles
+    // Built-in and optional shared-memory provider toggles
     const providerSelection = loadProviderSelection();
     const providerCheckboxes = {
+      providerBuiltin: 'builtin',
+      providerEnhanced: 'enhanced',
       providerRTSS: 'rtss',
       providerAIDA64: 'aida64',
       providerHWiNFO: 'hwinfo'
@@ -5831,8 +6148,40 @@ const SettingsManager = {
       const checkbox = document.getElementById(elementId);
       if (!checkbox) return;
       checkbox.checked = providerSelection[providerKey] !== false;
-      checkbox.addEventListener('change', () => {
+      checkbox.addEventListener('change', async () => {
         const nextSelection = loadProviderSelection();
+
+        if (providerKey === 'enhanced' && checkbox.checked && nextSelection.enhanced !== true) {
+          const confirmed = await showEnhancedSensorsConfirmation();
+
+          if (!confirmed) {
+            checkbox.checked = false;
+            return;
+          }
+
+          nextSelection.enhanced = true;
+          saveProviderSelection(nextSelection);
+          checkbox.disabled = true;
+
+          try {
+            const restartResult = await ipcRenderer.invoke('app:restart-elevated');
+            if (!restartResult || restartResult.ok !== true) {
+              nextSelection.enhanced = false;
+              saveProviderSelection(nextSelection);
+              checkbox.checked = false;
+              checkbox.disabled = false;
+              alert(restartResult?.error || 'The administrator restart was cancelled. Enhanced Hardware Sensors remains disabled.');
+            }
+          } catch (error) {
+            nextSelection.enhanced = false;
+            saveProviderSelection(nextSelection);
+            checkbox.checked = false;
+            checkbox.disabled = false;
+            alert(`Unable to restart with administrator privileges: ${error.message}`);
+          }
+          return;
+        }
+
         nextSelection[providerKey] = !!checkbox.checked;
         saveProviderSelection(nextSelection);
         updateStats();
@@ -6063,6 +6412,7 @@ const SettingsManager = {
 
     const appBehaviorControls = {
       launchAtStartup: document.getElementById('launchAtStartup'),
+      launchAsAdministrator: document.getElementById('launchAsAdministrator'),
       startMinimized: document.getElementById('startMinimized'),
       minimizeToTray: document.getElementById('minimizeToTray'),
       closeToTray: document.getElementById('closeToTray'),
@@ -6132,6 +6482,7 @@ const SettingsManager = {
     const readAppBehaviorFromUi = () => {
       return normalizeAppBehaviorSettings({
         launchAtStartup: !!appBehaviorControls.launchAtStartup?.checked,
+        launchAsAdministrator: !!appBehaviorControls.launchAsAdministrator?.checked,
         startMinimized: !!appBehaviorControls.startMinimized?.checked,
         minimizeToTray: !!appBehaviorControls.minimizeToTray?.checked,
         closeToTray: !!appBehaviorControls.closeToTray?.checked,
@@ -6630,12 +6981,28 @@ const SettingsManager = {
     }
 
     const sensorOptions = document.getElementById('sensorOptions');
+    const sensorSearchInput = document.getElementById('sensorSearchInput');
+    if (sensorSearchInput) {
+      sensorSearchInput.addEventListener('input', applySensorSelectionFilter);
+      sensorSearchInput.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || !sensorSearchInput.value) return;
+        event.preventDefault();
+        sensorSearchInput.value = '';
+        applySensorSelectionFilter();
+      });
+    }
+
     if (sensorOptions) {
       const sensorDragState = {
         group: '',
         sensorId: '',
         overSensorId: '',
-        placeAfter: false
+        placeAfter: false,
+        scrollContainer: null,
+        lastClientX: 0,
+        lastClientY: 0,
+        scrollVelocity: 0,
+        animationFrame: 0
       };
 
       const clearSensorDragClasses = () => {
@@ -6643,6 +7010,174 @@ const SettingsManager = {
           row.classList.remove('dragging', 'drag-over-before', 'drag-over-after');
         });
       };
+
+      const sensorRowIsVisible = (row) => !!row &&
+        !row.classList.contains('is-search-hidden') &&
+        row.getClientRects().length > 0;
+
+      const getSensorRowsForGroup = (group) => Array.from(sensorOptions.querySelectorAll('.sensor-item-row[data-order-group][data-order-sensor-id]'))
+        .filter((row) => row.dataset.orderGroup === group && sensorRowIsVisible(row));
+
+      const getDraggedSensorRow = () => getSensorRowsForGroup(sensorDragState.group)
+        .find((row) => row.dataset.orderSensorId === sensorDragState.sensorId) || null;
+
+      const resolveSensorDragScrollContainer = () => {
+        const sidebar = sensorOptions.closest('.sidebar');
+        if (sidebar) return sidebar;
+
+        let candidate = sensorOptions.parentElement;
+        while (candidate) {
+          const overflowY = window.getComputedStyle(candidate).overflowY;
+          if (/(auto|scroll)/i.test(overflowY) && candidate.scrollHeight > candidate.clientHeight) return candidate;
+          candidate = candidate.parentElement;
+        }
+        return null;
+      };
+
+      const updateSensorDropIndicator = (clientY, preferredRow = null) => {
+        if (!sensorDragState.sensorId || !sensorDragState.group) return;
+
+        const rows = getSensorRowsForGroup(sensorDragState.group);
+        let targetRow = preferredRow;
+        if (!targetRow ||
+            targetRow.dataset.orderGroup !== sensorDragState.group ||
+            targetRow.dataset.orderSensorId === sensorDragState.sensorId ||
+            !sensorRowIsVisible(targetRow)) {
+          targetRow = rows
+            .filter((row) => row.dataset.orderSensorId !== sensorDragState.sensorId)
+            .map((row) => {
+              const rect = row.getBoundingClientRect();
+              return { row, distance: Math.abs(clientY - (rect.top + (rect.height / 2))) };
+            })
+            .sort((a, b) => a.distance - b.distance)[0]?.row || null;
+        }
+
+        clearSensorDragClasses();
+        getDraggedSensorRow()?.classList.add('dragging');
+
+        if (!targetRow) {
+          sensorDragState.overSensorId = '';
+          return;
+        }
+
+        const targetRect = targetRow.getBoundingClientRect();
+        sensorDragState.placeAfter = (clientY - targetRect.top) > (targetRect.height / 2);
+        sensorDragState.overSensorId = targetRow.dataset.orderSensorId || '';
+        targetRow.classList.add(sensorDragState.placeAfter ? 'drag-over-after' : 'drag-over-before');
+      };
+
+      const updateSensorDragScrollVelocity = () => {
+        const scrollContainer = sensorDragState.scrollContainer;
+        if (!scrollContainer || !sensorDragState.sensorId) {
+          sensorDragState.scrollVelocity = 0;
+          return;
+        }
+
+        const rect = scrollContainer.getBoundingClientRect();
+        const edgeSize = Math.min(84, Math.max(48, rect.height * 0.13));
+        const xInside = sensorDragState.lastClientX >= rect.left && sensorDragState.lastClientX <= rect.right;
+        const y = sensorDragState.lastClientY;
+        let velocity = 0;
+
+        if (xInside && y <= rect.top + edgeSize && y >= rect.top - 24 && scrollContainer.scrollTop > 0) {
+          const strength = Math.min(1, Math.max(0, (rect.top + edgeSize - y) / edgeSize));
+          velocity = -(4 + (strength * 20));
+        } else if (xInside && y >= rect.bottom - edgeSize && y <= rect.bottom + 24 &&
+                   scrollContainer.scrollTop < scrollContainer.scrollHeight - scrollContainer.clientHeight) {
+          const strength = Math.min(1, Math.max(0, (y - (rect.bottom - edgeSize)) / edgeSize));
+          velocity = 4 + (strength * 20);
+        }
+
+        sensorDragState.scrollVelocity = velocity;
+      };
+
+      const runSensorDragAutoScroll = () => {
+        if (!sensorDragState.sensorId) {
+          sensorDragState.animationFrame = 0;
+          return;
+        }
+
+        const scrollContainer = sensorDragState.scrollContainer;
+        updateSensorDragScrollVelocity();
+        if (scrollContainer && sensorDragState.scrollVelocity) {
+          const previousScrollTop = scrollContainer.scrollTop;
+          scrollContainer.scrollTop += sensorDragState.scrollVelocity;
+          if (scrollContainer.scrollTop !== previousScrollTop) {
+            updateSensorDropIndicator(sensorDragState.lastClientY);
+          }
+        }
+
+        sensorDragState.animationFrame = window.requestAnimationFrame(runSensorDragAutoScroll);
+      };
+
+      const finishSensorDrag = () => {
+        if (sensorDragState.animationFrame) {
+          window.cancelAnimationFrame(sensorDragState.animationFrame);
+        }
+        sensorDragState.group = '';
+        sensorDragState.sensorId = '';
+        sensorDragState.overSensorId = '';
+        sensorDragState.placeAfter = false;
+        sensorDragState.scrollContainer = null;
+        sensorDragState.scrollVelocity = 0;
+        sensorDragState.animationFrame = 0;
+        document.body.classList.remove('sensor-order-dragging');
+        clearSensorDragClasses();
+      };
+
+      const handleSensorDragPointer = (event) => {
+        if (!sensorDragState.sensorId || !sensorDragState.scrollContainer) return;
+        if (event.clientX === 0 && event.clientY === 0) return;
+
+        const scrollRect = sensorDragState.scrollContainer.getBoundingClientRect();
+        const withinHorizontalBounds = event.clientX >= scrollRect.left && event.clientX <= scrollRect.right;
+        if (!withinHorizontalBounds) {
+          sensorDragState.scrollVelocity = 0;
+          return;
+        }
+
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        sensorDragState.lastClientX = event.clientX;
+        sensorDragState.lastClientY = event.clientY;
+
+        const eventTarget = event.target instanceof Element ? event.target : null;
+        const preferredRow = eventTarget?.closest('.sensor-item-row[data-order-group][data-order-sensor-id]') || null;
+        updateSensorDropIndicator(event.clientY, preferredRow);
+        updateSensorDragScrollVelocity();
+      };
+
+      document.addEventListener('dragover', handleSensorDragPointer, true);
+      document.addEventListener('wheel', (event) => {
+        const scrollContainer = sensorDragState.scrollContainer;
+        if (!sensorDragState.sensorId || !scrollContainer) return;
+
+        let delta = Number(event.deltaY || event.deltaX || 0);
+        if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) delta *= 18;
+        if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) delta *= scrollContainer.clientHeight;
+        if (!delta) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        scrollContainer.scrollTop += delta;
+        updateSensorDropIndicator(sensorDragState.lastClientY);
+        updateSensorDragScrollVelocity();
+      }, { capture: true, passive: false });
+
+      document.addEventListener('keydown', (event) => {
+        const scrollContainer = sensorDragState.scrollContainer;
+        if (!sensorDragState.sensorId || !scrollContainer) return;
+        const stepByKey = {
+          ArrowUp: -48,
+          ArrowDown: 48,
+          PageUp: -Math.max(120, scrollContainer.clientHeight * 0.75),
+          PageDown: Math.max(120, scrollContainer.clientHeight * 0.75)
+        };
+        if (!Object.prototype.hasOwnProperty.call(stepByKey, event.key)) return;
+        event.preventDefault();
+        scrollContainer.scrollTop += stepByKey[event.key];
+        updateSensorDropIndicator(sensorDragState.lastClientY);
+      }, true);
 
       sensorOptions.addEventListener('click', (e) => {
         const renameButton = e.target.closest('[data-rename-sensor-id]');
@@ -6669,6 +7204,15 @@ const SettingsManager = {
 
         const block = toggle.closest('.sensor-category-block');
         if (!block) return;
+
+        const searchQuery = normalizeSensorSearchText(document.getElementById('sensorSearchInput')?.value);
+        if (searchQuery) {
+          const nextSearchCollapsed = !block.classList.contains('is-search-collapsed');
+          if (nextSearchCollapsed) sensorSearchCollapsedGroups.add(group);
+          else sensorSearchCollapsedGroups.delete(group);
+          applySensorSelectionFilter();
+          return;
+        }
 
         const nextCollapsed = !block.classList.contains('is-collapsed');
         block.classList.toggle('is-collapsed', nextCollapsed);
@@ -6739,6 +7283,9 @@ const SettingsManager = {
         sensorDragState.sensorId = row.dataset.orderSensorId || '';
         sensorDragState.overSensorId = '';
         sensorDragState.placeAfter = false;
+        sensorDragState.scrollContainer = resolveSensorDragScrollContainer();
+        sensorDragState.lastClientX = e.clientX;
+        sensorDragState.lastClientY = e.clientY;
 
         if (!sensorDragState.group || !sensorDragState.sensorId) {
           e.preventDefault();
@@ -6751,52 +7298,34 @@ const SettingsManager = {
         }
 
         setTimeout(() => {
-          row.classList.add('dragging');
+          if (sensorDragState.sensorId) row.classList.add('dragging');
         }, 0);
-      });
 
-      sensorOptions.addEventListener('dragover', (e) => {
-        const targetRow = e.target.closest('.sensor-item-row[data-order-group][data-order-sensor-id]');
-        if (!targetRow || !sensorDragState.sensorId) return;
-
-        const targetGroup = targetRow.dataset.orderGroup || '';
-        const targetSensorId = targetRow.dataset.orderSensorId || '';
-        if (!targetGroup || !targetSensorId || targetGroup !== sensorDragState.group || targetSensorId === sensorDragState.sensorId) return;
-
-        e.preventDefault();
-        const rect = targetRow.getBoundingClientRect();
-        const placeAfter = (e.clientY - rect.top) > (rect.height / 2);
-
-        clearSensorDragClasses();
-        sensorOptions.querySelector(`.sensor-item-row[data-order-group="${sensorDragState.group}"][data-order-sensor-id="${sensorDragState.sensorId}"]`)?.classList.add('dragging');
-        targetRow.classList.add(placeAfter ? 'drag-over-after' : 'drag-over-before');
-        sensorDragState.overSensorId = targetSensorId;
-        sensorDragState.placeAfter = placeAfter;
+        document.body.classList.add('sensor-order-dragging');
+        if (!sensorDragState.animationFrame) {
+          sensorDragState.animationFrame = window.requestAnimationFrame(runSensorDragAutoScroll);
+        }
       });
 
       sensorOptions.addEventListener('drop', (e) => {
-        const targetRow = e.target.closest('.sensor-item-row[data-order-group][data-order-sensor-id]');
-        if (!targetRow || !sensorDragState.sensorId || !sensorDragState.group) return;
+        if (!sensorDragState.sensorId || !sensorDragState.group) return;
 
         e.preventDefault();
-        const targetGroup = targetRow.dataset.orderGroup || '';
-        const targetSensorId = targetRow.dataset.orderSensorId || '';
-        if (targetGroup !== sensorDragState.group || !targetSensorId || targetSensorId === sensorDragState.sensorId) {
-          clearSensorDragClasses();
+        if (!sensorDragState.overSensorId || sensorDragState.overSensorId === sensorDragState.sensorId) {
+          finishSensorDrag();
           return;
         }
 
-        moveSensorOrderByDrop(sensorDragState.group, sensorDragState.sensorId, targetSensorId, sensorDragState.placeAfter);
-        clearSensorDragClasses();
+        const group = sensorDragState.group;
+        const sensorId = sensorDragState.sensorId;
+        const targetSensorId = sensorDragState.overSensorId;
+        const placeAfter = sensorDragState.placeAfter;
+        const visibleSensorIds = getSensorRowsForGroup(group).map((row) => row.dataset.orderSensorId).filter(Boolean);
+        finishSensorDrag();
+        moveSensorOrderByDrop(group, sensorId, targetSensorId, placeAfter, visibleSensorIds);
       });
 
-      sensorOptions.addEventListener('dragend', () => {
-        sensorDragState.group = '';
-        sensorDragState.sensorId = '';
-        sensorDragState.overSensorId = '';
-        sensorDragState.placeAfter = false;
-        clearSensorDragClasses();
-      });
+      sensorOptions.addEventListener('dragend', finishSensorDrag);
     }
 
     // Restore saved settings
@@ -6831,10 +7360,12 @@ async function updateStats(forceRender = false) {
   updateInProgress = true;
 
   try {
-    await sampleLatencyIfNeeded();
+    // Latency probing can take up to a few seconds on an unreachable host.
+    // Keep it off the critical path so core hardware sensors render immediately.
+    sampleLatencyIfNeeded().catch(() => {});
 
-    const rawMode = localStorage.getItem('detectionMode') || 'msi';
-    const mode = rawMode === 'msi' ? 'msi' : 'msi';
+    const rawMode = localStorage.getItem('detectionMode') || 'builtin';
+    const mode = 'builtin';
     if (rawMode !== mode) {
       localStorage.setItem('detectionMode', mode);
     }
@@ -6847,6 +7378,30 @@ async function updateStats(forceRender = false) {
 
     const aidaPath = localStorage.getItem('aidaPath') || '';
     const data = await sensorReader.getEnhancedData(mode, { aidaPath, providers: providerSelection });
+    const builtinStatus = document.getElementById('builtinSensorStatus');
+    if (builtinStatus) {
+      const diagnostics = data && data.external && data.external.diagnostics;
+      if (providerSelection.builtin === false) {
+        builtinStatus.textContent = 'Built-in collector is disabled.';
+      } else if (!diagnostics) {
+        builtinStatus.textContent = 'Built-in collector is unavailable. Run the sensor-host build or restart SiR.';
+      } else {
+        const standardCount = Number(diagnostics.standardSensorCount) || 0;
+        const enhancedCount = Number(diagnostics.enhancedSensorCount) || 0;
+        if (providerSelection.enhanced === true && diagnostics.enhancedAvailable === true) {
+          builtinStatus.textContent = `Built-in collector active: ${standardCount} standard + ${enhancedCount} enhanced sensors.`;
+        } else if (providerSelection.enhanced === true && diagnostics.enhancedInitializing === true) {
+          builtinStatus.textContent = `Built-in collector active: ${standardCount} standard sensors; enhanced hardware is still being detected.`;
+        } else if (providerSelection.enhanced === true) {
+          const warning = String(diagnostics.warning || '').trim();
+          builtinStatus.textContent = warning
+            ? `Standard sensors active; enhanced access unavailable (${warning}).`
+            : 'Standard sensors active; enhanced access is unavailable on this system.';
+        } else {
+          builtinStatus.textContent = `Built-in collector active: ${standardCount} standard sensors.`;
+        }
+      }
+    }
     
     // update external group title
     const titleEl = document.querySelector('#externalGroup .sensor-group-title');
@@ -6894,7 +7449,7 @@ async function updateStats(forceRender = false) {
         externalInfo.push(`Frame Time: ${normalizedFrameTime.toFixed(2)}ms`);
       }
 
-      if (mode === 'msi' && data.external.groupedSensors) {
+      if (data.external.groupedSensors) {
         const groupedWithRealtime = enrichGroupedSensorsWithRealtime(data.external.groupedSensors, {
           ...data.external,
           fps: Number.isFinite(externalFps) ? externalFps : data.external.fps,
@@ -7052,6 +7607,8 @@ function applyUiTooltips() {
     saveSettingsProfileBtn: 'Save current settings as a named profile.',
     renameSettingsProfileBtn: 'Rename the selected settings profile.',
     deleteSettingsProfileBtn: 'Delete the selected settings profile.',
+    providerBuiltin: 'Enable the bundled SiR sensor collector (no separate monitoring app required).',
+    providerEnhanced: 'Enable expanded hardware access through the bundled LibreHardwareMonitor library.',
     providerRTSS: 'Enable RTSS/MSI shared-memory provider.',
     providerAIDA64: 'Enable AIDA64 shared-memory provider.',
     providerHWiNFO: 'Enable HWiNFO/LHM shared-memory provider.',
@@ -7068,6 +7625,7 @@ function applyUiTooltips() {
     webMonitorOpenBtn: 'Open web monitor in your default browser.',
     discordPresenceSelect: 'Enable or disable Discord Rich Presence.',
     launchAtStartup: 'Start app automatically with Windows.',
+    launchAsAdministrator: 'Request administrator privileges whenever the app starts. Windows will show a UAC prompt.',
     startMinimized: 'Launch app minimized.',
     minimizeToTray: 'Minimize to system tray instead of taskbar.',
     closeToTray: 'Close button hides to tray instead of exiting.',
@@ -7106,6 +7664,11 @@ document.addEventListener('DOMContentLoaded', () => {
   applyWindowOrder();
   applyWindowSizes();
   setupWindowResize();
+  let layoutResizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(layoutResizeTimer);
+    layoutResizeTimer = setTimeout(applyWindowSizes, 100);
+  });
   setupWindowDragAndDrop();
   setupSensorGraphInteractions();
   applyUiTooltips();
@@ -7123,6 +7686,7 @@ window.addEventListener('beforeunload', () => {
   updateLoopActive = false;
   clearTimeout(updateTimer);
   stopWebMonitorServer();
+  if (sensorReader && typeof sensorReader.close === 'function') sensorReader.close();
 });
 
 

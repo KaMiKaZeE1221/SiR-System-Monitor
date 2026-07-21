@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, Tray, ipcMain, shell, screen, globalShortcut }
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
+const { execFile } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 // Discord Rich Presence (in-repo IPC helper)
 const DISCORD_CLIENT_ID = '1479994487215227094';
@@ -22,9 +23,17 @@ if (!enableGpuAcceleration) {
   app.disableHardwareAcceleration();
 }
 
+app.setName('SiR System Monitor');
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.sir.systemmonitor');
+}
+
 const APP_BEHAVIOR_SETTINGS_FILE = 'appBehaviorSettings.json';
+const FORCE_ADMIN_ARGUMENT = '--sir-require-admin';
+const ELEVATION_RELAUNCH_ARGUMENT = '--sir-elevation-relaunch-attempted';
 const DEFAULT_APP_BEHAVIOR_SETTINGS = {
   launchAtStartup: false,
+  launchAsAdministrator: false,
   startMinimized: false,
   minimizeToTray: false,
   closeToTray: false,
@@ -32,6 +41,18 @@ const DEFAULT_APP_BEHAVIOR_SETTINGS = {
   startupDelaySeconds: 0,
   enableDiscordRichPresence: true
 };
+const AUTO_UPDATE_PROVIDER = Object.freeze({
+  provider: 'github',
+  owner: 'KaMiKaZeE1221',
+  repo: 'SiR-System-Monitor'
+});
+const AUTO_UPDATE_CONFIG_YAML = [
+  `owner: ${AUTO_UPDATE_PROVIDER.owner}`,
+  `repo: ${AUTO_UPDATE_PROVIDER.repo}`,
+  `provider: ${AUTO_UPDATE_PROVIDER.provider}`,
+  'updaterCacheDirName: sir-system-monitor-updater',
+  ''
+].join('\n');
 
 let mainWindow = null;
 let tray = null;
@@ -44,14 +65,107 @@ let discordReconnectInterval = null;
 const DISCORD_ACTIVITY_INTERVAL_MS = 5_000;
 const DISCORD_RECONNECT_INTERVAL_MS = 5_000;
 let currentOverlayHotkey = null;
+let elevationRestartInProgress = false;
+
+function isRunningAsAdministrator() {
+  if (process.platform !== 'win32') return false;
+  try {
+    const koffi = require('koffi');
+    const shell32 = koffi.load('shell32.dll');
+    const isUserAnAdmin = shell32.func('bool IsUserAnAdmin()');
+    return isUserAnAdmin() === true;
+  } catch (error) {
+    console.warn('Unable to determine administrator status:', error.message);
+    return false;
+  }
+}
+
+function quoteWindowsArgument(value) {
+  const text = String(value || '');
+  return `"${text.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1')}"`;
+}
+
+function launchElevatedApp(additionalArguments = []) {
+  if (process.platform !== 'win32') {
+    return Promise.reject(new Error('Administrator restart is only available on Windows.'));
+  }
+
+  const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+  const powershellPath = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const restartArgumentList = [];
+  if (!app.isPackaged) restartArgumentList.push(app.getAppPath());
+  restartArgumentList.push(...additionalArguments.filter(Boolean));
+  const restartArguments = restartArgumentList.map(quoteWindowsArgument).join(' ');
+  const script = [
+    '$startInfo = New-Object System.Diagnostics.ProcessStartInfo',
+    '$startInfo.FileName = $env:SIR_ELEVATED_EXECUTABLE',
+    '$startInfo.Arguments = $env:SIR_ELEVATED_ARGUMENTS',
+    '$startInfo.UseShellExecute = $true',
+    "$startInfo.Verb = 'runas'",
+    '$null = [System.Diagnostics.Process]::Start($startInfo)'
+  ].join('; ');
+
+  return new Promise((resolve, reject) => {
+    execFile(
+      powershellPath,
+      ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', script],
+      {
+        windowsHide: true,
+        timeout: 120000,
+        env: {
+          ...process.env,
+          SIR_ELEVATED_EXECUTABLE: process.execPath,
+          SIR_ELEVATED_ARGUMENTS: restartArguments
+        }
+      },
+      (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      }
+    );
+  });
+}
 
 function isMissingLatestYmlError(error) {
   const message = String(error?.message || error || '').toLowerCase();
   return message.includes('cannot find latest.yml') || message.includes('latest.yml') && message.includes('404');
 }
 
+function isMissingLocalUpdateConfigError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return message.includes('app-update.yml') &&
+    (message.includes('enoent') || message.includes('no such file or directory'));
+}
+
 function isAutoUpdaterSupported() {
   return !!autoUpdater && app.isPackaged;
+}
+
+function configureAutoUpdaterFeed() {
+  if (!isAutoUpdaterSupported()) return;
+
+  const packagedConfigPath = path.join(process.resourcesPath, 'app-update.yml');
+  if (fs.existsSync(packagedConfigPath)) return;
+
+  // A prepackaged electron-builder run can skip its normal afterPack metadata
+  // generation. Keep checks and downloads functional from a writable fallback
+  // while the build also ships a static copy in resources.
+  try {
+    const fallbackConfigPath = path.join(app.getPath('userData'), 'app-update-fallback.yml');
+    fs.mkdirSync(path.dirname(fallbackConfigPath), { recursive: true });
+    fs.writeFileSync(fallbackConfigPath, AUTO_UPDATE_CONFIG_YAML, 'utf8');
+    autoUpdater.updateConfigPath = fallbackConfigPath;
+  } catch (error) {
+    console.warn('Unable to create fallback updater configuration:', error.message);
+  }
+
+  // setFeedURL lets update checks proceed even if the fallback file could not be
+  // written. Downloads will use the fallback file's updater cache metadata when
+  // it is available.
+  autoUpdater.setFeedURL(AUTO_UPDATE_PROVIDER);
 }
 
 function sendUpdateStatus(payload) {
@@ -77,6 +191,7 @@ function setupAutoUpdater() {
     return;
   }
 
+  configureAutoUpdaterFeed();
   autoUpdaterInitialized = true;
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
@@ -138,13 +253,18 @@ function setupAutoUpdater() {
 
   autoUpdater.on('error', (error) => {
     const isMissingMetadata = isMissingLatestYmlError(error);
+    const isMissingLocalConfig = isMissingLocalUpdateConfigError(error);
     sendUpdateStatus({
       state: 'error',
       currentVersion: app.getVersion(),
-      code: isMissingMetadata ? 'missing-latest-yml' : 'auto-updater-error',
+      code: isMissingMetadata
+        ? 'missing-latest-yml'
+        : (isMissingLocalConfig ? 'missing-app-update-config' : 'auto-updater-error'),
       error: isMissingMetadata
         ? 'In-app auto update is unavailable because latest.yml is missing from the GitHub release assets.'
-        : (error?.message || 'Unknown updater error.')
+        : (isMissingLocalConfig
+          ? 'The installed updater configuration is missing. GitHub release checking will be used instead.'
+          : (error?.message || 'Unknown updater error.'))
     });
   });
 }
@@ -362,6 +482,7 @@ function normalizeBehaviorSettings(settings) {
 
   return {
     launchAtStartup: !!settings?.launchAtStartup,
+    launchAsAdministrator: !!settings?.launchAsAdministrator,
     startMinimized: !!settings?.startMinimized,
     minimizeToTray: !!settings?.minimizeToTray,
     closeToTray: !!settings?.closeToTray,
@@ -731,7 +852,7 @@ function registerOverlayHotkey(hotkey) {
     globalShortcut.unregister(currentOverlayHotkey);
     currentOverlayHotkey = null;
   }
-  
+
   if (hotkey && hotkey.trim()) {
     try {
       const rawParts = String(hotkey).split('+').map((part) => part.trim()).filter(Boolean);
@@ -858,55 +979,7 @@ function unregisterOverlayHotkey() {
 ipcMain.on('overlay:update', (_event, payload) => {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
   try {
-    applyOverlayCompatibility();
     overlayWindow.webContents.send('overlay:update', payload);
-    const bounds = overlayWindow.getBounds();
-    const targetWidth = payload.width || bounds.width;
-    const targetHeight = payload.height || bounds.height;
-
-    const settings = payload.settings || {};
-    const hasCustomPosition = settings.customPositionEnabled === true
-      && Number.isFinite(Number(settings.customX))
-      && Number.isFinite(Number(settings.customY));
-
-    if (hasCustomPosition) {
-      const x = Math.round(Number(settings.customX));
-      const y = Math.round(Number(settings.customY));
-      overlayWindow.setBounds({ x, y, width: targetWidth, height: targetHeight });
-      applyOverlayCompatibility();
-    } else if (payload.position) {
-      const display = getOverlayDisplay(payload.settings?.displayId).workArea;
-      const margin = 1;
-      const topMargin = 0;
-      const position = String(payload.position || 'top-right');
-      let x = display.x + margin;
-      let y = display.y + margin;
-
-      switch (position) {
-        case 'top-right':
-          x = display.x + Math.max(0, display.width - targetWidth - margin);
-          y = display.y + topMargin;
-          break;
-        case 'bottom-left':
-          x = display.x + margin;
-          y = display.y + Math.max(0, display.height - targetHeight - margin);
-          break;
-        case 'bottom-right':
-          x = display.x + Math.max(0, display.width - targetWidth - margin);
-          y = display.y + Math.max(0, display.height - targetHeight - margin);
-          break;
-        case 'top-left':
-        default:
-          x = display.x + margin;
-          y = display.y + topMargin;
-          break;
-      }
-
-      overlayWindow.setBounds({ x, y, width: targetWidth, height: targetHeight });
-      applyOverlayCompatibility();
-    } else if (targetHeight !== bounds.height) {
-      overlayWindow.setSize(targetWidth, targetHeight);
-    }
   } catch (e) {
     console.error('Failed to forward overlay payload:', e);
   }
@@ -917,9 +990,13 @@ ipcMain.on('overlay:resize', (_event, payload) => {
   try {
     applyOverlayCompatibility();
     const bounds = overlayWindow.getBounds();
-    const targetWidth = Number.isFinite(payload.width) ? payload.width : bounds.width;
-    const targetHeight = Number.isFinite(payload.height) ? payload.height : bounds.height;
+    const requestedWidth = Number(payload && payload.width);
+    const requestedHeight = Number(payload && payload.height);
     const settings = payload.settings || {};
+    const targetDisplay = getOverlayDisplay(settings.displayId).workArea;
+    const maximumDisplayWidth = Math.max(260, targetDisplay.width - 2);
+    const targetWidth = Number.isFinite(requestedWidth) ? Math.max(260, Math.min(maximumDisplayWidth, Math.round(requestedWidth))) : bounds.width;
+    const targetHeight = Number.isFinite(requestedHeight) ? Math.max(60, Math.min(1400, Math.round(requestedHeight))) : bounds.height;
     const hasCustomPosition = settings.customPositionEnabled === true
       && Number.isFinite(Number(settings.customX))
       && Number.isFinite(Number(settings.customY));
@@ -930,7 +1007,7 @@ ipcMain.on('overlay:resize', (_event, payload) => {
       overlayWindow.setBounds({ x, y, width: targetWidth, height: targetHeight });
       applyOverlayCompatibility();
     } else if (payload.position) {
-      const display = getOverlayDisplay(payload.settings?.displayId).workArea;
+      const display = targetDisplay;
       const margin = 1;
       const topMargin = 0;
       const position = String(payload.position || 'top-right');
@@ -1013,9 +1090,37 @@ ipcMain.on('overlay:drag-end', () => {
   }
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   appBehaviorSettings = loadBehaviorSettings();
+  const forceAdministrator = process.argv.includes(FORCE_ADMIN_ARGUMENT);
+  const elevationAlreadyAttempted = process.argv.includes(ELEVATION_RELAUNCH_ARGUMENT);
+  const shouldElevate = forceAdministrator || appBehaviorSettings.launchAsAdministrator;
+  const runningAsAdministrator = isRunningAsAdministrator();
+  if (shouldElevate && !runningAsAdministrator && !elevationAlreadyAttempted) {
+    try {
+      await launchElevatedApp([
+        ...(forceAdministrator ? [FORCE_ADMIN_ARGUMENT] : []),
+        ELEVATION_RELAUNCH_ARGUMENT
+      ]);
+      isQuitting = true;
+      app.quit();
+      return;
+    } catch (error) {
+      console.warn('Administrator launch was cancelled or failed:', error.message);
+      if (forceAdministrator) {
+        isQuitting = true;
+        app.quit();
+        return;
+      }
+    }
+  }
+  if (forceAdministrator && !runningAsAdministrator) {
+    console.warn('The forced administrator launch did not obtain administrator privileges.');
+    isQuitting = true;
+    app.quit();
+    return;
+  }
   applyLoginItemSettings();
   syncTrayState();
   createWindow();
@@ -1055,9 +1160,36 @@ app.on('will-quit', () => {
   }
 });
 
+ipcMain.handle('app:restart-elevated', async () => {
+  if (elevationRestartInProgress) {
+    return { ok: false, error: 'An administrator restart is already in progress.' };
+  }
+
+  elevationRestartInProgress = true;
+  try {
+    await launchElevatedApp();
+    setTimeout(() => {
+      isQuitting = true;
+      app.quit();
+    }, 350);
+    return { ok: true };
+  } catch (error) {
+    elevationRestartInProgress = false;
+    const message = String(error && error.message ? error.message : error || 'Administrator restart was cancelled.');
+    return {
+      ok: false,
+      error: message.toLowerCase().includes('cancel')
+        ? 'The administrator restart was cancelled. Enhanced Hardware Sensors remains disabled.'
+        : `Unable to restart with administrator privileges: ${message}`
+    };
+  }
+});
+
 ipcMain.handle('app-behavior:get', () => {
   return appBehaviorSettings;
 });
+
+ipcMain.handle('app:is-elevated', () => isRunningAsAdministrator());
 
 ipcMain.handle('app-behavior:set', (_event, nextSettings) => {
   const merged = {
@@ -1117,14 +1249,17 @@ ipcMain.handle('app-update:check', async () => {
           : 'No Updates Found'
       };
     } catch (error) {
-      if (isMissingLatestYmlError(error)) {
+      if (isMissingLatestYmlError(error) || isMissingLocalUpdateConfigError(error)) {
         const fallback = await checkForAppUpdates();
+        const missingLocalConfig = isMissingLocalUpdateConfigError(error);
         return {
           ...fallback,
           usingAutoUpdater: false,
           manualDownloadOnly: true,
           releaseUrl: String(fallback?.releaseUrl || fallbackReleaseUrl || '').trim(),
-          warning: 'GitHub release is missing latest.yml, so in-app download is unavailable. Use Open Latest Release.'
+          warning: missingLocalConfig
+            ? 'The installed updater configuration is missing. Release checking succeeded through GitHub; reinstall this build to restore in-app downloads.'
+            : 'GitHub release is missing latest.yml, so in-app download is unavailable. Use Open Latest Release.'
         };
       }
       return {
@@ -1158,6 +1293,13 @@ ipcMain.handle('app-update:download', async () => {
         ok: false,
         code: 'missing-latest-yml',
         error: 'In-app download is unavailable because latest.yml is missing from release assets. Use Open Latest Release.'
+      };
+    }
+    if (isMissingLocalUpdateConfigError(error)) {
+      return {
+        ok: false,
+        code: 'missing-app-update-config',
+        error: 'The installed updater configuration is missing. Reinstall this build to restore in-app downloads.'
       };
     }
     return { ok: false, error: `Failed to start update download: ${error.message}` };

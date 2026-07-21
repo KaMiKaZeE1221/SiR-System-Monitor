@@ -1,6 +1,7 @@
 {
   "name": "sir-system-monitor",
-  "version": "1.2.5",
+  "productName": "SiR System Monitor",
+  "version": "1.2.6",
   "description": "Electron app for monitoring system statistics",
   "author": "SiR_KaMiKaZeE",
   "repository": {
@@ -9,9 +10,23 @@
   },
   "main": "main.js",
   "scripts": {
+    "sensor-host:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-sensor-host.ps1",
+    "test:sensors": "npm run sensor-host:build && node scripts/test-hardware-catalog.js && node scripts/test-sensor-host.js",
+    "test:hardware-catalog": "node scripts/test-hardware-catalog.js",
+    "test:updater": "node scripts/test-updater-config.js",
+    "test:sensors:enhanced": "npm run sensor-host:build && node scripts/test-sensor-host.js --enhanced",
+    "test:network-units": "node scripts/test-network-units.js",
+    "test:sensor-order": "node scripts/test-sensor-order.js",
+    "test:layout": "node scripts/test-layout-presets.js",
+    "benchmark:sensors": "node scripts/benchmark-sensor-host.js",
+    "benchmark:sensors:enhanced": "node scripts/benchmark-sensor-host.js --enhanced",
+    "prestart": "npm run sensor-host:build",
     "start": "electron .",
+    "prebuild": "npm run sensor-host:build",
     "build": "electron-builder --dir",
+    "predist": "npm run sensor-host:build",
     "dist": "electron-builder",
+    "predist:win": "npm run sensor-host:build",
     "dist:win": "node scripts/patch-nsis-details.js && electron-builder --win nsis portable",
     "minify": "node scripts/minify-all.js"
   },
@@ -24,8 +39,7 @@
   },
   "dependencies": {
     "electron-updater": "^6.8.3",
-    "koffi": "^2.15.1",
-    "systeminformation": "^5.21.0"
+    "koffi": "^2.15.1"
   },
   "build": {
     "appId": "com.sir.systemmonitor",
@@ -35,6 +49,7 @@
       "!dist/**",
       "!dist*/**",
       "!build/**",
+      "!sensor-host/**",
       "!recovered_source_from_setup_1_0_6/**",
       "!restored_from_setup_1_0_6/**",
       "!docs/**",
@@ -46,6 +61,7 @@
       "!*.log",
       "!README.md",
       "!test-*.js",
+      "!scripts/test-web-layout-fixture.js",
       "!SiR-System-Monitor-Setup-*.exe",
       "!SiR-System-Monitor-Portable-*.exe",
       "!*.blockmap",
@@ -63,11 +79,26 @@
       "!V1.2.2/**",
       "!V1.2.3/**",
       "!V1.2.4/**",
+      "!V1.2.5/**",
+      "!V1.2.6/**",
       "!scripts/build-installer.js",
       "!scripts/run-electron-builder.js"
     ],
+    "extraResources": [
+      {
+        "from": "build/app-update.yml",
+        "to": "app-update.yml"
+      },
+      {
+        "from": "sensor-host/bin",
+        "to": "sensor-host",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "directories": {
-      "output": "V1.2.5"
+      "output": "V1.2.6"
     },
     "icon": "SiR_SM_Circle.ico",
     "win": {
@@ -78,7 +109,7 @@
       ]
     },
     "portable": {
-      "artifactName": "SiR-System-Monitor-Portable-1.2.5.${ext}"
+    "artifactName": "SiR-System-Monitor-Portable-1.2.6.${ext}"
     },
     "publish": [
       {
@@ -88,7 +119,7 @@
       }
     ],
     "nsis": {
-      "artifactName": "SiR-System-Monitor-Setup-1.2.5.${ext}",
+      "artifactName": "SiR-System-Monitor-Setup-1.2.6.${ext}",
       "license": "build/LICENSE.txt",
       "include": "build/installer.nsh",
       "oneClick": false,

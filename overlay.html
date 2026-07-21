@@ -41,13 +41,13 @@
       padding: 0;
     }
     .overlay-shell {
-      width: fit-content;
+      width: 360px;
       max-width: none;
       background: rgba(0, 0, 0, 0.0);
       overflow: hidden;
       display: inline-flex;
       flex-direction: column;
-      min-width: 280px;
+      min-width: 0;
       font-family: var(--overlay-font);
       font-weight: var(--overlay-weight);
       border-radius: var(--overlay-radius);
@@ -59,7 +59,8 @@
       gap: var(--overlay-gap);
       overflow-y: visible;
       overflow-x: visible;
-      width: fit-content;
+      width: 100%;
+      box-sizing: border-box;
       max-width: none;
       border-radius: var(--overlay-radius);
       border: 1px solid var(--overlay-border);
@@ -134,7 +135,7 @@
     }
     .overlay-group-line {
       display: grid;
-      grid-template-columns: auto 1fr;
+      grid-template-columns: max-content max-content;
       column-gap: var(--overlay-gap);
       row-gap: 4px;
       align-items: baseline;
@@ -142,6 +143,9 @@
       padding: 0;
       min-height: 24px;
       overflow: visible;
+      min-width: 100%;
+      width: max-content;
+      max-width: none;
       white-space: nowrap;
     }
     .overlay-group-title {
@@ -163,11 +167,17 @@
       opacity: 0.95;
       line-height: 1.3;
       overflow: visible;
-      width: auto;
+      min-width: max-content;
+      width: max-content;
       max-width: none;
       font-family: var(--overlay-font);
       grid-column: 2;
       margin-left: 0;
+    }
+    .overlay-group-line-token {
+      display: inline-flex;
+      align-items: baseline;
+      white-space: nowrap;
     }
     .overlay-group-line-sep {
       opacity: 0.6;

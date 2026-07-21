@@ -8,8 +8,17 @@ const OVERLAY_TEXT_COLOR_KEY = 'overlayTextColor';
 const OVERLAY_VALUE_COLOR_KEY = 'overlayValueColor';
 const OVERLAY_BG_COLOR_KEY = 'overlayBackgroundColor';
 const OVERLAY_OPACITY_KEY = 'overlayOpacity';
+const OVERLAY_GROUP_SPACING_KEY = 'overlayGroupSpacing';
 const OVERLAY_SCALE_KEY = 'overlayScale';
+const OVERLAY_WIDTH_KEY = 'overlayWidth';
+const OVERLAY_WIDTH_PRESET_KEY = 'overlayWidthPreset';
+const OVERLAY_POSITION_KEY = 'overlayPosition';
 const OVERLAY_STYLE_KEY = 'overlayStyle';
+const OVERLAY_SHOW_UNITS_KEY = 'overlayShowUnits';
+const OVERLAY_MONITOR_KEY = 'overlayMonitorId';
+const OVERLAY_CUSTOM_X_KEY = 'overlayCustomX';
+const OVERLAY_CUSTOM_Y_KEY = 'overlayCustomY';
+const OVERLAY_CUSTOM_POSITION_ENABLED_KEY = 'overlayCustomPositionEnabled';
 const OVERLAY_DRAG_UNLOCK_KEY = 'overlayDragUnlock';
 
 const overlayShell = document.getElementById('overlayShell');
@@ -63,6 +72,25 @@ function normalizeOverlayStyle(value) {
   return valid.includes(String(value || '').trim()) ? String(value).trim() : 'compact';
 }
 
+function normalizeOverlayGroupSpacing(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(32, Math.round(numeric)));
+}
+
+function normalizeOverlayWidthPreset(value) {
+  const valid = ['small', 'medium', 'large', 'wide', 'custom'];
+  return valid.includes(String(value || '').trim()) ? String(value).trim() : 'medium';
+}
+
+function normalizeOverlayWidth(value, preset = 'medium') {
+  const presets = { small: 280, medium: 360, large: 460, wide: 560 };
+  const normalizedPreset = normalizeOverlayWidthPreset(preset);
+  if (normalizedPreset !== 'custom') return presets[normalizedPreset] || presets.medium;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(260, Math.min(1000, Math.round(numeric / 10) * 10)) : presets.medium;
+}
+
 function normalizeGroupLineLimit(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 8;
@@ -81,6 +109,16 @@ function normalizeOverlayGroupLineLimits(raw) {
 }
 
 function loadOverlaySettings() {
+  const widthPreset = normalizeOverlayWidthPreset(localStorage.getItem(OVERLAY_WIDTH_PRESET_KEY));
+  const customXRaw = localStorage.getItem(OVERLAY_CUSTOM_X_KEY);
+  const customYRaw = localStorage.getItem(OVERLAY_CUSTOM_Y_KEY);
+  const customX = Number(customXRaw);
+  const customY = Number(customYRaw);
+  const customPositionEnabled = String(localStorage.getItem(OVERLAY_CUSTOM_POSITION_ENABLED_KEY) || '').trim().toLowerCase() === 'true'
+    && customXRaw !== null
+    && customYRaw !== null
+    && Number.isFinite(customX)
+    && Number.isFinite(customY);
   return {
     enabled: localStorage.getItem(OVERLAY_ENABLED_KEY) === 'true',
     fontSize: normalizeOverlayFontSize(localStorage.getItem(OVERLAY_FONT_SIZE_KEY)),
@@ -90,8 +128,17 @@ function loadOverlaySettings() {
     valueColor: normalizeOverlayColor(localStorage.getItem(OVERLAY_VALUE_COLOR_KEY), '#ffffff'),
     backgroundColor: normalizeOverlayColor(localStorage.getItem(OVERLAY_BG_COLOR_KEY), '#000000'),
     opacity: normalizeOverlayOpacity(localStorage.getItem(OVERLAY_OPACITY_KEY)),
+    groupSpacing: normalizeOverlayGroupSpacing(localStorage.getItem(OVERLAY_GROUP_SPACING_KEY)),
     scale: normalizeOverlayScale(localStorage.getItem(OVERLAY_SCALE_KEY)),
+    widthPreset,
+    width: normalizeOverlayWidth(localStorage.getItem(OVERLAY_WIDTH_KEY), widthPreset),
+    position: String(localStorage.getItem(OVERLAY_POSITION_KEY) || 'top-right'),
     style: normalizeOverlayStyle(localStorage.getItem(OVERLAY_STYLE_KEY)),
+    showUnits: String(localStorage.getItem(OVERLAY_SHOW_UNITS_KEY) || '').trim().toLowerCase() !== 'false',
+    displayId: localStorage.getItem(OVERLAY_MONITOR_KEY) || '',
+    customPositionEnabled,
+    customX: customPositionEnabled ? Math.round(customX) : null,
+    customY: customPositionEnabled ? Math.round(customY) : null,
     groupLineLimits: normalizeOverlayGroupLineLimits((() => {
       try {
         return JSON.parse(localStorage.getItem('overlayGroupLineLimits') || '{}');
@@ -126,12 +173,22 @@ function applyOverlayAppearance(settings = loadOverlaySettings()) {
     'overlay-style-grouped-line'
   );
   overlayShell.classList.add(`overlay-style-${settings.style}`);
-  overlayShell.style.setProperty('--overlay-font', settings.fontFamily);
+  const resolvedFontFamily = String(settings.fontFamily || '').includes(',')
+    ? String(settings.fontFamily)
+    : normalizeOverlayFontFamily(settings.fontFamily);
+  overlayShell.style.setProperty('--overlay-font', resolvedFontFamily);
   overlayShell.style.setProperty('--overlay-weight', settings.fontBold ? '700' : '500');
   overlayShell.style.setProperty('--overlay-text', settings.textColor);
   overlayShell.style.setProperty('--overlay-value', settings.valueColor);
-  overlayShell.style.setProperty('--overlay-gap', `${settings.groupSpacing ?? 8}px`);
+  overlayShell.style.setProperty('--overlay-gap', `${normalizeOverlayGroupSpacing(settings.groupSpacing)}px`);
   overlayShell.style.setProperty('--overlay-unit-scale', settings.scale / 100);
+  const configuredWidth = normalizeOverlayWidth(settings.width, settings.widthPreset || 'custom');
+  const targetWidth = settings.style === 'grouped-line'
+    ? Math.max(configuredWidth, Number(overlayResizeState.lastWidth) || 0)
+    : configuredWidth;
+  overlayShell.style.width = `${targetWidth}px`;
+  overlayShell.style.minWidth = '0';
+  if (overlayContent) overlayContent.style.width = '100%';
 
   const bgRgb = hexToRgb(settings.backgroundColor);
   const normalizedOpacity = Math.max(0, Math.min(100, Number(settings.opacity) || 0));
@@ -183,12 +240,31 @@ function renderOverlayItem(sensor, settings) {
 
 function renderOverlay(payload) {
   const settings = payload?.settings || loadOverlaySettings();
-  applyOverlayAppearance(settings);
   const sensors = Array.isArray(payload?.sensors) ? payload.sensors : [];
   if (!overlayContent || !overlayMessage) return;
 
+  const resizeLayoutKey = JSON.stringify({
+    style: settings.style,
+    widthPreset: settings.widthPreset,
+    width: settings.width,
+    fontSize: settings.fontSize,
+    fontFamily: settings.fontFamily,
+    fontBold: settings.fontBold,
+    scale: settings.scale,
+    groupSpacing: settings.groupSpacing,
+    groupLineLimits: settings.groupLineLimits,
+    sensors: sensors.map((sensor) => `${sensor.group || sensor.category || ''}:${sensor.id || sensor.name || ''}`)
+  });
+  if (overlayResizeState.layoutKey !== resizeLayoutKey) {
+    overlayResizeState.layoutKey = resizeLayoutKey;
+    overlayResizeState.lastWidth = 0;
+    overlayResizeState.lastHeight = 0;
+  }
+  applyOverlayAppearance(settings);
+
   if (!sensors.length) {
     overlayContent.innerHTML = '<div class="overlay-message">No sensors selected or no data available.</div>';
+    requestOverlayResize(settings);
     return;
   }
 
@@ -230,7 +306,10 @@ function renderOverlay(payload) {
         const chunkSize = Math.max(1, Math.ceil(renderedItems.length / lineLimit));
         const chunks = [];
         for (let i = 0; i < renderedItems.length; i += chunkSize) {
-          chunks.push(renderedItems.slice(i, i + chunkSize).join('<span class="overlay-group-line-sep">|</span>'));
+          const chunk = renderedItems.slice(i, i + chunkSize)
+            .map((item, index) => `<span class="overlay-group-line-token">${index ? '<span class="overlay-group-line-sep">|</span>' : ''}${item}</span>`)
+            .join('');
+          chunks.push(chunk);
           if (chunks.length >= lineLimit) break;
         }
         const values = chunks.map((chunk) => `<span class="overlay-group-values">${chunk}</span>`).join('');
@@ -269,7 +348,8 @@ const overlayResizeState = {
   timeoutId: null,
   lastWidth: 0,
   lastHeight: 0,
-  lastPosition: null
+  lastPosition: null,
+  layoutKey: ''
 };
 
 const overlayDragState = {
@@ -281,34 +361,22 @@ function requestOverlayResize(settings) {
 
   const measure = () => {
     if (!overlayShell || !overlayContent) return null;
-
-    let maxWidth = 280;
-    const groupLines = overlayContent.querySelectorAll('.overlay-group-line');
-
-    if (groupLines.length > 0) {
-      // For grouped-line style, measure each line carefully
-      groupLines.forEach((line) => {
-        const title = line.querySelector('.overlay-group-title');
-        const values = line.querySelector('.overlay-group-values');
-        if (title && values) {
-          const titleRect = title.getBoundingClientRect();
-          const valuesRect = values.getBoundingClientRect();
-          const lineWidth = titleRect.width + valuesRect.width + 14;
-          maxWidth = Math.max(maxWidth, lineWidth);
-        }
-      });
-    } else {
-      // For other styles, use content width
-      const contentWidth = Math.max(overlayContent.scrollWidth, overlayContent.offsetWidth, overlayContent.clientWidth);
-      const shellWidth = Math.max(overlayShell.scrollWidth, overlayShell.offsetWidth, overlayShell.clientWidth);
-      maxWidth = Math.max(maxWidth, contentWidth, shellWidth);
+    const configuredWidth = normalizeOverlayWidth(settings.width, settings.widthPreset || 'custom');
+    let width = configuredWidth;
+    if (settings.style === 'grouped-line') {
+      const availableScreenWidth = Math.max(260, Number(window.screen?.availWidth || 1202) - 2);
+      const requiredWidth = Math.ceil(Math.max(
+        configuredWidth,
+        overlayContent.scrollWidth + 2,
+        ...Array.from(overlayContent.querySelectorAll('.overlay-group-line')).map((line) => line.scrollWidth + 22)
+      ));
+      width = Math.min(availableScreenWidth, Math.max(requiredWidth, overlayResizeState.lastWidth || 0));
+      overlayShell.style.width = `${width}px`;
+      overlayContent.style.width = '100%';
     }
-
-    const rawWidth = Math.max(300, Math.ceil(maxWidth + 64));
-    const width = Math.ceil(rawWidth / 8) * 8;
-    const contentHeight = Math.max(overlayContent.scrollHeight, overlayContent.offsetHeight, overlayContent.clientHeight);
-    const shellHeight = Math.max(overlayShell.scrollHeight, overlayShell.offsetHeight, overlayShell.clientHeight);
-    const rawHeight = Math.max(80, Math.ceil(Math.max(contentHeight, shellHeight) + 18));
+    const contentHeight = Math.max(overlayContent.scrollHeight, Math.ceil(overlayContent.getBoundingClientRect().height));
+    const shellHeight = Math.max(overlayShell.scrollHeight, Math.ceil(overlayShell.getBoundingClientRect().height));
+    const rawHeight = Math.max(60, Math.ceil(Math.max(contentHeight, shellHeight) + 2));
     const height = Math.ceil(rawHeight / 4) * 4;
     return { width, height };
   };
@@ -317,8 +385,14 @@ function requestOverlayResize(settings) {
     const dims = measure();
     if (!dims) return;
 
-    const position = String(settings.position || '');
-    const sizeChanged = Math.abs(dims.width - overlayResizeState.lastWidth) > 8 || Math.abs(dims.height - overlayResizeState.lastHeight) > 3;
+    const position = JSON.stringify({
+      position: String(settings.position || ''),
+      displayId: String(settings.displayId || ''),
+      customPositionEnabled: settings.customPositionEnabled === true,
+      customX: Number.isFinite(Number(settings.customX)) ? Math.round(Number(settings.customX)) : null,
+      customY: Number.isFinite(Number(settings.customY)) ? Math.round(Number(settings.customY)) : null
+    });
+    const sizeChanged = Math.abs(dims.width - overlayResizeState.lastWidth) > 1 || Math.abs(dims.height - overlayResizeState.lastHeight) > 1;
     const positionChanged = position !== String(overlayResizeState.lastPosition || '');
 
     if (!sizeChanged && !positionChanged) {
@@ -344,7 +418,7 @@ function requestOverlayResize(settings) {
   overlayResizeState.timeoutId = window.setTimeout(() => {
     requestAnimationFrame(sendResize);
     overlayResizeState.timeoutId = null;
-  }, 60);
+  }, 100);
 }
 
 function escapeHtml(text) {
@@ -390,7 +464,9 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 window.addEventListener('storage', (event) => {
-  if ([OVERLAY_FONT_SIZE_KEY, OVERLAY_FONT_FAMILY_KEY, OVERLAY_FONT_BOLD_KEY, OVERLAY_TEXT_COLOR_KEY, OVERLAY_VALUE_COLOR_KEY, OVERLAY_BG_COLOR_KEY, OVERLAY_OPACITY_KEY, OVERLAY_SCALE_KEY, OVERLAY_STYLE_KEY, OVERLAY_DRAG_UNLOCK_KEY].includes(event.key)) {
-    applyOverlayAppearance();
+  if ([OVERLAY_FONT_SIZE_KEY, OVERLAY_FONT_FAMILY_KEY, OVERLAY_FONT_BOLD_KEY, OVERLAY_TEXT_COLOR_KEY, OVERLAY_VALUE_COLOR_KEY, OVERLAY_BG_COLOR_KEY, OVERLAY_OPACITY_KEY, OVERLAY_GROUP_SPACING_KEY, OVERLAY_SCALE_KEY, OVERLAY_WIDTH_KEY, OVERLAY_WIDTH_PRESET_KEY, OVERLAY_POSITION_KEY, OVERLAY_STYLE_KEY, OVERLAY_SHOW_UNITS_KEY, OVERLAY_MONITOR_KEY, OVERLAY_CUSTOM_X_KEY, OVERLAY_CUSTOM_Y_KEY, OVERLAY_CUSTOM_POSITION_ENABLED_KEY, OVERLAY_DRAG_UNLOCK_KEY].includes(event.key)) {
+    const settings = loadOverlaySettings();
+    applyOverlayAppearance(settings);
+    requestOverlayResize(settings);
   }
 });
