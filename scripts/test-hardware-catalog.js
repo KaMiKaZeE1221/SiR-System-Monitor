@@ -5,10 +5,12 @@ const path = require('path');
 const workspaceRoot = path.resolve(__dirname, '..');
 const catalogPath = path.join(workspaceRoot, 'sensor-host', 'HardwareDeviceCatalog.cs');
 const readersPath = path.join(workspaceRoot, 'sensor-host', 'PsuReaders.cs');
+const programPath = path.join(workspaceRoot, 'sensor-host', 'Program.cs');
 const supportPath = path.join(workspaceRoot, 'sensor-host', 'HARDWARE-SUPPORT.md');
 
 const catalogSource = fs.readFileSync(catalogPath, 'utf8');
 const readersSource = fs.readFileSync(readersPath, 'utf8');
+const programSource = fs.readFileSync(programPath, 'utf8');
 const supportDocument = fs.readFileSync(supportPath, 'utf8');
 const definitionPattern = /new UsbHardwareDefinition\(0x([0-9A-Fa-f]{4}),\s*0x([0-9A-Fa-f]{4}),\s*"([^"]+)",\s*([A-Za-z0-9]+)\)/g;
 const definitions = [];
@@ -37,6 +39,16 @@ assert(supportDocument.includes('1B1C:1C02') && supportDocument.includes('1B1C:1
 assert(readersSource.includes('Thread.Sleep(3)'), 'The NZXT PMBus bridge timing guard is missing.');
 assert(readersSource.includes('now.AddSeconds(10)') || readersSource.includes('_nextOpenAttempt = now.AddSeconds(10)'), 'Disconnected-device retry throttling is missing.');
 assert(!/SetFan|SetSpeed|SetOcp|SetRail|WriteConfiguration/i.test(readersSource), 'A configuration-writing PSU operation was added to the telemetry reader.');
+const snapshotStart = programSource.indexOf('public Snapshot ReadSnapshot()');
+const snapshotEnd = programSource.indexOf('private void QueueDirectPsuPolls()', snapshotStart);
+const snapshotSource = programSource.slice(snapshotStart, snapshotEnd);
+assert(snapshotStart >= 0 && snapshotEnd > snapshotStart, 'The primary sensor snapshot path could not be identified.');
+assert(snapshotSource.includes('QueueDirectPsuPolls();'), 'Direct PSU refreshes are not queued from the primary snapshot path.');
+assert(!snapshotSource.includes('_thermaltakePsu.ReadSnapshot()'), 'Thermaltake HID reads still block the primary sensor snapshot.');
+assert(!snapshotSource.includes('_corsairPsu.ReadSnapshot()'), 'Corsair HID reads still block the primary sensor snapshot.');
+assert(!snapshotSource.includes('_nzxtEPsu.ReadSnapshot()'), 'NZXT HID reads still block the primary sensor snapshot.');
+assert(programSource.includes('DirectPsuSnapshotRetentionSeconds = 15'), 'The last valid direct-PSU snapshot is not retained across transient HID timeouts.');
+assert(!programSource.slice(programSource.indexOf('private bool ShouldSkipEnhancedPsu'), programSource.indexOf('private static string BuildSensorName')).includes('.IsActive'), 'Enhanced PSU deduplication can still block on a direct HID reader lock.');
 
 console.log(JSON.stringify({
   directPsuUsbIds: definitions.length,

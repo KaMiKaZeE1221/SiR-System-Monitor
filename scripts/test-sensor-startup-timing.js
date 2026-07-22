@@ -25,11 +25,20 @@ async function main() {
   const startedAt = Date.now();
   let firstStandardAt = null;
   let firstEnhancedAt = null;
+  let firstProcessorAt = null;
+  let firstGraphicsAt = null;
+  let firstBoardAt = null;
+  let firstPeripheralAt = null;
+  let fullyInitializedAt = null;
+  let slowestSnapshotMs = 0;
   let lastSignature = '';
 
   try {
     while ((Date.now() - startedAt) < durationSeconds * 1000) {
+      const snapshotStartedAt = Date.now();
       const result = await reader.getEnhancedData('builtin', { providers });
+      const snapshotMs = Date.now() - snapshotStartedAt;
+      slowestSnapshotMs = Math.max(slowestSnapshotMs, snapshotMs);
       const data = result && result.external;
       const diagnostics = data && data.diagnostics ? data.diagnostics : {};
       const groupedSensors = data && data.groupedSensors ? data.groupedSensors : {};
@@ -40,6 +49,11 @@ async function main() {
 
       if (standard > 0 && firstStandardAt === null) firstStandardAt = elapsedMs;
       if (enhanced > 0 && firstEnhancedAt === null) firstEnhancedAt = elapsedMs;
+      if (diagnostics.enhancedProcessorAvailable === true && firstProcessorAt === null) firstProcessorAt = elapsedMs;
+      if (diagnostics.enhancedGraphicsAvailable === true && firstGraphicsAt === null) firstGraphicsAt = elapsedMs;
+      if (diagnostics.enhancedBoardAvailable === true && firstBoardAt === null) firstBoardAt = elapsedMs;
+      if (diagnostics.enhancedPeripheralAvailable === true && firstPeripheralAt === null) firstPeripheralAt = elapsedMs;
+      if (diagnostics.enhancedInitializing === false && fullyInitializedAt === null) fullyInitializedAt = elapsedMs;
 
       const signature = JSON.stringify({
         total,
@@ -48,10 +62,14 @@ async function main() {
         groups: Object.fromEntries(Object.entries(groupedSensors).map(([group, sensors]) => [group, sensors.length])),
         available: diagnostics.enhancedAvailable === true,
         initializing: diagnostics.enhancedInitializing === true,
+        processor: diagnostics.enhancedProcessorAvailable === true,
+        graphics: diagnostics.enhancedGraphicsAvailable === true,
+        board: diagnostics.enhancedBoardAvailable === true,
+        peripheral: diagnostics.enhancedPeripheralAvailable === true,
         warning: diagnostics.warning || null
       });
       if (signature !== lastSignature) {
-        console.log(JSON.stringify({ elapsedMs, ...JSON.parse(signature) }));
+        console.log(JSON.stringify({ elapsedMs, snapshotMs, ...JSON.parse(signature) }));
         lastSignature = signature;
       }
       await wait(250);
@@ -59,7 +77,16 @@ async function main() {
 
     assert(firstStandardAt !== null, 'Standard sensors did not become available during startup.');
     assert(firstStandardAt < 3000, `Standard sensors were too slow (${firstStandardAt} ms).`);
-    console.log(JSON.stringify({ firstStandardMs: firstStandardAt, firstEnhancedMs: firstEnhancedAt }, null, 2));
+    console.log(JSON.stringify({
+      firstStandardMs: firstStandardAt,
+      firstEnhancedMs: firstEnhancedAt,
+      firstProcessorMs: firstProcessorAt,
+      firstGraphicsMs: firstGraphicsAt,
+      firstBoardMs: firstBoardAt,
+      firstPeripheralMs: firstPeripheralAt,
+      fullyInitializedMs: fullyInitializedAt,
+      slowestSnapshotMs
+    }, null, 2));
   } finally {
     await reader.close({ forceAfterMs: 2000 });
   }

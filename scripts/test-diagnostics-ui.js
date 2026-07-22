@@ -37,6 +37,7 @@ DIAGNOSTIC_TESTS.filter((test) => test.kind === 'script').forEach((test) => {
 
 assert(mainSource.includes("ipcMain.handle('diagnostics:run'"), 'Main process diagnostic runner IPC is missing.');
 assert(mainSource.includes("ipcMain.handle('diagnostics:cancel'"), 'Diagnostic cancellation IPC is missing.');
+assert(mainSource.includes("ipcMain.handle('diagnostics:create-support-bundle'"), 'Support bundle creation IPC is missing.');
 assert(mainSource.includes("ELECTRON_RUN_AS_NODE: '1'"), 'Bundled scripts must run through the packaged Electron Node runtime.');
 assert(mainSource.includes('DIAGNOSTIC_OUTPUT_LIMIT_BYTES'), 'Diagnostic output must be bounded.');
 assert(mainSource.includes('getDiagnosticDefinition(diagnosticId)'), 'Diagnostic execution must resolve through the strict allowlist.');
@@ -47,10 +48,21 @@ assert(html.includes('id="diagnosticsModal"'), 'The Diagnostics page is missing.
 assert(html.includes('id="diagnosticsOutput"') && html.includes('readonly'), 'Diagnostic output must be a selectable, read-only text area.');
 assert(html.includes('id="diagnosticsCopyBtn"'), 'Copy Results is missing.');
 assert(html.includes('id="diagnosticsCancelBtn"'), 'Cancel Running Check is missing.');
+assert(html.includes('id="diagnosticsBundleBtn"'), 'Create Support Bundle is missing.');
+assert(html.includes('id="themedDialogModal"'), 'The shared themed confirmation dialog is missing.');
 ids.forEach((id) => assert(html.includes(`data-diagnostic-id="${id}"`), `${id} has no clickable diagnostics button.`));
 assert(css.includes('.diagnostics-output') && css.includes('resize: vertical'), 'Diagnostic results must be user-resizable.');
 assert(appSource.includes("ipcRenderer.on('diagnostics:output'"), 'The UI must stream diagnostic output.');
 assert(appSource.includes("ipcRenderer.on('diagnostics:complete'"), 'The UI must handle diagnostic completion.');
 assert(appSource.includes("navigator.clipboard.writeText(text)"), 'Diagnostic results must be copyable.');
+assert(appSource.includes("ipcRenderer.invoke('diagnostics:create-support-bundle'"), 'Diagnostics does not invoke support bundle creation.');
+assert(appSource.includes("'Run 6 Tests & Continue'"), 'Support bundle creation does not warn the user before running the full suite.');
+assert(appSource.includes('for (let index = 0; index < testButtons.length; index += 1)'), 'Support bundle creation does not iterate over every curated diagnostic.');
+assert(appSource.includes('const result = await runDiagnosticAndWait('), 'Support bundle diagnostics are not awaited sequentially.');
+const bundleSuiteStart = appSource.indexOf("'Run 6 Tests & Continue'");
+const bundleCreation = appSource.indexOf("ipcRenderer.invoke('diagnostics:create-support-bundle'", bundleSuiteStart);
+const diagnosticLoop = appSource.indexOf('for (let index = 0; index < testButtons.length; index += 1)', bundleSuiteStart);
+assert(bundleSuiteStart >= 0 && diagnosticLoop > bundleSuiteStart && bundleCreation > diagnosticLoop, 'The support ZIP is created before the six-test suite has completed.');
+assert(appSource.slice(diagnosticLoop, bundleCreation).includes('buildSupportBundlePayload(output?.value || \'\')') === false, 'Support payload construction occurs before the diagnostic suite finishes.');
 
 console.log('Diagnostics allowlist, runner, and UI checks passed.');

@@ -84,6 +84,53 @@ const server = http.createServer((request, response) => {
   if (requestUrl.pathname === '/SiR_SM_Source_sq.png') return sendFile(response, 'SiR_SM_Source_sq.png', 'image/png');
   if (requestUrl.pathname === '/styles.css') return sendFile(response, 'styles.css', 'text/css; charset=utf-8');
 
+  if (requestUrl.pathname === '/themed-dialog') {
+    const kind = requestUrl.searchParams.get('kind') === 'profile' ? 'profile' : 'support';
+    const dialogPreview = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
+      .replace('<script src="app.js"></script>', `<style>
+        body { display: block; overflow: hidden; }
+        body > .sidebar, body > .sidebar-resize-handle, body > .container, #setupGuideModal, #diagnosticsModal, #updateAvailableModal, #enhancedSensorsConfirmModal, #importSettingsModal { display: none !important; }
+      </style><script>
+        document.addEventListener('DOMContentLoaded', () => {
+          document.body.className = 'theme-orange';
+          document.body.style.setProperty('--settings-panel-color', '#2b2723');
+          document.body.style.setProperty('--settings-panel-accent-color', '#ff7a00');
+          document.body.style.setProperty('--settings-panel-icon-color', '#ffa033');
+          const kind = ${JSON.stringify(kind)};
+          const modal = document.getElementById('themedDialogModal');
+          const dialog = modal.querySelector('.themed-dialog');
+          const title = document.getElementById('themedDialogTitleText');
+          const icon = document.getElementById('themedDialogIcon');
+          const message = document.getElementById('themedDialogMessage');
+          const detail = document.getElementById('themedDialogDetail');
+          const cancel = document.getElementById('themedDialogCancelBtn');
+          const confirm = document.getElementById('themedDialogConfirmBtn');
+          modal.classList.remove('is-hidden');
+          modal.setAttribute('aria-hidden', 'false');
+          if (kind === 'profile') {
+            dialog.classList.add('is-success');
+            title.textContent = 'Profile Saved';
+            icon.className = 'bi bi-check-circle-fill themed-dialog-icon';
+            message.textContent = 'Profile "Main" was saved successfully.';
+            detail.hidden = true;
+            cancel.hidden = true;
+            confirm.textContent = 'Done';
+          } else {
+            dialog.classList.add('is-warning');
+            title.textContent = 'Create Support Bundle?';
+            icon.className = 'bi bi-file-earmark-zip-fill themed-dialog-icon';
+            message.textContent = 'SiR System Monitor will automatically run all six read-only diagnostic checks before creating the support bundle. The checks run one at a time and can take about a minute, or longer on slower systems.';
+            detail.hidden = false;
+            detail.innerHTML = '<i class="bi bi-activity" aria-hidden="true"></i><span>The current results box will be cleared. Each test result—including failures or timeouts—will be added to the privacy-scrubbed ZIP. You can cancel while a check is running.</span>';
+            cancel.hidden = false;
+            confirm.textContent = 'Run 6 Tests & Continue';
+          }
+        });
+      </script>`);
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+    return response.end(dialogPreview);
+  }
+
   if (requestUrl.pathname === '/diagnostics') {
     const diagnosticsPreview = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
       .replace('<script src="app.js"></script>', `<style>
@@ -98,7 +145,7 @@ const server = http.createServer((request, response) => {
           const output = document.getElementById('diagnosticsOutput');
           const status = document.getElementById('diagnosticsStatus');
           document.querySelectorAll('[data-diagnostic-id]').forEach((button) => button.addEventListener('click', () => {
-            output.value = 'SiR System Monitor - Diagnostic Report\\nVersion: 1.3.1\\n\\n[Application]\\nPrivate memory (Task Manager comparable): 121.7 MB\\nWorking set (includes shared pages): 447.2 MB\\nAggregate CPU usage: 1.82%\\n\\n[Result]\\nDiagnostic completed successfully.';
+            output.value = 'SiR System Monitor - Diagnostic Report\\nVersion: 1.3.2\\n\\n[Application]\\nPrivate memory (Task Manager comparable): 121.7 MB\\nWorking set (includes shared pages): 447.2 MB\\nAggregate CPU usage: 1.82%\\n\\n[Result]\\nDiagnostic completed successfully.';
             status.textContent = button.querySelector('strong').textContent + ' completed.';
             button.blur();
           }));
@@ -119,15 +166,19 @@ const server = http.createServer((request, response) => {
   if (requestUrl.pathname === '/api/monitor') {
     let requestedLayout = 'balanced';
     let requestedSummaryLayout = 'compact';
+    let requestedMotionSpeed = 'standard';
+    let requestedMotionIntensity = 'balanced';
     try {
       const referer = new URL(request.headers.referer || `http://127.0.0.1:${port}/`);
       requestedLayout = normalizeLayoutPreset(referer.searchParams.get('layout'));
       requestedSummaryLayout = normalizeLayoutPreset(referer.searchParams.get('summaryLayout') || 'compact');
+      requestedMotionSpeed = ['calm', 'standard', 'lively'].includes(referer.searchParams.get('motionSpeed')) ? referer.searchParams.get('motionSpeed') : 'standard';
+      requestedMotionIntensity = ['gentle', 'balanced', 'expressive'].includes(referer.searchParams.get('motionIntensity')) ? referer.searchParams.get('motionIntensity') : 'balanced';
     } catch (error) {}
 
     const payload = {
       app: 'SiR System Monitor',
-      version: '1.3.1',
+      version: '1.3.2',
       updatedAt: Date.now(),
       mode: 'builtin',
       groups: fixtureGroups,
@@ -138,6 +189,16 @@ const server = http.createServer((request, response) => {
         valueMonospace: true,
         fontBold: false,
         disableGlow: false,
+        animations: {
+          enabled: true,
+          settingsDropdowns: true,
+          dialogs: true,
+          viewTransitions: true,
+          sensorIcons: true,
+          settingsIcons: true,
+          speed: requestedMotionSpeed,
+          intensity: requestedMotionIntensity
+        },
         temperatureUnit: 'celsius',
         summaryMode: false,
         viewMode: 'standard',
