@@ -200,6 +200,7 @@
                       <label class="overlay-line-limit-row" for="overlayLineLimit_network"><span class="overlay-line-limit-label">Network</span><input type="number" id="overlayLineLimit_network" class="detection-select" min="1" max="40" value="8"></label>
                       <label class="overlay-line-limit-row" for="overlayLineLimit_latency"><span class="overlay-line-limit-label">Ping</span><input type="number" id="overlayLineLimit_latency" class="detection-select" min="1" max="40" value="8"></label>
                       <label class="overlay-line-limit-row" for="overlayLineLimit_drives"><span class="overlay-line-limit-label">Drives</span><input type="number" id="overlayLineLimit_drives" class="detection-select" min="1" max="40" value="8"></label>
+                      <label class="overlay-line-limit-row" for="overlayLineLimit_app"><span class="overlay-line-limit-label">App</span><input type="number" id="overlayLineLimit_app" class="detection-select" min="1" max="40" value="8"></label>
                       <label class="overlay-line-limit-row" for="overlayLineLimit_other"><span class="overlay-line-limit-label">Other</span><input type="number" id="overlayLineLimit_other" class="detection-select" min="1" max="40" value="8"></label>
                     </div>
                   </div>
@@ -421,6 +422,10 @@
             <span>Drives</span>
           </label>
           <label class="checkbox-label">
+            <input type="checkbox" id="showApp" checked>
+            <span>App</span>
+          </label>
+          <label class="checkbox-label">
             <input type="checkbox" id="showExternal" checked>
             <span>Other</span>
           </label>
@@ -637,6 +642,7 @@
           <i class="bi bi-display" aria-hidden="true"></i>
           <span class="overlay-toggle-text">Overlay: Off</span>
         </button>
+        <button id="diagnosticsHeaderBtn" class="header-control-btn monitoring-mode-btn icon-only" title="Open Diagnostics" aria-label="Open Diagnostics"><i class="bi bi-clipboard2-pulse-fill" aria-hidden="true"></i></button>
         <button id="setupGuideHeaderBtn" class="header-control-btn monitoring-mode-btn icon-only" title="Open Setup Guide"><i class="bi bi-book" aria-hidden="true"></i></button>
         <button id="monitoringModeBtn" class="header-control-btn monitoring-mode-btn icon-only" title="Open Settings"><i class="bi bi-gear" aria-hidden="true"></i></button>
         <!-- Low Overhead Mode removed -->
@@ -702,6 +708,12 @@
         <div id="drivesSensorsDynamic" class="sensor-scroll"></div>
       </div>
 
+      <!-- App Telemetry Group -->
+      <div class="sensor-group" id="appGroup">
+        <div class="sensor-group-title"><i class="bi bi-window-stack group-icon" aria-hidden="true"></i><span>App</span></div>
+        <div id="appSensorsDynamic" class="sensor-scroll"></div>
+      </div>
+
       <!-- Other Group -->
       <div class="sensor-group" id="externalGroup">
         <div class="sensor-group-title"><i class="bi bi-tools group-icon" aria-hidden="true"></i><span>Other</span></div>
@@ -764,7 +776,7 @@
           <summary><i class="bi bi-grid-1x2-fill" aria-hidden="true"></i><span>3) Build Your Layout</span></summary>
           <div class="setup-guide-dropdown-body">
             <ul>
-              <li>Use <strong>Visible Sensors</strong> to show/hide whole groups (FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, Other).</li>
+              <li>Use <strong>Visible Sensors</strong> to show/hide whole groups (FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, App, Other).</li>
               <li>Use <strong>Sensor Selection</strong> for per-sensor visibility, overlay inclusion, and drag-to-reorder.</li>
               <li>Use <strong>Summary Mode</strong> for a compact overall snapshot.</li>
               <li>Right-click a sensor row (or use the rename button) to apply a custom display name without changing source telemetry.</li>
@@ -849,6 +861,54 @@
       </div>
       <div class="setup-guide-footer">
         <button type="button" class="test-btn" data-close-setup-guide>Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="diagnosticsModal" class="setup-guide-modal is-hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="diagnosticsTitle">
+    <div class="setup-guide-dialog diagnostics-dialog" role="document">
+      <div class="setup-guide-header diagnostics-header">
+        <div class="diagnostics-heading-copy">
+          <h2 id="diagnosticsTitle"><i class="bi bi-clipboard2-pulse-fill" aria-hidden="true"></i><span>Diagnostics</span></h2>
+          <p>Run safe, read-only checks and copy the combined results into a support report.</p>
+        </div>
+        <button type="button" class="setup-guide-close" data-close-diagnostics aria-label="Close diagnostics">&times;</button>
+      </div>
+      <div class="setup-guide-body diagnostics-body">
+        <div class="setup-guide-highlight diagnostics-intro">
+          <i class="bi bi-info-circle" aria-hidden="true"></i>
+          <span>Only one check runs at a time. Sensor timing and benchmark checks can temporarily add a small amount of CPU usage while they collect results.</span>
+        </div>
+        <div class="diagnostics-test-grid" aria-label="Available diagnostic checks">
+          <button type="button" class="diagnostics-test-card" data-diagnostic-id="system-report">
+            <i class="bi bi-info-circle" aria-hidden="true"></i><span><strong>System &amp; App Report</strong><small>Version, Windows, CPU, RAM, displays, GPU, permissions, and Electron processes.</small></span>
+          </button>
+          <button type="button" class="diagnostics-test-card" data-diagnostic-id="sensor-check">
+            <i class="bi bi-speedometer2" aria-hidden="true"></i><span><strong>Quick Sensor Check</strong><small>Built-in collector, sensor groups, startup time, FPS support, and PSU coverage.</small></span>
+          </button>
+          <button type="button" class="diagnostics-test-card" data-diagnostic-id="enhanced-sensor-check">
+            <i class="bi bi-cpu" aria-hidden="true"></i><span><strong>Enhanced Hardware Check</strong><small>Enhanced processor, graphics, board, controller, and peripheral discovery.</small></span>
+          </button>
+          <button type="button" class="diagnostics-test-card" data-diagnostic-id="startup-timing">
+            <i class="bi bi-stopwatch" aria-hidden="true"></i><span><strong>Sensor Startup Timing</strong><small>Track standard and enhanced sensor availability over a fresh 12-second window.</small></span>
+          </button>
+          <button type="button" class="diagnostics-test-card" data-diagnostic-id="collector-recovery">
+            <i class="bi bi-arrow-repeat" aria-hidden="true"></i><span><strong>Collector Recovery Check</strong><small>Verify a dedicated test collector recovers cleanly after its child process restarts.</small></span>
+          </button>
+          <button type="button" class="diagnostics-test-card" data-diagnostic-id="performance-benchmark">
+            <i class="bi bi-activity" aria-hidden="true"></i><span><strong>Sensor Performance Benchmark</strong><small>Measure collector CPU, memory, and request latency over eight seconds.</small></span>
+          </button>
+        </div>
+        <div class="diagnostics-output-toolbar">
+          <div class="diagnostics-status-wrap"><span class="diagnostics-status-dot" aria-hidden="true"></span><span id="diagnosticsStatus" role="status" aria-live="polite">Ready to run a diagnostic.</span></div>
+          <button type="button" id="diagnosticsCancelBtn" class="test-btn diagnostics-cancel-btn" disabled>Cancel Running Check</button>
+        </div>
+        <textarea id="diagnosticsOutput" class="diagnostics-output" readonly spellcheck="false" aria-label="Diagnostic results" placeholder="Diagnostic results will appear here. Run several checks to build one combined support report."></textarea>
+      </div>
+      <div class="setup-guide-footer diagnostics-footer">
+        <button type="button" class="test-btn secondary-action" id="diagnosticsClearBtn">Clear Results</button>
+        <button type="button" class="test-btn" id="diagnosticsCopyBtn">Copy Results</button>
+        <button type="button" class="test-btn" data-close-diagnostics>Close</button>
       </div>
     </div>
   </div>

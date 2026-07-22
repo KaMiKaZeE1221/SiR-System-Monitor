@@ -23,6 +23,7 @@ const {
   parseSensorCatalogCache,
   mergeLiveAndCachedCatalog
 } = require('./sensorCatalogCache');
+const { buildAppTelemetrySensors } = require('./appTelemetry');
 const http = require('http');
 const os = require('os');
 const fs = require('fs');
@@ -94,6 +95,9 @@ let rerunUpdateRequested = false;
 let updateLoopActive = false;
 let nextUpdateDueAt = 0;
 let lastSuccessfulSensorReadAt = 0;
+let lastSensorReadDurationMs = 0;
+let lastUpdateCycleDurationMs = 0;
+let lastAppRuntimeStats = {};
 const SENSOR_READ_STALE_HOLD_MS = 8000;
 const renderGroupSignatureCache = {};
 const SENSOR_SELECTION_KEY = 'sensorSelection';
@@ -229,9 +233,10 @@ const SETTINGS_SNAPSHOT_KEYS = [
   'showNetwork',
   'showLatency',
   'showDrives',
+  'showApp',
   'showExternal'
 ];
-const SENSOR_GROUP_ORDER = ['fps', 'cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'latency', 'drives', 'other'];
+const SENSOR_GROUP_ORDER = ['fps', 'cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'latency', 'drives', 'app', 'other'];
 const SENSOR_GROUP_LABELS = {
   fps: 'FPS',
   cpu: 'CPU',
@@ -242,6 +247,7 @@ const SENSOR_GROUP_LABELS = {
   network: 'Network',
   latency: 'Ping',
   drives: 'Drives',
+  app: 'App',
   other: 'Other'
 };
 const SENSOR_GROUP_ICONS = {
@@ -254,6 +260,7 @@ const SENSOR_GROUP_ICONS = {
   latency: 'bi-broadcast-pin',
   drives: 'bi-device-hdd-fill',
   fps: 'bi-graph-up',
+  app: 'bi-window-stack',
   other: 'bi-tools'
 };
 const VIEW_MODE_GROUP_ICONS = {
@@ -267,6 +274,7 @@ const VIEW_MODE_GROUP_ICONS = {
     network: 'bi-globe',
     latency: 'bi-broadcast-pin',
     drives: 'bi-device-hdd-fill',
+    app: 'bi-window-stack',
     other: 'bi-tools'
   },
   compact: {
@@ -279,6 +287,7 @@ const VIEW_MODE_GROUP_ICONS = {
     network: 'bi-wifi',
     latency: 'bi-broadcast',
     drives: 'bi-hdd-stack',
+    app: 'bi-speedometer2',
     other: 'bi-stars'
   },
   wide: {
@@ -291,6 +300,7 @@ const VIEW_MODE_GROUP_ICONS = {
     network: 'bi-ethernet',
     latency: 'bi-broadcast',
     drives: 'bi-device-hdd',
+    app: 'bi-activity',
     other: 'bi-sliders'
   },
   terminal: {
@@ -303,6 +313,7 @@ const VIEW_MODE_GROUP_ICONS = {
     network: 'bi-router-fill',
     latency: 'bi-activity',
     drives: 'bi-device-ssd-fill',
+    app: 'bi-terminal-fill',
     other: 'bi-braces-asterisk'
   },
   rail: {
@@ -315,6 +326,7 @@ const VIEW_MODE_GROUP_ICONS = {
     network: 'bi-globe2',
     latency: 'bi-broadcast-pin',
     drives: 'bi-device-hdd-fill',
+    app: 'bi-window-stack',
     other: 'bi-tools'
   },
   glass: {
@@ -327,6 +339,7 @@ const VIEW_MODE_GROUP_ICONS = {
     network: 'bi-wifi',
     latency: 'bi-activity',
     drives: 'bi-hdd-stack',
+    app: 'bi-speedometer2',
     other: 'bi-stars'
   },
   split: {
@@ -339,6 +352,7 @@ const VIEW_MODE_GROUP_ICONS = {
     network: 'bi-ethernet',
     latency: 'bi-broadcast',
     drives: 'bi-device-hdd',
+    app: 'bi-activity',
     other: 'bi-sliders'
   },
   status: {
@@ -351,6 +365,7 @@ const VIEW_MODE_GROUP_ICONS = {
     network: 'bi-globe-americas',
     latency: 'bi-activity',
     drives: 'bi-device-hdd-fill',
+    app: 'bi-shield-check',
     other: 'bi-check2-circle'
   }
 };
@@ -364,6 +379,7 @@ const GROUP_CARD_IDS = {
   network: 'networkGroup',
   latency: 'latencyGroup',
   drives: 'drivesGroup',
+  app: 'appGroup',
   other: 'externalGroup'
 };
 const GROUP_VISIBILITY_KEYS = {
@@ -376,6 +392,7 @@ const GROUP_VISIBILITY_KEYS = {
   network: 'showNetwork',
   latency: 'showLatency',
   drives: 'showDrives',
+  app: 'showApp',
   other: 'showExternal'
 };
 const CARD_GROUP_IDS = Object.fromEntries(Object.entries(GROUP_CARD_IDS).map(([group, cardId]) => [cardId, group]));
@@ -961,17 +978,17 @@ function buildWebMonitorHtml(authToken = '') {
   </div>
 
   <script>
-    const groupOrder = ['fps', 'cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'latency', 'drives', 'other'];
-    const groupLabels = { fps: 'FPS', cpu: 'CPU', gpu: 'GPU', ram: 'RAM', psu: 'PSU', fans: 'Fans', network: 'Network', latency: 'Ping', drives: 'Drives', other: 'Other' };
+    const groupOrder = ['fps', 'cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'latency', 'drives', 'app', 'other'];
+    const groupLabels = { fps: 'FPS', cpu: 'CPU', gpu: 'GPU', ram: 'RAM', psu: 'PSU', fans: 'Fans', network: 'Network', latency: 'Ping', drives: 'Drives', app: 'App', other: 'Other' };
     const groupIconsByMode = {
-      standard: { fps: 'bi-graph-up', cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-globe', latency: 'bi-broadcast-pin', drives: 'bi-device-hdd-fill', other: 'bi-tools' },
-      compact: { fps: 'bi-speedometer2', cpu: 'bi-speedometer2', gpu: 'bi-badge-8k', ram: 'bi-diagram-3', psu: 'bi-lightning-charge', fans: 'bi-wind', network: 'bi-wifi', latency: 'bi-broadcast', drives: 'bi-hdd-stack', other: 'bi-stars' },
-      wide: { fps: 'bi-graph-up-arrow', cpu: 'bi-cpu', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug', fans: 'bi-fan', network: 'bi-ethernet', latency: 'bi-broadcast', drives: 'bi-device-hdd', other: 'bi-sliders' },
-      terminal: { fps: 'bi-activity', cpu: 'bi-terminal-fill', gpu: 'bi-pc-display-horizontal', ram: 'bi-diagram-2-fill', psu: 'bi-battery-half', fans: 'bi-arrow-repeat', network: 'bi-router-fill', latency: 'bi-activity', drives: 'bi-device-ssd-fill', other: 'bi-braces-asterisk' },
-      rail: { fps: 'bi-layout-sidebar-inset', cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-globe2', latency: 'bi-broadcast-pin', drives: 'bi-device-hdd-fill', other: 'bi-tools' },
-      glass: { fps: 'bi-droplet-half', cpu: 'bi-cpu', gpu: 'bi-gpu-card', ram: 'bi-diagram-3', psu: 'bi-lightning', fans: 'bi-wind', network: 'bi-wifi', latency: 'bi-activity', drives: 'bi-hdd-stack', other: 'bi-stars' },
-      split: { fps: 'bi-grid-3x2-gap-fill', cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-ethernet', latency: 'bi-broadcast', drives: 'bi-device-hdd', other: 'bi-sliders' },
-      status: { fps: 'bi-shield-check', cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-globe-americas', latency: 'bi-activity', drives: 'bi-device-hdd-fill', other: 'bi-check2-circle' }
+      standard: { fps: 'bi-graph-up', cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-globe', latency: 'bi-broadcast-pin', drives: 'bi-device-hdd-fill', app: 'bi-window-stack', other: 'bi-tools' },
+      compact: { fps: 'bi-speedometer2', cpu: 'bi-speedometer2', gpu: 'bi-badge-8k', ram: 'bi-diagram-3', psu: 'bi-lightning-charge', fans: 'bi-wind', network: 'bi-wifi', latency: 'bi-broadcast', drives: 'bi-hdd-stack', app: 'bi-speedometer2', other: 'bi-stars' },
+      wide: { fps: 'bi-graph-up-arrow', cpu: 'bi-cpu', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug', fans: 'bi-fan', network: 'bi-ethernet', latency: 'bi-broadcast', drives: 'bi-device-hdd', app: 'bi-activity', other: 'bi-sliders' },
+      terminal: { fps: 'bi-activity', cpu: 'bi-terminal-fill', gpu: 'bi-pc-display-horizontal', ram: 'bi-diagram-2-fill', psu: 'bi-battery-half', fans: 'bi-arrow-repeat', network: 'bi-router-fill', latency: 'bi-activity', drives: 'bi-device-ssd-fill', app: 'bi-terminal-fill', other: 'bi-braces-asterisk' },
+      rail: { fps: 'bi-layout-sidebar-inset', cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-globe2', latency: 'bi-broadcast-pin', drives: 'bi-device-hdd-fill', app: 'bi-window-stack', other: 'bi-tools' },
+      glass: { fps: 'bi-droplet-half', cpu: 'bi-cpu', gpu: 'bi-gpu-card', ram: 'bi-diagram-3', psu: 'bi-lightning', fans: 'bi-wind', network: 'bi-wifi', latency: 'bi-activity', drives: 'bi-hdd-stack', app: 'bi-droplet-half', other: 'bi-stars' },
+      split: { fps: 'bi-grid-3x2-gap-fill', cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-ethernet', latency: 'bi-broadcast', drives: 'bi-device-hdd', app: 'bi-grid-3x2-gap-fill', other: 'bi-sliders' },
+      status: { fps: 'bi-shield-check', cpu: 'bi-cpu-fill', gpu: 'bi-gpu-card', ram: 'bi-memory', psu: 'bi-plug-fill', fans: 'bi-fan', network: 'bi-globe-americas', latency: 'bi-activity', drives: 'bi-device-hdd-fill', app: 'bi-shield-check', other: 'bi-check2-circle' }
     };
     const fontScaleMap = { small: 0.92, medium: 1, large: 1.28, xlarge: 1.38, xxlarge: 1.5 };
     const fontFamilyMap = {
@@ -2004,7 +2021,65 @@ function renderSensorGraph(sensor) {
 }
 
 function createEmptyGroupedBuckets() {
-  return { fps: [], cpu: [], gpu: [], ram: [], psu: [], fans: [], network: [], latency: [], drives: [], other: [] };
+  return { fps: [], cpu: [], gpu: [], ram: [], psu: [], fans: [], network: [], latency: [], drives: [], app: [], other: [] };
+}
+
+function countHardwareSensors(groupedSensors, enabledOnly = false) {
+  return Object.entries(groupedSensors || {}).reduce((total, [group, sensors]) => {
+    if (group === 'app' || !Array.isArray(sensors)) return total;
+    if (enabledOnly && sensorCategorySelection[group] === false) return total;
+    return total + sensors.filter((sensor) => {
+      if (!sensor || !sensor.id) return false;
+      if (!enabledOnly) return true;
+      return sensorSelection[sensor.id] === undefined
+        ? sensor.defaultEnabled !== false
+        : sensorSelection[sensor.id] === true;
+    }).length;
+  }, 0);
+}
+
+async function getAppRuntimeStats() {
+  if (!ipcRenderer || typeof ipcRenderer.invoke !== 'function') return lastAppRuntimeStats;
+  try {
+    const stats = await ipcRenderer.invoke('app:get-runtime-stats');
+    if (stats && typeof stats === 'object') lastAppRuntimeStats = stats;
+  } catch (error) {
+    // App telemetry is diagnostic only; a failed sample must never disrupt hardware updates.
+  }
+  return lastAppRuntimeStats;
+}
+
+function attachAppTelemetrySensors(groupedSensors, runtimeStats) {
+  const grouped = groupedSensors && typeof groupedSensors === 'object'
+    ? groupedSensors
+    : createEmptyGroupedBuckets();
+  grouped.app = buildAppTelemetrySensors(runtimeStats, {
+    refreshIntervalMs: updateInterval,
+    sensorReadDurationMs: lastSensorReadDurationMs,
+    updateCycleDurationMs: lastUpdateCycleDurationMs,
+    detectedSensorCount: countHardwareSensors(grouped, false),
+    enabledSensorCount: countHardwareSensors(grouped, true),
+    activeAlertCount: Object.values(activeSensorAlertState || {}).filter((state) => state && state.active === true).length,
+    webConnectionCount: webMonitorSockets.size
+  });
+  return grouped;
+}
+
+function mergeAppTelemetryIntoCurrentSelection(runtimeStats) {
+  const appOnly = attachAppTelemetrySensors(createEmptyGroupedBuckets(), runtimeStats);
+  const cachedAppSignature = buildLiveSensorCatalogSignature({ app: cachedOrderedSensorCatalog.app || [] });
+  const nextAppSignature = buildLiveSensorCatalogSignature({ app: appOnly.app || [] });
+  if (cachedAppSignature !== nextAppSignature) {
+    rebuildCachedSensorCatalog(appOnly, { preserveMissing: true });
+  }
+
+  const selectedApp = buildSelectedSensorsFromCachedCatalog(appOnly, { preserveMissing: true }).app || [];
+  latestSelectedGroupedSensors = {
+    ...createEmptyGroupedBuckets(),
+    ...(latestSelectedGroupedSensors || {}),
+    app: selectedApp
+  };
+  return latestSelectedGroupedSensors;
 }
 
 function loadSensorSelection() {
@@ -2567,6 +2642,177 @@ function initializeSetupGuideModal() {
   if (!isSetupGuideSuppressed()) {
     openSetupGuideModal();
   }
+}
+
+function setDiagnosticsModalVisible(visible) {
+  const modal = document.getElementById('diagnosticsModal');
+  if (!modal) return;
+  modal.classList.toggle('is-hidden', !visible);
+  modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+  if (visible) {
+    const firstTest = modal.querySelector('.diagnostics-test-card:not(:disabled)');
+    if (firstTest) firstTest.focus();
+  }
+}
+
+function initializeDiagnosticsModal() {
+  const modal = document.getElementById('diagnosticsModal');
+  const openButton = document.getElementById('diagnosticsHeaderBtn');
+  if (!modal || modal.dataset.initialized === 'true') return;
+  modal.dataset.initialized = 'true';
+
+  const output = document.getElementById('diagnosticsOutput');
+  const status = document.getElementById('diagnosticsStatus');
+  const statusWrap = modal.querySelector('.diagnostics-status-wrap');
+  const cancelButton = document.getElementById('diagnosticsCancelBtn');
+  const copyButton = document.getElementById('diagnosticsCopyBtn');
+  const clearButton = document.getElementById('diagnosticsClearBtn');
+  const testButtons = Array.from(modal.querySelectorAll('[data-diagnostic-id]'));
+  let activeRunId = '';
+  let diagnosticRunning = false;
+
+  const appendOutput = (text) => {
+    if (!output || !text) return;
+    output.value += String(text);
+    if (output.value.length > 1024 * 1024) {
+      output.value = `${output.value.slice(0, 1024 * 1024)}\n[Combined output limited to 1 MB.]\n`;
+    }
+    output.scrollTop = output.scrollHeight;
+  };
+
+  const setStatus = (message, state = '') => {
+    if (status) status.textContent = message;
+    if (statusWrap) {
+      statusWrap.classList.remove('is-running', 'is-success', 'is-error');
+      if (state) statusWrap.classList.add(`is-${state}`);
+    }
+  };
+
+  const setRunning = (running) => {
+    diagnosticRunning = !!running;
+    testButtons.forEach((button) => { button.disabled = diagnosticRunning; });
+    if (cancelButton) cancelButton.disabled = !diagnosticRunning;
+  };
+
+  const finishImmediateDiagnostic = (label, success, error = '') => {
+    activeRunId = '';
+    setRunning(false);
+    if (success) {
+      appendOutput(`\n[${label} completed successfully.]\n`);
+      setStatus(`${label} completed.`, 'success');
+    } else {
+      appendOutput(`\n[${label} failed: ${error || 'Unknown error'}]\n`);
+      setStatus(`${label} failed.`, 'error');
+    }
+  };
+
+  testButtons.forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (diagnosticRunning) return;
+      const diagnosticId = String(button.dataset.diagnosticId || '').trim();
+      const label = String(button.querySelector('strong')?.textContent || 'Diagnostic').trim();
+      if (!diagnosticId) return;
+
+      const separator = output && output.value.trim() ? '\n\n' : '';
+      appendOutput(`${separator}================================================================\n${label}\nStarted: ${new Date().toISOString()}\n================================================================\n`);
+      setRunning(true);
+      setStatus(`Running ${label}...`, 'running');
+
+      try {
+        const result = await ipcRenderer.invoke('diagnostics:run', diagnosticId);
+        if (!result || result.ok !== true) {
+          finishImmediateDiagnostic(label, false, result?.error || 'Unable to start diagnostic.');
+          return;
+        }
+        if (result.immediate === true) {
+          appendOutput(`${String(result.output || '').trim()}\n`);
+          finishImmediateDiagnostic(label, true);
+          return;
+        }
+        activeRunId = String(result.runId || '');
+      } catch (error) {
+        finishImmediateDiagnostic(label, false, error.message);
+      }
+    });
+  });
+
+  ipcRenderer.on('diagnostics:output', (_event, payload = {}) => {
+    if (!diagnosticRunning) return;
+    appendOutput(String(payload.chunk || ''));
+  });
+
+  ipcRenderer.on('diagnostics:complete', (_event, payload = {}) => {
+    if (!diagnosticRunning) return;
+    if (activeRunId && payload.runId && String(payload.runId) !== activeRunId) return;
+    const label = String(payload.label || 'Diagnostic');
+    activeRunId = '';
+    setRunning(false);
+    if (payload.cancelled === true) {
+      appendOutput(`\n[${label} cancelled.]\n`);
+      setStatus(`${label} cancelled.`, 'error');
+    } else if (payload.timedOut === true) {
+      appendOutput(`\n[${label} timed out.]\n`);
+      setStatus(`${label} timed out.`, 'error');
+    } else if (payload.success === true) {
+      appendOutput(`\n[${label} completed successfully.]\n`);
+      setStatus(`${label} completed.`, 'success');
+    } else {
+      const detail = payload.error || `exit code ${payload.exitCode ?? 'unknown'}`;
+      appendOutput(`\n[${label} failed: ${detail}]\n`);
+      setStatus(`${label} failed.`, 'error');
+    }
+  });
+
+  cancelButton?.addEventListener('click', async () => {
+    if (!diagnosticRunning) return;
+    cancelButton.disabled = true;
+    setStatus('Cancelling diagnostic...', 'running');
+    try {
+      const result = await ipcRenderer.invoke('diagnostics:cancel', activeRunId);
+      if (!result || result.ok !== true) {
+        cancelButton.disabled = false;
+        setStatus(result?.error || 'Unable to cancel diagnostic.', 'error');
+      }
+    } catch (error) {
+      cancelButton.disabled = false;
+      setStatus(`Unable to cancel diagnostic: ${error.message}`, 'error');
+    }
+  });
+
+  clearButton?.addEventListener('click', () => {
+    if (output) output.value = '';
+    if (!diagnosticRunning) setStatus('Results cleared. Ready to run a diagnostic.');
+  });
+
+  copyButton?.addEventListener('click', async () => {
+    const text = String(output?.value || '');
+    if (!text) {
+      setStatus('There are no diagnostic results to copy.', 'error');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (error) {
+      output.focus();
+      output.select();
+      document.execCommand('copy');
+      output.setSelectionRange(output.value.length, output.value.length);
+    }
+    setStatus('Diagnostic results copied to the clipboard.', 'success');
+  });
+
+  openButton?.addEventListener('click', () => setDiagnosticsModalVisible(true));
+  modal.querySelectorAll('[data-close-diagnostics]').forEach((button) => {
+    button.addEventListener('click', () => setDiagnosticsModalVisible(false));
+  });
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) setDiagnosticsModalVisible(false);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !modal.classList.contains('is-hidden')) {
+      setDiagnosticsModalVisible(false);
+    }
+  });
 }
 
 function setImportSettingsModalVisible(visible) {
@@ -4363,7 +4609,7 @@ function formatSensorNumericValue(sensor, numericValue) {
   let decimals = 1;
   if (!units) {
     decimals = Math.abs(numericValue) >= 100 ? 0 : 2;
-  } else if (u === 'rpm' || u === 'fps' || u === '%' || u === 'mhz' || u === 'khz' || u === 'hz') {
+  } else if (u === 'rpm' || u === 'fps' || u === '%' || u === 'mhz' || u === 'khz' || u === 'hz' || u === 's' || u === 'processes' || u === 'windows' || u === 'sensors' || u === 'alerts' || u === 'connections') {
     decimals = 0;
   } else if (u === 'ms') {
     decimals = 2;
@@ -4462,6 +4708,21 @@ function normalizeValueForDisplay(sensor, numericValue) {
 
   if (group === 'ram' && name.includes('memory speed')) {
     displayUnits = 'GHz';
+  }
+
+  if (String(sensor && sensor.id || '') === 'app_uptime') {
+    if (Math.abs(value) >= 86400) {
+      value /= 86400;
+      displayUnits = 'days';
+    } else if (Math.abs(value) >= 3600) {
+      value /= 3600;
+      displayUnits = 'hours';
+    } else if (Math.abs(value) >= 60) {
+      value /= 60;
+      displayUnits = 'min';
+    } else {
+      displayUnits = 's';
+    }
   }
 
   const lowerDisplayUnits = String(displayUnits || '').toLowerCase();
@@ -4810,6 +5071,7 @@ function renderAllDynamicGroups(selected, options = {}) {
   renderDynamicGroup('networkSensorsDynamic', selected.network);
   renderDynamicGroup('latencySensorsDynamic', selected.latency);
   renderDynamicGroup('drivesSensorsDynamic', selected.drives);
+  renderDynamicGroup('appSensorsDynamic', selected.app);
   renderDynamicGroup('externalSensorsDynamic', selected.other);
 }
 
@@ -6049,6 +6311,7 @@ const SettingsManager = {
       showNetwork: 'networkGroup',
       showLatency: 'latencyGroup',
       showDrives: 'drivesGroup',
+      showApp: 'appGroup',
       showExternal: 'externalGroup'
     };
 
@@ -7999,12 +8262,14 @@ const SettingsManager = {
 
     applyOverlaySettings();
     initializeSetupGuideModal();
+    initializeDiagnosticsModal();
     initializeImportSettingsModal();
   }
 };
 
 async function updateStats(forceRender = false) {
   const providerSelection = loadProviderSelection();
+  const updateCycleStartedAt = performance.now();
 
   if (updateInProgress) {
     rerunUpdateRequested = true;
@@ -8030,7 +8295,11 @@ async function updateStats(forceRender = false) {
     }
 
     const aidaPath = localStorage.getItem('aidaPath') || '';
+    const appRuntimeStatsPromise = getAppRuntimeStats();
+    const sensorReadStartedAt = performance.now();
     const data = await sensorReader.getEnhancedData(mode, { aidaPath, providers: providerSelection });
+    lastSensorReadDurationMs = Math.max(0, performance.now() - sensorReadStartedAt);
+    const appRuntimeStats = await appRuntimeStatsPromise;
     const builtinStatus = document.getElementById('builtinSensorStatus');
     if (builtinStatus) {
       const diagnostics = data && data.external && data.external.diagnostics;
@@ -8120,6 +8389,7 @@ async function updateStats(forceRender = false) {
       if ((now - lastSuccessfulSensorReadAt) > SENSOR_READ_STALE_HOLD_MS) {
         latestSelectedGroupedSensors = createEmptyGroupedBuckets();
       }
+      mergeAppTelemetryIntoCurrentSelection(appRuntimeStats);
       prepareSelectedSensorsForRender(latestSelectedGroupedSensors);
       renderAllDynamicGroups(latestSelectedGroupedSensors);
       evaluateSensorAlerts(latestSelectedGroupedSensors);
@@ -8152,11 +8422,11 @@ async function updateStats(forceRender = false) {
       }
 
       if (data.external.groupedSensors) {
-        const groupedWithRealtime = enrichGroupedSensorsWithRealtime(data.external.groupedSensors, {
+        const groupedWithRealtime = attachAppTelemetrySensors(enrichGroupedSensorsWithRealtime(data.external.groupedSensors, {
           ...data.external,
           fps: Number.isFinite(externalFps) ? externalFps : data.external.fps,
           frameTime: Number.isFinite(normalizedFrameTime) ? normalizedFrameTime : data.external.frameTime
-        });
+        }), appRuntimeStats);
         const enhancedStillInitializing = providerSelection.enhanced === true &&
           data.external.diagnostics?.enhancedInitializing === true;
 
@@ -8189,6 +8459,7 @@ async function updateStats(forceRender = false) {
         if ((now - lastSuccessfulSensorReadAt) > SENSOR_READ_STALE_HOLD_MS) {
           latestSelectedGroupedSensors = createEmptyGroupedBuckets();
         }
+        mergeAppTelemetryIntoCurrentSelection(appRuntimeStats);
         prepareSelectedSensorsForRender(latestSelectedGroupedSensors);
         renderAllDynamicGroups(latestSelectedGroupedSensors, { force: forceRender });
         evaluateSensorAlerts(latestSelectedGroupedSensors);
@@ -8207,6 +8478,7 @@ async function updateStats(forceRender = false) {
       if ((now - lastSuccessfulSensorReadAt) > SENSOR_READ_STALE_HOLD_MS) {
         latestSelectedGroupedSensors = createEmptyGroupedBuckets();
       }
+      mergeAppTelemetryIntoCurrentSelection(appRuntimeStats);
       prepareSelectedSensorsForRender(latestSelectedGroupedSensors);
       renderAllDynamicGroups(latestSelectedGroupedSensors, { force: forceRender });
       evaluateSensorAlerts(latestSelectedGroupedSensors);
@@ -8218,6 +8490,7 @@ async function updateStats(forceRender = false) {
 
   } catch (error) {
   } finally {
+    lastUpdateCycleDurationMs = Math.max(0, performance.now() - updateCycleStartedAt);
     updateInProgress = false;
     if (rerunUpdateRequested) {
       rerunUpdateRequested = false;
@@ -8306,6 +8579,7 @@ function applyUiTooltips() {
     showNetwork: 'Show/hide Network group card.',
     showLatency: 'Show/hide Ping group card.',
     showDrives: 'Show/hide Drives group card.',
+    showApp: 'Show/hide SiR app telemetry group card.',
     showExternal: 'Show/hide Other group card.',
     resetSensorNamesBtn: 'Clear all custom sensor names.',
     sensorHideUntickedBtn: 'Hide unticked sensors in Sensor Selection without changing which sensors are enabled.',
@@ -8324,6 +8598,7 @@ function applyUiTooltips() {
     saveSettingsProfileBtn: 'Save current settings as a named profile.',
     renameSettingsProfileBtn: 'Rename the selected settings profile.',
     deleteSettingsProfileBtn: 'Delete the selected settings profile.',
+    diagnosticsHeaderBtn: 'Open end-user diagnostic checks and copyable support results.',
     providerBuiltin: 'Enable the bundled SiR sensor collector (no separate monitoring app required).',
     providerEnhanced: 'Enable expanded hardware access through the bundled LibreHardwareMonitor library.',
     hardwareAccessDriverInstallBtn: 'Install the bundled low-level driver used for Intel CPU package power and other protected hardware readings.',
@@ -8363,7 +8638,7 @@ function applyUiTooltips() {
   });
 
   const perCategoryTooltip = 'Set max overlay lines for this category in grouped-line style.';
-  ['fps', 'cpu', 'gpu', 'ram', 'psu', 'fans', 'network', 'latency', 'drives', 'other'].forEach((group) => {
+  SENSOR_GROUP_ORDER.forEach((group) => {
     const el = document.getElementById(`overlayLineLimit_${group}`);
     if (!el) return;
     el.title = perCategoryTooltip;

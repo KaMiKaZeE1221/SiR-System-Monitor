@@ -2,8 +2,11 @@ const { app, BrowserWindow, Menu, Tray, ipcMain, shell, screen, globalShortcut }
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
-const { execFile } = require('child_process');
+const os = require('os');
+const { execFile, spawn } = require('child_process');
 const { autoUpdater } = require('electron-updater');
+const { summarizeElectronAppMetrics } = require('./appTelemetry');
+const { getDiagnosticDefinition, listPublicDiagnostics } = require('./diagnosticsCatalog');
 // Discord Rich Presence (in-repo IPC helper)
 const DISCORD_CLIENT_ID = '1479994487215227094';
 let discordIpc = null;
@@ -71,6 +74,10 @@ let hardwareAccessLastError = '';
 let startupRevealTimer = null;
 let startupRevealHandled = false;
 let startupWindowOpenedByUser = false;
+let activeDiagnosticRun = null;
+let diagnosticRunCounter = 0;
+
+const DIAGNOSTIC_OUTPUT_LIMIT_BYTES = 1024 * 1024;
 
 function isRunningAsAdministrator() {
   if (process.platform !== 'win32') return false;
@@ -83,6 +90,190 @@ function isRunningAsAdministrator() {
     console.warn('Unable to determine administrator status:', error.message);
     return false;
   }
+}
+
+function formatDiagnosticMegabytes(bytes) {
+  const numeric = Number(bytes);
+  if (!Number.isFinite(numeric) || numeric < 0) return 'Unavailable';
+  return `${(numeric / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatDiagnosticGigabytes(bytes) {
+  const numeric = Number(bytes);
+  if (!Number.isFinite(numeric) || numeric < 0) return 'Unavailable';
+  return `${(numeric / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function formatGpuIdentifier(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `0x${Math.max(0, numeric).toString(16).padStart(4, '0').toUpperCase()}` : 'Unknown';
+}
+
+async function buildSystemDiagnosticReport() {
+  const processMetrics = app.getAppMetrics();
+  const windows = BrowserWindow.getAllWindows();
+  const runtime = summarizeElectronAppMetrics(processMetrics, {
+    windowCount: windows.length,
+    visibleWindowCount: windows.filter((window) => !window.isDestroyed() && window.isVisible()).length,
+    uptimeSeconds: process.uptime()
+  });
+  const cpus = os.cpus();
+  const displays = screen.getAllDisplays();
+  let gpuInfo = {};
+  try {
+    gpuInfo = await app.getGPUInfo('basic');
+  } catch (error) {
+    gpuInfo = { error: error.message };
+  }
+
+  const lines = [
+    'SiR System Monitor - System & App Diagnostic Report',
+    `Generated: ${new Date().toISOString()}`,
+    '',
+    '[Application]',
+    `Version: ${app.getVersion()}`,
+    `Packaged build: ${app.isPackaged ? 'Yes' : 'No'}`,
+    `Running as administrator: ${isRunningAsAdministrator() ? 'Yes' : 'No'}`,
+    `Hardware acceleration enabled: ${enableGpuAcceleration ? 'Yes' : 'No'}`,
+    `Uptime: ${runtime.uptimeSeconds.toFixed(1)} seconds`,
+    `Electron processes: ${runtime.processCount}`,
+    `Renderer processes: ${runtime.rendererProcessCount}`,
+    `Utility processes: ${runtime.utilityProcessCount}`,
+    `GPU processes: ${runtime.gpuProcessCount}`,
+    `Private memory (Task Manager comparable): ${formatDiagnosticMegabytes(runtime.privateBytes)}`,
+    `Working set (includes shared pages): ${formatDiagnosticMegabytes(runtime.workingSetBytes)}`,
+    `Peak working set: ${formatDiagnosticMegabytes(runtime.peakWorkingSetBytes)}`,
+    `Aggregate CPU usage: ${runtime.cpuPercent.toFixed(2)}%`,
+    `Windows: ${runtime.windowCount} total, ${runtime.visibleWindowCount} visible`,
+    '',
+    '[Windows & Hardware]',
+    `Platform: ${os.type()} ${os.release()} (${os.arch()})`,
+    `OS version: ${typeof os.version === 'function' ? os.version() : 'Unavailable'}`,
+    `CPU: ${cpus[0] && cpus[0].model ? cpus[0].model.trim() : 'Unavailable'}`,
+    `Logical processors: ${cpus.length}`,
+    `System memory: ${formatDiagnosticGigabytes(os.totalmem())} total, ${formatDiagnosticGigabytes(os.freemem())} free`,
+    '',
+    '[Displays]'
+  ];
+
+  displays.forEach((display, index) => {
+    const bounds = display.bounds || {};
+    lines.push(`Display ${index + 1}: ${display.label || display.id || 'Unknown'} | ${bounds.width || 0}x${bounds.height || 0} @ ${Number(display.scaleFactor || 1).toFixed(2)}x | ${display.internal ? 'Internal' : 'External'}`);
+  });
+
+  lines.push('', '[GPU Devices]');
+  const gpuDevices = Array.isArray(gpuInfo.gpuDevice) ? gpuInfo.gpuDevice : [];
+  if (!gpuDevices.length) {
+    lines.push(gpuInfo.error ? `GPU information unavailable: ${gpuInfo.error}` : 'No GPU devices reported.');
+  } else {
+    gpuDevices.forEach((device, index) => {
+      lines.push(`GPU ${index + 1}: vendor ${formatGpuIdentifier(device.vendorId)}, device ${formatGpuIdentifier(device.deviceId)}, driver ${device.driverVendor || 'Unknown'} ${device.driverVersion || ''}`.trim());
+    });
+  }
+
+  lines.push('', '[Electron Process Detail]');
+  processMetrics.forEach((metric) => {
+    lines.push(`${metric.type || 'Unknown'} PID ${metric.pid}: CPU ${Number(metric.cpu && metric.cpu.percentCPUUsage || 0).toFixed(2)}%, private ${formatDiagnosticMegabytes(Number(metric.memory && metric.memory.privateBytes || 0) * 1024)}, working set ${formatDiagnosticMegabytes(Number(metric.memory && metric.memory.workingSetSize || 0) * 1024)}`);
+  });
+
+  lines.push('', '[GPU Feature Status]', JSON.stringify(app.getGPUFeatureStatus(), null, 2));
+  return lines.join('\n');
+}
+
+function sendDiagnosticEvent(sender, channel, payload) {
+  if (!sender || sender.isDestroyed()) return;
+  sender.send(channel, payload);
+}
+
+function runDiagnosticScript(sender, definition) {
+  if (activeDiagnosticRun) {
+    return { ok: false, error: `A diagnostic is already running: ${activeDiagnosticRun.label}` };
+  }
+
+  const scriptPath = path.join(app.getAppPath(), 'scripts', definition.script);
+  if (!fs.existsSync(scriptPath)) {
+    return { ok: false, error: `The bundled diagnostic script is missing: ${definition.script}` };
+  }
+
+  const runId = `${Date.now()}-${++diagnosticRunCounter}`;
+  const child = spawn(process.execPath, [scriptPath, ...(definition.args || [])], {
+    cwd: app.isPackaged ? process.resourcesPath : __dirname,
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      SIR_DIAGNOSTIC_RUN: '1'
+    }
+  });
+
+  const state = {
+    runId,
+    id: definition.id,
+    label: definition.label,
+    child,
+    bytesSent: 0,
+    outputTruncated: false,
+    timedOut: false,
+    cancelRequested: false,
+    finished: false,
+    timeout: null
+  };
+  activeDiagnosticRun = state;
+
+  const emitOutput = (stream, rawChunk) => {
+    if (state.outputTruncated) return;
+    const chunk = String(rawChunk || '');
+    const remaining = DIAGNOSTIC_OUTPUT_LIMIT_BYTES - state.bytesSent;
+    if (remaining <= 0) {
+      state.outputTruncated = true;
+      sendDiagnosticEvent(sender, 'diagnostics:output', { runId, stream: 'system', chunk: '\n[Output truncated at 1 MB.]\n' });
+      return;
+    }
+    const buffer = Buffer.from(chunk, 'utf8');
+    const accepted = buffer.length > remaining ? buffer.subarray(0, remaining).toString('utf8') : chunk;
+    state.bytesSent += Buffer.byteLength(accepted, 'utf8');
+    sendDiagnosticEvent(sender, 'diagnostics:output', { runId, stream, chunk: accepted });
+    if (buffer.length > remaining) {
+      state.outputTruncated = true;
+      sendDiagnosticEvent(sender, 'diagnostics:output', { runId, stream: 'system', chunk: '\n[Output truncated at 1 MB.]\n' });
+    }
+  };
+
+  const finish = (exitCode, errorMessage = '') => {
+    if (state.finished) return;
+    state.finished = true;
+    if (state.timeout) clearTimeout(state.timeout);
+    if (activeDiagnosticRun === state) activeDiagnosticRun = null;
+    const cancelled = state.cancelRequested;
+    const success = !cancelled && !state.timedOut && !errorMessage && Number(exitCode) === 0;
+    sendDiagnosticEvent(sender, 'diagnostics:complete', {
+      runId,
+      id: definition.id,
+      label: definition.label,
+      success,
+      cancelled,
+      timedOut: state.timedOut,
+      exitCode: Number.isFinite(Number(exitCode)) ? Number(exitCode) : null,
+      error: errorMessage
+    });
+  };
+
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => emitOutput('stdout', chunk));
+  child.stderr.on('data', (chunk) => emitOutput('stderr', chunk));
+  child.once('error', (error) => finish(null, error.message));
+  child.once('close', (code) => finish(code));
+
+  state.timeout = setTimeout(() => {
+    if (state.finished) return;
+    state.timedOut = true;
+    emitOutput('system', `\n[Diagnostic timed out after ${Math.round(definition.timeoutMs / 1000)} seconds.]\n`);
+    try { child.kill(); } catch (error) {}
+  }, definition.timeoutMs);
+
+  return { ok: true, runId, id: definition.id, label: definition.label };
 }
 
 function quoteWindowsArgument(value) {
@@ -1283,6 +1474,10 @@ app.on('activate', () => {
 
 app.on('will-quit', () => {
   shutdownOverlaySubsystem();
+  if (activeDiagnosticRun && activeDiagnosticRun.child) {
+    activeDiagnosticRun.cancelRequested = true;
+    try { activeDiagnosticRun.child.kill(); } catch (error) {}
+  }
   clearDiscordIntervals();
   if (discordIpc) {
     try { discordIpc.clearActivity(); } catch (e) { /* ignore */ }
@@ -1326,6 +1521,52 @@ ipcMain.handle('app:restart-elevated', async (_event, options = {}) => {
         ? 'The administrator restart was cancelled. Enhanced Hardware Sensors remains disabled.'
         : `Unable to restart with administrator privileges: ${message}`
     };
+  }
+});
+
+ipcMain.handle('app:get-runtime-stats', () => {
+  const windows = BrowserWindow.getAllWindows();
+  return summarizeElectronAppMetrics(app.getAppMetrics(), {
+    windowCount: windows.length,
+    visibleWindowCount: windows.filter((window) => !window.isDestroyed() && window.isVisible()).length,
+    uptimeSeconds: process.uptime()
+  });
+});
+
+ipcMain.handle('diagnostics:list', () => listPublicDiagnostics());
+
+ipcMain.handle('diagnostics:run', async (event, diagnosticId) => {
+  const definition = getDiagnosticDefinition(diagnosticId);
+  if (!definition) return { ok: false, error: 'Unknown diagnostic selection.' };
+  if (activeDiagnosticRun) {
+    return { ok: false, error: `A diagnostic is already running: ${activeDiagnosticRun.label}` };
+  }
+  if (definition.kind === 'system') {
+    try {
+      return {
+        ok: true,
+        immediate: true,
+        id: definition.id,
+        label: definition.label,
+        output: await buildSystemDiagnosticReport()
+      };
+    } catch (error) {
+      return { ok: false, error: `Unable to build the system report: ${error.message}` };
+    }
+  }
+  return runDiagnosticScript(event.sender, definition);
+});
+
+ipcMain.handle('diagnostics:cancel', (_event, runId) => {
+  const state = activeDiagnosticRun;
+  if (!state) return { ok: false, error: 'No diagnostic is currently running.' };
+  if (runId && String(runId) !== state.runId) return { ok: false, error: 'That diagnostic is no longer active.' };
+  state.cancelRequested = true;
+  try {
+    state.child.kill();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: `Unable to cancel the diagnostic: ${error.message}` };
   }
 });
 

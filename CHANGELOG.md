@@ -1,5 +1,24 @@
 # Changelog
 
+> Note: Entries for older builds are estimated from development history and may not map 1:1 to exact historic commit dates.
+
+## 1.3.1 - 2026-07-22
+
+### Added
+- Added a first-class App sensor group for SiR's own CPU and memory usage, process/window counts, uptime, refresh and update timings, hardware sensor counts, active alerts, and Web Monitor connections.
+- Added App to Visible Sensors, Sensor Selection, per-sensor naming/reset and ordering, overlays, alerts, normal and Summary layouts, Web Monitor, profiles, and exported settings.
+- Added a Diagnostics button to the dashboard header with a themed support page, one-at-a-time execution, cancellation, combined copyable results, and a resizable output box.
+- Added six curated end-user diagnostics: System & App Report, Quick Sensor Check, Enhanced Hardware Check, Sensor Startup Timing, Collector Recovery Check, and Sensor Performance Benchmark.
+- Added diagnostics allowlist/runner/UI regression coverage and Task Manager-comparable app-memory coverage.
+
+### Changed
+- App telemetry is sampled through Electron's in-process metrics API on the existing sensor refresh cycle, without another background process or independent polling timer.
+- Diagnostic scripts run through the bundled Electron runtime with fixed arguments, bounded output, per-check timeouts, and no arbitrary command or script-path access.
+- Renamed the optional detailed memory sensor to `SiR Working Set Memory` so shared working-set pages remain available without being confused with Task Manager's primary app-memory figure.
+
+### Fixed
+- Fixed `SiR Memory Usage` adding every Electron process's full working set, which counted shared Chromium/Electron pages and could report roughly 440-450 MB when Task Manager showed about 120 MB. It now uses aggregate private memory on Windows and falls back to working set only when private memory is unavailable.
+
 ## 1.3.0 - 2026-07-22
 
 ### Added
@@ -7,31 +26,31 @@
 - Added independent Summary Mode card ordering so cards can be rearranged without changing their normal dashboard order.
 - Added dedicated settings-panel background, accent, and icon colors while keeping the rest of the dashboard palette independent.
 - Added current settings-layout and overlay-editor screenshots to the README.
-- Intel RAPL diagnostics for domains that do not report usable energy-counter data.
-- automatic GPU-vendor and FPS capture-method diagnostics, including AMD displayed-frame timing and presented-frame fallback.
-- individual reset-name button beside every detected sensor rename control.
-- persistent `Hide Unticked` / `Show All` Sensor Selection filter, including profile and export support.
-- settings-wide search that opens matching controls without overwriting saved accordion state.
+- Carried forward the V1.2.9 Intel RAPL diagnostics for domains that do not report usable energy-counter data.
+- Carried forward the V1.2.9 automatic GPU-vendor and FPS capture-method diagnostics, including AMD displayed-frame timing and presented-frame fallback.
+- Carried forward the V1.2.9 individual reset-name button beside every detected sensor rename control.
+- Carried forward the V1.2.9 persistent `Hide Unticked` / `Show All` Sensor Selection filter, including profile and export support.
+- Carried forward the V1.2.9 settings-wide search that opens matching controls without overwriting saved accordion state.
 
 ### Changed
 - Normal and Summary modes now keep separate layout presets, Custom layout configurations, per-card dimensions, and card order.
 - The Web Monitor payload now carries both normal and Summary card geometry/order and applies the correct arrangement when browser Summary Mode is toggled.
 - Extended settings profiles and exported settings to include Summary layout configuration, Summary card sizes/order, and all settings-panel colors.
-- validation that publishes Intel CPU Package, Cores, Memory/DRAM, and Platform/PSys power sensors only after their RAPL domains produce a valid reading.
-- move of Sensor Sources into Monitoring and removal of the separate Data Sources group.
-- 36-column Custom layout with fine width control and dense packing below shorter cards in the desktop app and Web Monitor.
-- Sensor Sources diagnostics that distinguish active Intel package power from optional unavailable processor/platform domains.
-- settings-workspace redesign with flat category surfaces, responsive fields, modern switches, and clearer action hierarchy.
-- single-surface On-Screen Overlay editor for placement, sizing, arrangement, content, and colors.
+- Carried forward the V1.2.9 validation that publishes Intel CPU Package, Cores, Memory/DRAM, and Platform/PSys power sensors only after their RAPL domains produce a valid reading.
+- Carried forward the V1.2.9 move of Sensor Sources into Monitoring and removal of the separate Data Sources group.
+- Carried forward the V1.2.9 36-column Custom layout with fine width control and dense packing below shorter cards in the desktop app and Web Monitor.
+- Carried forward the V1.2.9 Sensor Sources diagnostics that distinguish active Intel package power from optional unavailable processor/platform domains.
+- Carried forward the V1.2.9 settings-workspace redesign with flat category surfaces, responsive fields, modern switches, and clearer action hierarchy.
+- Carried forward the V1.2.9 single-surface On-Screen Overlay editor for placement, sizing, arrangement, content, and colors.
 
 ### Fixed
 - Fixed resizing cards in Summary Mode also changing the corresponding cards in the normal dashboard.
 - Fixed Web Monitor Summary Mode inheriting the normal dashboard's card dimensions or order instead of its own layout.
-- fix for unsupported Intel Memory and Platform power domains appearing permanently as `0 W` sensors.
-- AMD native FPS/frame-time fixes using installed-adapter detection, hybrid/display tracking, and displayed/presented/QPC timing fallbacks.
-- PresentMon cleanup and stale ETW-session recovery fix for forced capture shutdowns and Windows error 1450.
-- Custom layout fixes for coarse width jumps and blank areas below shorter cards.
-- fix for AMD and NVIDIA Native FPS/Frame Time samples being discarded because capture-relative and system-wide timestamps were compared incorrectly.
+- Carried forward the V1.2.9 fix for unsupported Intel Memory and Platform power domains appearing permanently as `0 W` sensors.
+- Carried forward the V1.2.9 AMD native FPS/frame-time fixes using installed-adapter detection, hybrid/display tracking, and displayed/presented/QPC timing fallbacks.
+- Carried forward the V1.2.9 PresentMon cleanup and stale ETW-session recovery fix for forced capture shutdowns and Windows error 1450.
+- Carried forward the V1.2.9 Custom layout fixes for coarse width jumps and blank areas below shorter cards.
+- Carried forward the V1.2.9 fix for AMD and NVIDIA Native FPS/Frame Time samples being discarded because capture-relative and system-wide timestamps were compared incorrectly.
 
 ## 1.2.9 - 2026-07-21
 

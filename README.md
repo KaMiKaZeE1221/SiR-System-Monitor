@@ -2,7 +2,7 @@
   <h1>SiR System Monitor</h1>
   <p><strong>Real-time hardware monitoring for Windows, your desktop, your overlay, and your browser.</strong></p>
   <p>
-    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.3.0" src="https://img.shields.io/badge/version-1.3.0-f97316?style=for-the-badge"></a>
+    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.3.1" src="https://img.shields.io/badge/version-1.3.1-f97316?style=for-the-badge"></a>
     <a href="#requirements"><img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&amp;logo=windows"></a>
     <a href="./LICENSE.txt"><img alt="GNU GPL v3" src="https://img.shields.io/badge/license-GPL--3.0-3DA639?style=for-the-badge"></a>
   </p>
@@ -27,17 +27,18 @@ SiR System Monitor is an open-source Windows desktop app that combines live syst
 | **A dashboard that fits you** | Choose which sensors appear, search, rename, reorder, resize, group, and include them in the overlay. |
 | **Desktop and web layouts** | Give normal and Summary modes their own Compact, Balanced, Wide, Stacked, or freely resized Custom layout in both the app and Web Monitor. |
 | **Overlay and alerts** | Keep selected readings over other apps and highlight warning or critical threshold events. |
+| **App telemetry** | Monitor SiR's own CPU/RAM use, uptime, process/window counts, refresh timing, sensor counts, active alerts, and Web Monitor connections. |
+| **Built-in diagnostics** | Run support-oriented sensor, startup, recovery, and performance checks, then copy one combined report directly from the app. |
 | **Profiles and portability** | Save named profiles or export the complete setup to JSON for backup and transfer. |
 
-Sensor groups include **FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, and Other**. FPS and frame-time values appear when an enabled source provides them.
+Sensor groups include **FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, App, and Other**. FPS and frame-time values appear when an enabled source provides them.
 
-## What's new in 1.3.0
+## What's new in 1.3.1
 
-- Normal and Summary modes now have independent layout presets, Custom card dimensions, and drag order.
-- The Web Monitor mirrors each layout and card order independently when its own Summary Mode is toggled.
-- Added separate background, accent, and icon colors for the settings panel.
-- Added current settings-workspace and overlay-editor screenshots to this README.
-- All new layout and color preferences are included in named profiles and exported settings.
+- Added selectable App telemetry that follows the same dashboard, Summary Mode, Web Monitor, overlay, alert, profile, and export pipeline as hardware sensors.
+- Corrected **SiR Memory Usage** to use Task Manager-comparable private memory; the larger working set remains available as an optional detailed sensor.
+- Added a Diagnostics button to the dashboard header with six safe, support-oriented checks.
+- Diagnostic results stream into one resizable, selectable box and can be cancelled, cleared, combined, and copied for reporting.
 
 See the [full changelog](./CHANGELOG.md) for every change and fix.
 
@@ -66,7 +67,7 @@ Get the latest Windows installer or portable build from [GitHub Releases](https:
 3. Open **Monitoring → Visible Sensors** and **Sensor Selection** to choose and arrange the readings you want.
 4. Choose separate normal and Summary card presets under **Appearance → Layout**, or select **Custom** for either mode to resize its cards independently.
 5. Enable **Enhanced Hardware Sensors** only if you want the additional readings supported by your hardware.
-6. Optionally configure the overlay, alerts, Web Monitor, startup behavior, and a settings profile.
+6. Optionally configure the overlay, alerts, Web Monitor, startup behavior, and a settings profile. Use the top-row **Diagnostics** button when preparing a support report.
 
 ## Sensor sources
 
@@ -76,6 +77,7 @@ SiR uses an isolated, persistent collector so standard sensor refreshes do not r
 |---|:---:|---|
 | **Built-in Sensors** | No | CPU utilization and overall clock, vendor-neutral FPS/frame time, memory capacity and activity, storage, network, latency, system data, and supported direct digital PSU telemetry. |
 | **Enhanced Hardware Sensors** | No | Supported CPU/GPU temperatures and clocks, power, voltage, fans, motherboard controllers, storage SMART data, and additional hardware telemetry. Administrator access may be required. |
+| **App telemetry** | No | SiR private memory (comparable to Task Manager), optional full working set, CPU, uptime, windows/processes, refresh performance, sensor/alert counts, and Web Monitor connections. Uses the existing refresh cycle and does not start another collector. |
 | **RTSS / MSI** | Yes, optional | Additional FPS, frame-time, and compatible shared-memory telemetry. |
 | **AIDA64** | Yes, optional | Extra sensors exposed through AIDA64 shared memory. |
 | **HWiNFO / LHM Shared Memory** | Yes, optional | Compatibility access to sensors published by HWiNFO or a running LHM shared-memory provider. |
@@ -94,6 +96,19 @@ Enabling Enhanced Hardware Sensors displays a themed confirmation before SiR:
 4. Installs or updates the bundled PawnIO driver when required for Intel CPU package power and other protected readings.
 
 Availability still depends on the hardware, firmware, driver, Windows permissions, and whether another application has exclusive access to the device.
+
+## Diagnostics and support reports
+
+Open **Diagnostics** from the dashboard's top row. The page contains six allowlisted, read-only support checks:
+
+- **System & App Report** — version, Windows, processor, memory, displays, GPU, permissions, and Electron processes
+- **Quick Sensor Check** — built-in sensor groups, startup time, FPS support, PSU coverage, and collector memory
+- **Enhanced Hardware Check** — enhanced processor, GPU, motherboard/controller, and peripheral discovery
+- **Sensor Startup Timing** — progressive sensor availability during a fresh 12-second discovery window
+- **Collector Recovery Check** — confirms a dedicated test collector restarts without losing its catalogue
+- **Sensor Performance Benchmark** — an eight-second collector CPU, memory, and request-latency sample
+
+Only one check runs at a time. Longer checks can be cancelled, and every result is appended to one resizable text box that can be copied into a bug report. Diagnostic execution is restricted to fixed bundled scripts and arguments; the page cannot run arbitrary commands.
 
 ## Dashboard and appearance
 
@@ -314,6 +329,7 @@ npm start
 | `npm run test:sensors:enhanced` | Exercise the enhanced sensor path. |
 | `npm run test:sensors:startup` | Measure staged sensor startup behavior. |
 | `npm run test:layout` | Verify desktop and Web Monitor layout presets. |
+| `npm run test:diagnostics-ui` | Verify the end-user diagnostics allowlist, runner, and UI. |
 | `npm run test:version` | Verify version consistency across release files. |
 | `npm run dist:win` | Build the Windows installer and portable package. |
 
@@ -322,6 +338,7 @@ npm start
 ```text
 main.js           Electron main process, windows, tray, updates, and web server
 app.js            Dashboard behavior, settings, profiles, and sensor rendering
+diagnosticsCatalog.js  Allowlisted end-user diagnostic checks and fixed arguments
 sensorReader.js   Built-in collector and optional provider aggregation
 rtssReader.js     RTSS, AIDA64, HWiNFO, and LHM shared-memory compatibility
 sensor-host/      Bundled native sensor collector source and hardware registry

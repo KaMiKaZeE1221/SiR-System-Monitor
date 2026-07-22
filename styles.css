@@ -1156,6 +1156,215 @@ body.sensor-order-dragging * {
   line-height: 1.5;
 }
 
+.diagnostics-dialog {
+  width: min(1080px, 96vw);
+  max-height: 92vh;
+}
+
+.diagnostics-header {
+  align-items: flex-start;
+}
+
+.diagnostics-heading-copy {
+  min-width: 0;
+}
+
+.diagnostics-heading-copy h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.diagnostics-heading-copy h2 i {
+  color: var(--icon-color);
+}
+
+.diagnostics-heading-copy p {
+  margin: 5px 0 0;
+  color: var(--text-secondary);
+  font-size: calc(12px * var(--font-scale));
+}
+
+.diagnostics-body {
+  gap: 14px;
+}
+
+.diagnostics-intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.diagnostics-intro > i {
+  color: var(--icon-color);
+  margin-top: 2px;
+}
+
+.diagnostics-test-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.diagnostics-test-card {
+  min-width: 0;
+  min-height: 88px;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px;
+  text-align: left;
+  color: var(--text-primary);
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  border-radius: 12px;
+  background: linear-gradient(155deg, color-mix(in srgb, var(--bg-tertiary) 88%, transparent), color-mix(in srgb, var(--bg-secondary) 92%, var(--bg-primary)));
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.diagnostics-test-card:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent-light) 72%, var(--border-color));
+  background: linear-gradient(155deg, color-mix(in srgb, var(--bg-tertiary) 78%, var(--accent) 22%), color-mix(in srgb, var(--bg-secondary) 90%, var(--bg-primary)));
+  transform: translateY(-1px);
+}
+
+.diagnostics-test-card:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
+}
+
+.diagnostics-test-card:disabled {
+  opacity: 0.48;
+  cursor: wait;
+}
+
+.diagnostics-test-card > i {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  color: var(--icon-color);
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg-primary));
+  font-size: 16px;
+}
+
+.diagnostics-test-card > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.diagnostics-test-card strong {
+  font-size: calc(13px * var(--font-scale));
+  line-height: 1.25;
+}
+
+.diagnostics-test-card small {
+  color: var(--text-secondary);
+  font-size: calc(11px * var(--font-scale));
+  line-height: 1.4;
+}
+
+.diagnostics-output-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.diagnostics-status-wrap {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: calc(12px * var(--font-scale));
+}
+
+.diagnostics-status-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-secondary) 14%, transparent);
+}
+
+.diagnostics-status-wrap.is-running .diagnostics-status-dot {
+  background: var(--accent-light);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-light) 18%, transparent), 0 0 12px color-mix(in srgb, var(--accent-light) 56%, transparent);
+  animation: diagnostics-pulse 1.25s ease-in-out infinite;
+}
+
+.diagnostics-status-wrap.is-success .diagnostics-status-dot {
+  background: #38d777;
+}
+
+.diagnostics-status-wrap.is-error .diagnostics-status-dot {
+  background: #ff5f68;
+}
+
+@keyframes diagnostics-pulse {
+  50% { opacity: 0.42; }
+}
+
+.diagnostics-output {
+  display: block;
+  width: 100%;
+  min-height: 260px;
+  height: 310px;
+  max-height: 55vh;
+  resize: vertical;
+  overflow: auto;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
+  border-radius: 12px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--bg-primary) 94%, #000 6%);
+  color: var(--text-primary);
+  caret-color: var(--accent-light);
+  font: 12px/1.55 Consolas, 'Courier New', monospace;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.diagnostics-output:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent-light) 70%, var(--border-color));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.diagnostics-cancel-btn:disabled,
+.diagnostics-footer .test-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.diagnostics-footer {
+  justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+  .diagnostics-test-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .diagnostics-test-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .diagnostics-output-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .setup-guide-close {
   width: 30px;
   height: 30px;
@@ -1777,6 +1986,7 @@ body.layout-custom .sensor-resize-handle {
 #networkSensorsDynamic,
 #latencySensorsDynamic,
 #drivesSensorsDynamic,
+#appSensorsDynamic,
 #externalSensorsDynamic {
   flex: 1 1 auto;
   min-height: 0;

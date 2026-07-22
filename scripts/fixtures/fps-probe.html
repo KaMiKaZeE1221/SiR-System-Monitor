@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SiR Native FPS Probe</title>
+  <style>
+    html, body, canvas { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body { background: #111; }
+  </style>
+</head>
+<body>
+  <canvas id="probe"></canvas>
+  <script>
+    const canvas = document.getElementById('probe');
+    const context = canvas.getContext('2d');
+    function render(timestamp) {
+      canvas.width = Math.max(640, window.innerWidth);
+      canvas.height = Math.max(360, window.innerHeight);
+      const hue = (timestamp / 12) % 360;
+      context.fillStyle = `hsl(${hue} 85% 45%)`;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = '#fff';
+      context.font = '48px sans-serif';
+      context.fillText(timestamp.toFixed(2), 40, 80);
+      requestAnimationFrame(render);
+    }
+    requestAnimationFrame(render);
+  </script>
+</body>
+</html>
