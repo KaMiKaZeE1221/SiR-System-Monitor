@@ -2,6 +2,33 @@
 
 > Note: Entries for older builds are estimated from development history and may not map 1:1 to exact historic commit dates.
 
+## 1.3.2 - 2026-07-22
+
+### Added
+- Added a dedicated **Appearance → Animations** section with a master interface-motion switch and separate controls for settings dropdowns, menus and dialogs, dashboard/Summary transitions, and sensor-card icons.
+- Added symmetric fade-and-fly motion to Help, Diagnostics, update, import, and confirmation dialogs.
+- Added lightweight dashboard-to-Summary transitions and subtle sensor-card header icon motion in both the desktop app and Web Monitor.
+- Added a separate **Settings icons** animation option that applies the same lightweight live and hover motion across settings categories, dropdowns, controls, and inline icons. Motion inside collapsed content is paused to avoid unnecessary rendering work.
+- Added Calm, Standard, and Lively animation-speed presets plus Gentle, Balanced, and Expressive motion-intensity presets. Both settings apply across desktop disclosures, dialogs, Summary transitions, settings icons, sensor-card icons, and matching Web Monitor effects.
+- Added **Create Support Bundle** to Diagnostics. It produces a standard ZIP containing a fresh system report, current diagnostic output, settings, sensor catalogue, and runtime state after redacting user/computer names, profile paths, network identifiers, credentials, custom hosts, and custom sensor names.
+- Added a reusable theme-aware in-app dialog for confirmations and status messages so support and profile workflows follow the selected theme and custom color palette.
+
+### Changed
+- Restored smooth open and close motion for both main settings categories and their individual setting sections, using measured content heights so short and tall panels animate consistently without clipping.
+- Added subtle active-state motion to settings category and section icons while keeping the effects lightweight and scoped to the settings panel.
+- Moved the former settings-animation preference out of Font Settings and migrated it into the unified animation configuration. All animation choices are saved locally, included in profiles/imports/exports, and synchronized with the Web Monitor where the matching interface is available.
+- Changed **Create Support Bundle** to warn before running all six curated diagnostics sequentially, clear the previous results, preserve every pass/failure/timeout in the combined report, and create the ZIP only after the suite finishes. Explicit cancellation stops the suite without creating a bundle.
+- Expanded **Sensor Startup Timing** output with individual processor, graphics, motherboard, and peripheral availability times plus the slowest snapshot-response duration, making hidden collector stalls directly visible in support reports.
+
+### Fixed
+- Fixed the V1.2.9/V1.3.0 settings redesign overriding accordion transitions with immediate `display: none` behavior.
+- Fixed Windows' reduced-motion preference silently overriding an unchecked `Disable settings animations` option, which made dropdowns open and close instantly even though the settings sidebar still animated. The in-app option is now authoritative.
+- Fixed category and subsection closing motion appearing nearly instant by replacing the unreliable CSS `height: auto` transition with measured numeric `max-height` transitions and matching open/close durations and easing.
+- Fixed modal close actions removing Help and Diagnostics immediately instead of allowing a matching fly-out animation to finish.
+- Fixed settings icons shifting inside their tiles while animated by moving the transform from each icon's layout box to its Bootstrap glyph pseudo-element.
+- Fixed settings-profile save, validation, rename, and delete actions opening native white Windows dialogs instead of theme-aware app dialogs.
+- Fixed direct USB PSU polling blocking the complete sensor snapshot for roughly eight seconds when a sequence of HID requests timed out. Thermaltake, Corsair, and NZXT polling now runs independently in the background, never blocks the primary sensor response, and retains the last valid reading for up to 15 seconds across transient device timeouts.
+
 ## 1.3.1 - 2026-07-22
 
 ### Added

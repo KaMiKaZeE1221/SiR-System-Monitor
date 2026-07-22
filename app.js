@@ -110,6 +110,28 @@ const FONT_FAMILY_KEY = 'fontFamily';
 const VALUE_FONT_MONOSPACE_KEY = 'valueFontMonospace';
 const FONT_BOLD_KEY = 'fontBold';
 const DISABLE_GLOW_EFFECTS_KEY = 'disableGlowEffects';
+const DISABLE_SETTINGS_ANIMATIONS_KEY = 'disableSettingsAnimations';
+const ANIMATION_SETTINGS_KEY = 'animationSettings';
+const DEFAULT_ANIMATION_SETTINGS = Object.freeze({
+  enabled: true,
+  settingsDropdowns: true,
+  dialogs: true,
+  viewTransitions: true,
+  sensorIcons: true,
+  settingsIcons: true,
+  speed: 'standard',
+  intensity: 'balanced'
+});
+const ANIMATION_SPEED_PRESETS = Object.freeze({
+  calm: Object.freeze({ iconMs: 6200, focusMs: 650, dialogMs: 320, viewMs: 440, groupMs: 420, sectionMs: 360 }),
+  standard: Object.freeze({ iconMs: 4800, focusMs: 500, dialogMs: 240, viewMs: 340, groupMs: 320, sectionMs: 280 }),
+  lively: Object.freeze({ iconMs: 3600, focusMs: 380, dialogMs: 180, viewMs: 260, groupMs: 250, sectionMs: 220 })
+});
+const ANIMATION_INTENSITY_PRESETS = Object.freeze({
+  gentle: Object.freeze({ iconLift: 0.75, iconScale: 1.04, focusRotate: -4, focusScale: 1.1, viewDistance: 6, viewScale: 0.992, dialogDistance: 12, disclosureDistance: 3 }),
+  balanced: Object.freeze({ iconLift: 1.5, iconScale: 1.08, focusRotate: -8, focusScale: 1.2, viewDistance: 10, viewScale: 0.985, dialogDistance: 20, disclosureDistance: 5 }),
+  expressive: Object.freeze({ iconLift: 2.5, iconScale: 1.13, focusRotate: -12, focusScale: 1.28, viewDistance: 15, viewScale: 0.976, dialogDistance: 28, disclosureDistance: 8 })
+});
 const TEMPERATURE_UNIT_KEY = 'temperatureUnit';
 const PROVIDER_SELECTION_KEY = 'providerSelection';
 const SENSOR_CUSTOM_NAMES_KEY = 'sensorCustomNames';
@@ -186,6 +208,8 @@ const SETTINGS_SNAPSHOT_KEYS = [
   VALUE_FONT_MONOSPACE_KEY,
   FONT_BOLD_KEY,
   DISABLE_GLOW_EFFECTS_KEY,
+  DISABLE_SETTINGS_ANIMATIONS_KEY,
+  ANIMATION_SETTINGS_KEY,
   TEMPERATURE_UNIT_KEY,
   SUMMARY_MODE_KEY,
   'refreshRate',
@@ -410,6 +434,7 @@ let summaryModeEnabled = (function() {
     return false;
   }
 })();
+let dashboardViewTransitionTimer = null;
 let debugModeEnabled = (function() {
   try {
     const raw = localStorage.getItem(DEBUG_MODE_KEY);
@@ -835,6 +860,15 @@ function buildWebMonitorHtml(authToken = '') {
       --layout-card-default-width: 300px;
       --layout-card-height: 360px;
       --layout-card-gap: 14px;
+      --motion-icon-duration: 4.8s;
+      --motion-focus-duration: .5s;
+      --motion-view-duration: .34s;
+      --motion-icon-lift: 1.5px;
+      --motion-icon-scale: 1.08;
+      --motion-focus-rotate: -8deg;
+      --motion-focus-scale: 1.2;
+      --motion-view-distance: 10px;
+      --motion-view-scale: .985;
     }
     *, *::before, *::after { box-sizing: border-box; }
     body { margin: 0; font-family: var(--font-family); background: var(--bg-primary); color: var(--text-primary); line-height: 1.35; }
@@ -853,6 +887,16 @@ function buildWebMonitorHtml(authToken = '') {
     body.layout-custom .card { height: auto; min-width: 0; }
     .card h3 { margin: 0 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--bg-tertiary); font-size: calc(13px * var(--font-scale)); letter-spacing: .08em; color: var(--block-header-color); text-transform: uppercase; font-weight: var(--font-weight-bold); display: flex; align-items: center; gap: 8px; }
     .group-icon { color: var(--icon-color); font-size: calc(14px * var(--font-scale)); line-height: 1; }
+    body:not(.no-sensor-icon-animations) .card .group-icon { transform-origin: center; animation: web-sensor-icon-live var(--motion-icon-duration) ease-in-out infinite; }
+    body:not(.no-sensor-icon-animations) .card:nth-child(3n + 2) .group-icon { animation-delay: -1.6s; }
+    body:not(.no-sensor-icon-animations) .card:nth-child(3n) .group-icon { animation-delay: -3.2s; }
+    body:not(.no-sensor-icon-animations) .card:hover .group-icon { animation: web-sensor-icon-focus var(--motion-focus-duration) cubic-bezier(.22,.61,.36,1); }
+    body.web-view-to-summary .card { animation: web-dashboard-to-summary var(--motion-view-duration) cubic-bezier(.22,.61,.36,1) both; }
+    body.web-view-to-dashboard .card { animation: web-dashboard-to-standard var(--motion-view-duration) cubic-bezier(.22,.61,.36,1) both; }
+    @keyframes web-sensor-icon-live { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(calc(-1 * var(--motion-icon-lift))) scale(var(--motion-icon-scale)); } }
+    @keyframes web-sensor-icon-focus { 0% { transform: rotate(0) scale(1); } 45% { transform: rotate(var(--motion-focus-rotate)) scale(var(--motion-focus-scale)); } 100% { transform: rotate(0) scale(1); } }
+    @keyframes web-dashboard-to-summary { from { opacity: .45; transform: translateY(var(--motion-view-distance)) scale(var(--motion-view-scale)); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    @keyframes web-dashboard-to-standard { from { opacity: .45; transform: translateY(calc(-.8 * var(--motion-view-distance))) scale(var(--motion-view-scale)); } to { opacity: 1; transform: translateY(0) scale(1); } }
     .rows { overflow-y: auto; min-height: 0; flex: 1 1 auto; scrollbar-gutter: stable both-edges; padding-right: 8px; padding-bottom: 28px; scroll-padding-bottom: 28px; }
     .row { display: block; border-bottom: 1px solid var(--border-color); padding: 9px 0; font-size: calc(13px * var(--font-scale)); }
     .row.row-alert-warning { border-left: 2px solid #f7cf62; padding-left: 8px; }
@@ -1011,7 +1055,9 @@ function buildWebMonitorHtml(authToken = '') {
       summaryMode: false,
       viewMode: 'standard',
       layoutPreset: 'balanced',
-      layoutSignature: ''
+      layoutSignature: '',
+      viewTransitionTimer: null,
+      viewTransitionDurationMs: 340
     };
 
     const SUMMARY_MODE_STORAGE_KEY = 'sirWebSummaryMode';
@@ -1041,6 +1087,69 @@ function buildWebMonitorHtml(authToken = '') {
       if (nextMode !== 'standard') {
         document.body.classList.add('view-' + nextMode);
       }
+    }
+
+    function normalizeWebAnimationSettings(settings) {
+      const source = settings && typeof settings === 'object' ? settings : {};
+      const speed = ['calm', 'standard', 'lively'].includes(String(source.speed || '').toLowerCase()) ? String(source.speed).toLowerCase() : 'standard';
+      const intensity = ['gentle', 'balanced', 'expressive'].includes(String(source.intensity || '').toLowerCase()) ? String(source.intensity).toLowerCase() : 'balanced';
+      return {
+        enabled: source.enabled !== false,
+        settingsDropdowns: source.settingsDropdowns !== false,
+        dialogs: source.dialogs !== false,
+        viewTransitions: source.viewTransitions !== false,
+        sensorIcons: source.sensorIcons !== false,
+        settingsIcons: source.settingsIcons !== false,
+        speed,
+        intensity
+      };
+    }
+
+    function applyWebAnimationSettings(settings) {
+      const normalized = normalizeWebAnimationSettings(settings);
+      const speedPresets = {
+        calm: { iconMs: 6200, focusMs: 650, viewMs: 440 },
+        standard: { iconMs: 4800, focusMs: 500, viewMs: 340 },
+        lively: { iconMs: 3600, focusMs: 380, viewMs: 260 }
+      };
+      const intensityPresets = {
+        gentle: { iconLift: .75, iconScale: 1.04, focusRotate: -4, focusScale: 1.1, viewDistance: 6, viewScale: .992 },
+        balanced: { iconLift: 1.5, iconScale: 1.08, focusRotate: -8, focusScale: 1.2, viewDistance: 10, viewScale: .985 },
+        expressive: { iconLift: 2.5, iconScale: 1.13, focusRotate: -12, focusScale: 1.28, viewDistance: 15, viewScale: .976 }
+      };
+      const speed = speedPresets[normalized.speed];
+      const intensity = intensityPresets[normalized.intensity];
+      const root = document.documentElement;
+      root.style.setProperty('--motion-icon-duration', speed.iconMs + 'ms');
+      root.style.setProperty('--motion-focus-duration', speed.focusMs + 'ms');
+      root.style.setProperty('--motion-view-duration', speed.viewMs + 'ms');
+      root.style.setProperty('--motion-icon-lift', intensity.iconLift + 'px');
+      root.style.setProperty('--motion-icon-scale', String(intensity.iconScale));
+      root.style.setProperty('--motion-focus-rotate', intensity.focusRotate + 'deg');
+      root.style.setProperty('--motion-focus-scale', String(intensity.focusScale));
+      root.style.setProperty('--motion-view-distance', intensity.viewDistance + 'px');
+      root.style.setProperty('--motion-view-scale', String(intensity.viewScale));
+      domState.viewTransitionDurationMs = speed.viewMs;
+      document.body.classList.toggle('no-view-animations', !normalized.enabled || !normalized.viewTransitions);
+      document.body.classList.toggle('no-sensor-icon-animations', !normalized.enabled || !normalized.sensorIcons);
+      if (!normalized.enabled || !normalized.viewTransitions) {
+        document.body.classList.remove('web-view-to-summary', 'web-view-to-dashboard');
+        if (domState.viewTransitionTimer !== null) clearTimeout(domState.viewTransitionTimer);
+        domState.viewTransitionTimer = null;
+      }
+    }
+
+    function triggerWebViewTransition(toSummary) {
+      if (document.body.classList.contains('no-view-animations')) return;
+      const nextClass = toSummary ? 'web-view-to-summary' : 'web-view-to-dashboard';
+      document.body.classList.remove('web-view-to-summary', 'web-view-to-dashboard');
+      void document.body.offsetWidth;
+      document.body.classList.add(nextClass);
+      if (domState.viewTransitionTimer !== null) clearTimeout(domState.viewTransitionTimer);
+      domState.viewTransitionTimer = setTimeout(() => {
+        document.body.classList.remove(nextClass);
+        domState.viewTransitionTimer = null;
+      }, domState.viewTransitionDurationMs + 100);
     }
 
     function applyLayoutPreset(presetId, config) {
@@ -1189,6 +1298,7 @@ function buildWebMonitorHtml(authToken = '') {
       const opts = options || {};
       const persist = opts.persist !== false;
       const requested = !!enabled;
+      const changed = domState.summaryMode !== requested;
       domState.summaryMode = requested;
       document.body.classList.toggle('summary-mode', domState.summaryMode);
       const button = document.getElementById('summaryModeToggle');
@@ -1200,6 +1310,7 @@ function buildWebMonitorHtml(authToken = '') {
           localStorage.setItem(SUMMARY_MODE_STORAGE_KEY, domState.summaryMode ? 'true' : 'false');
         } catch (e) {}
       }
+      if (changed && opts.animate !== false) triggerWebViewTransition(domState.summaryMode);
     }
 
     // Low Overhead feature removed; no-op placeholder removed.
@@ -1270,6 +1381,7 @@ function buildWebMonitorHtml(authToken = '') {
         root.style.setProperty('--font-weight-bold', '700');
       }
       document.body.classList.toggle('no-glow', !!settings.disableGlow);
+      applyWebAnimationSettings(settings.animations);
     }
 
     function toLocalTime(ts) {
@@ -1473,7 +1585,7 @@ function buildWebMonitorHtml(authToken = '') {
           initialSummaryMode = false;
         }
 
-        setSummaryMode(initialSummaryMode);
+        setSummaryMode(initialSummaryMode, { animate: false });
         const summaryToggle = document.getElementById('summaryModeToggle');
         if (summaryToggle) {
           summaryToggle.addEventListener('click', () => {
@@ -1677,6 +1789,7 @@ function publishWebMonitorPayload(mode, externalText) {
       valueMonospace: selectedValueMonospace,
       fontBold: selectedBold,
       disableGlow: localStorage.getItem(DISABLE_GLOW_EFFECTS_KEY) === 'true',
+      animations: loadAnimationSettings(),
       temperatureUnit: selectedTempUnit,
       summaryMode: summaryModeEnabled,
       viewMode: normalizeViewMode(localStorage.getItem(VIEW_MODE_KEY) || 'standard'),
@@ -2369,8 +2482,7 @@ function showEnhancedSensorsConfirmation() {
   if (!modal || !confirmButton || !cancelButtons.length) return Promise.resolve(false);
 
   const previousFocus = document.activeElement;
-  modal.classList.remove('is-hidden');
-  modal.setAttribute('aria-hidden', 'false');
+  setModalShellVisible(modal, true);
 
   return new Promise((resolve) => {
     let settled = false;
@@ -2378,12 +2490,11 @@ function showEnhancedSensorsConfirmation() {
     const finish = (accepted) => {
       if (settled) return;
       settled = true;
-      modal.classList.add('is-hidden');
-      modal.setAttribute('aria-hidden', 'true');
+      setModalShellVisible(modal, false);
       confirmButton.removeEventListener('click', accept);
       cancelButtons.forEach((button) => button.removeEventListener('click', cancel));
       modal.removeEventListener('click', cancelFromBackdrop);
-      document.removeEventListener('keydown', cancelFromEscape);
+      document.removeEventListener('keydown', cancelFromEscape, true);
       if (!accepted && previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
       resolve(accepted);
     };
@@ -2396,13 +2507,14 @@ function showEnhancedSensorsConfirmation() {
     const cancelFromEscape = (event) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
+      event.stopImmediatePropagation();
       cancel();
     };
 
     confirmButton.addEventListener('click', accept);
     cancelButtons.forEach((button) => button.addEventListener('click', cancel));
     modal.addEventListener('click', cancelFromBackdrop);
-    document.addEventListener('keydown', cancelFromEscape);
+    document.addEventListener('keydown', cancelFromEscape, true);
     requestAnimationFrame(() => confirmButton.focus());
   });
 }
@@ -2593,10 +2705,117 @@ function setSetupGuideSuppressed(suppressed) {
   localStorage.setItem(SETUP_GUIDE_SUPPRESS_KEY, suppressed ? 'true' : 'false');
 }
 
-function setSetupGuideModalVisible(visible) {
-  const modal = document.getElementById('setupGuideModal');
+function setModalShellVisible(modal, visible) {
   if (!modal) return;
   modal.classList.toggle('is-hidden', !visible);
+  modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+let activeThemedDialog = null;
+
+function showThemedDialog(options = {}) {
+  const modal = document.getElementById('themedDialogModal');
+  const dialog = modal?.querySelector('.themed-dialog');
+  const title = document.getElementById('themedDialogTitleText');
+  const icon = document.getElementById('themedDialogIcon');
+  const message = document.getElementById('themedDialogMessage');
+  const detail = document.getElementById('themedDialogDetail');
+  const closeButton = document.getElementById('themedDialogCloseBtn');
+  const cancelButton = document.getElementById('themedDialogCancelBtn');
+  const confirmButton = document.getElementById('themedDialogConfirmBtn');
+  if (!modal || !dialog || !title || !icon || !message || !detail || !closeButton || !cancelButton || !confirmButton) {
+    return Promise.resolve(options.showCancel ? false : true);
+  }
+
+  if (activeThemedDialog && typeof activeThemedDialog.finish === 'function') {
+    activeThemedDialog.finish(false);
+  }
+
+  const showCancel = options.showCancel === true;
+  const previousFocus = document.activeElement;
+  title.textContent = String(options.title || 'SiR System Monitor');
+  message.textContent = String(options.message || '');
+  icon.className = `bi ${String(options.icon || 'bi-info-circle-fill')} themed-dialog-icon`;
+  dialog.classList.remove('is-success', 'is-warning', 'is-error');
+  dialog.classList.add(`is-${String(options.tone || 'info')}`);
+  confirmButton.textContent = String(options.confirmLabel || 'OK');
+  cancelButton.textContent = String(options.cancelLabel || 'Cancel');
+  cancelButton.hidden = !showCancel;
+
+  const detailText = String(options.detail || '').trim();
+  detail.hidden = !detailText;
+  detail.replaceChildren();
+  if (detailText) {
+    const detailIcon = document.createElement('i');
+    detailIcon.className = `bi ${String(options.detailIcon || 'bi-info-circle-fill')}`;
+    detailIcon.setAttribute('aria-hidden', 'true');
+    const detailCopy = document.createElement('span');
+    detailCopy.textContent = detailText;
+    detail.append(detailIcon, detailCopy);
+  }
+
+  setModalShellVisible(modal, true);
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (accepted) => {
+      if (settled) return;
+      settled = true;
+      setModalShellVisible(modal, false);
+      confirmButton.removeEventListener('click', accept);
+      cancelButton.removeEventListener('click', cancel);
+      closeButton.removeEventListener('click', cancel);
+      modal.removeEventListener('click', cancelFromBackdrop);
+      document.removeEventListener('keydown', cancelFromEscape);
+      if (activeThemedDialog?.finish === finish) activeThemedDialog = null;
+      if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
+      resolve(accepted);
+    };
+    const accept = () => finish(true);
+    const cancel = () => finish(false);
+    const cancelFromBackdrop = (event) => {
+      if (event.target === modal) cancel();
+    };
+    const cancelFromEscape = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      cancel();
+    };
+
+    activeThemedDialog = { finish };
+    confirmButton.addEventListener('click', accept);
+    cancelButton.addEventListener('click', cancel);
+    closeButton.addEventListener('click', cancel);
+    modal.addEventListener('click', cancelFromBackdrop);
+    document.addEventListener('keydown', cancelFromEscape);
+    requestAnimationFrame(() => confirmButton.focus());
+  });
+}
+
+function showThemedMessage(title, message, options = {}) {
+  return showThemedDialog({
+    ...options,
+    title,
+    message,
+    showCancel: false,
+    confirmLabel: options.confirmLabel || 'OK'
+  });
+}
+
+function showThemedConfirmation(title, message, options = {}) {
+  return showThemedDialog({
+    ...options,
+    title,
+    message,
+    showCancel: true,
+    confirmLabel: options.confirmLabel || 'Continue',
+    cancelLabel: options.cancelLabel || 'Cancel'
+  });
+}
+
+function setSetupGuideModalVisible(visible) {
+  const modal = document.getElementById('setupGuideModal');
+  setModalShellVisible(modal, visible);
 }
 
 function openSetupGuideModal() {
@@ -2647,12 +2866,65 @@ function initializeSetupGuideModal() {
 function setDiagnosticsModalVisible(visible) {
   const modal = document.getElementById('diagnosticsModal');
   if (!modal) return;
-  modal.classList.toggle('is-hidden', !visible);
-  modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+  setModalShellVisible(modal, visible);
   if (visible) {
     const firstTest = modal.querySelector('.diagnostics-test-card:not(:disabled)');
     if (firstTest) firstTest.focus();
   }
+}
+
+function buildSupportBundlePayload(diagnosticsText = '') {
+  const settings = buildSettingsSnapshot();
+  delete settings[SENSOR_CUSTOM_NAMES_KEY];
+  delete settings[LATENCY_HOST_KEY];
+  try {
+    const webSettings = JSON.parse(settings[WEB_MONITOR_SETTINGS_KEY] || '{}');
+    settings[WEB_MONITOR_SETTINGS_KEY] = {
+      ...webSettings,
+      host: '[redacted]',
+      authToken: '[redacted]'
+    };
+  } catch (error) {
+    settings[WEB_MONITOR_SETTINGS_KEY] = '[redacted]';
+  }
+
+  const sensorCatalog = {};
+  SENSOR_GROUP_ORDER.forEach((group) => {
+    sensorCatalog[group] = (cachedOrderedSensorCatalog[group] || []).map((sensor) => ({
+      id: String(sensor.id || ''),
+      name: String(sensor.name || ''),
+      units: String(sensor.units || ''),
+      source: String(sensor.source || sensor.provider || ''),
+      enabled: sensorSelection[sensor.id] === true,
+      overlay: overlaySensorSelection[sensor.id] === true
+    }));
+  });
+
+  const providers = loadProviderSelection();
+  return {
+    diagnostics: String(diagnosticsText || ''),
+    settings,
+    sensorCatalog,
+    runtime: {
+      appVersion: APP_VERSION,
+      generatedAt: new Date().toISOString(),
+      summaryMode: summaryModeEnabled,
+      monitoringMode: document.body.classList.contains('monitoring-mode'),
+      theme: localStorage.getItem('theme') || 'blue',
+      animationSettings: loadAnimationSettings(),
+      providers: {
+        builtin: providers.builtin === true,
+        enhanced: providers.enhanced === true,
+        rtss: providers.rtss === true,
+        aida64: providers.aida64 === true,
+        hwinfo: providers.hwinfo === true
+      },
+      selectedSensorCount: Object.values(sensorSelection).filter(Boolean).length,
+      overlaySensorCount: Object.values(overlaySensorSelection).filter(Boolean).length,
+      webMonitorRunning: webMonitorRuntime.running === true,
+      webMonitorConnections: Math.max(0, Number(webMonitorRuntime.connections) || 0)
+    }
+  };
 }
 
 function initializeDiagnosticsModal() {
@@ -2666,10 +2938,14 @@ function initializeDiagnosticsModal() {
   const statusWrap = modal.querySelector('.diagnostics-status-wrap');
   const cancelButton = document.getElementById('diagnosticsCancelBtn');
   const copyButton = document.getElementById('diagnosticsCopyBtn');
+  const bundleButton = document.getElementById('diagnosticsBundleBtn');
   const clearButton = document.getElementById('diagnosticsClearBtn');
   const testButtons = Array.from(modal.querySelectorAll('[data-diagnostic-id]'));
   let activeRunId = '';
   let diagnosticRunning = false;
+  let bundleCreating = false;
+  let diagnosticCompletionWaiter = null;
+  const pendingDiagnosticCompletions = new Map();
 
   const appendOutput = (text) => {
     if (!output || !text) return;
@@ -2688,10 +2964,22 @@ function initializeDiagnosticsModal() {
     }
   };
 
+  const refreshControls = () => {
+    const busy = diagnosticRunning || bundleCreating;
+    testButtons.forEach((button) => { button.disabled = busy; });
+    if (cancelButton) cancelButton.disabled = !diagnosticRunning;
+    if (bundleButton) bundleButton.disabled = busy;
+    if (clearButton) clearButton.disabled = busy;
+  };
+
   const setRunning = (running) => {
     diagnosticRunning = !!running;
-    testButtons.forEach((button) => { button.disabled = diagnosticRunning; });
-    if (cancelButton) cancelButton.disabled = !diagnosticRunning;
+    refreshControls();
+  };
+
+  const setBundleCreating = (creating) => {
+    bundleCreating = !!creating;
+    refreshControls();
   };
 
   const finishImmediateDiagnostic = (label, success, error = '') => {
@@ -2704,46 +2992,10 @@ function initializeDiagnosticsModal() {
       appendOutput(`\n[${label} failed: ${error || 'Unknown error'}]\n`);
       setStatus(`${label} failed.`, 'error');
     }
+    return { success: !!success, cancelled: false, timedOut: false, error: success ? '' : error };
   };
 
-  testButtons.forEach((button) => {
-    button.addEventListener('click', async () => {
-      if (diagnosticRunning) return;
-      const diagnosticId = String(button.dataset.diagnosticId || '').trim();
-      const label = String(button.querySelector('strong')?.textContent || 'Diagnostic').trim();
-      if (!diagnosticId) return;
-
-      const separator = output && output.value.trim() ? '\n\n' : '';
-      appendOutput(`${separator}================================================================\n${label}\nStarted: ${new Date().toISOString()}\n================================================================\n`);
-      setRunning(true);
-      setStatus(`Running ${label}...`, 'running');
-
-      try {
-        const result = await ipcRenderer.invoke('diagnostics:run', diagnosticId);
-        if (!result || result.ok !== true) {
-          finishImmediateDiagnostic(label, false, result?.error || 'Unable to start diagnostic.');
-          return;
-        }
-        if (result.immediate === true) {
-          appendOutput(`${String(result.output || '').trim()}\n`);
-          finishImmediateDiagnostic(label, true);
-          return;
-        }
-        activeRunId = String(result.runId || '');
-      } catch (error) {
-        finishImmediateDiagnostic(label, false, error.message);
-      }
-    });
-  });
-
-  ipcRenderer.on('diagnostics:output', (_event, payload = {}) => {
-    if (!diagnosticRunning) return;
-    appendOutput(String(payload.chunk || ''));
-  });
-
-  ipcRenderer.on('diagnostics:complete', (_event, payload = {}) => {
-    if (!diagnosticRunning) return;
-    if (activeRunId && payload.runId && String(payload.runId) !== activeRunId) return;
+  const presentDiagnosticCompletion = (payload = {}) => {
     const label = String(payload.label || 'Diagnostic');
     activeRunId = '';
     setRunning(false);
@@ -2760,6 +3012,78 @@ function initializeDiagnosticsModal() {
       const detail = payload.error || `exit code ${payload.exitCode ?? 'unknown'}`;
       appendOutput(`\n[${label} failed: ${detail}]\n`);
       setStatus(`${label} failed.`, 'error');
+    }
+    return {
+      success: payload.success === true,
+      cancelled: payload.cancelled === true,
+      timedOut: payload.timedOut === true,
+      error: String(payload.error || ''),
+      exitCode: payload.exitCode ?? null
+    };
+  };
+
+  const runDiagnosticAndWait = async (diagnosticId, label, progress = null) => {
+    const separator = output && output.value.trim() ? '\n\n' : '';
+    appendOutput(`${separator}================================================================\n${label}\nStarted: ${new Date().toISOString()}\n================================================================\n`);
+    setRunning(true);
+    setStatus(progress || `Running ${label}...`, 'running');
+
+    try {
+      const result = await ipcRenderer.invoke('diagnostics:run', diagnosticId);
+      if (!result || result.ok !== true) {
+        return finishImmediateDiagnostic(label, false, result?.error || 'Unable to start diagnostic.');
+      }
+      if (result.immediate === true) {
+        appendOutput(`${String(result.output || '').trim()}\n`);
+        return finishImmediateDiagnostic(label, true);
+      }
+
+      activeRunId = String(result.runId || '');
+      const queuedCompletion = pendingDiagnosticCompletions.get(activeRunId);
+      if (queuedCompletion) {
+        pendingDiagnosticCompletions.delete(activeRunId);
+        activeRunId = '';
+        return queuedCompletion;
+      }
+
+      if (!activeRunId) {
+        return finishImmediateDiagnostic(label, false, 'The diagnostic runner did not return a run identifier.');
+      }
+
+      return await new Promise((resolve) => {
+        diagnosticCompletionWaiter = { runId: activeRunId, resolve };
+      });
+    } catch (error) {
+      return finishImmediateDiagnostic(label, false, error.message);
+    }
+  };
+
+  testButtons.forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (diagnosticRunning || bundleCreating) return;
+      const diagnosticId = String(button.dataset.diagnosticId || '').trim();
+      const label = String(button.querySelector('strong')?.textContent || 'Diagnostic').trim();
+      if (!diagnosticId) return;
+      await runDiagnosticAndWait(diagnosticId, label);
+    });
+  });
+
+  ipcRenderer.on('diagnostics:output', (_event, payload = {}) => {
+    if (!diagnosticRunning) return;
+    appendOutput(String(payload.chunk || ''));
+  });
+
+  ipcRenderer.on('diagnostics:complete', (_event, payload = {}) => {
+    if (!diagnosticRunning && !diagnosticCompletionWaiter) return;
+    if (activeRunId && payload.runId && String(payload.runId) !== activeRunId) return;
+    const runId = String(payload.runId || activeRunId || '');
+    const completion = presentDiagnosticCompletion(payload);
+    if (diagnosticCompletionWaiter && (!diagnosticCompletionWaiter.runId || diagnosticCompletionWaiter.runId === runId)) {
+      const waiter = diagnosticCompletionWaiter;
+      diagnosticCompletionWaiter = null;
+      waiter.resolve(completion);
+    } else if (runId) {
+      pendingDiagnosticCompletions.set(runId, completion);
     }
   });
 
@@ -2801,6 +3125,66 @@ function initializeDiagnosticsModal() {
     setStatus('Diagnostic results copied to the clipboard.', 'success');
   });
 
+  bundleButton?.addEventListener('click', async () => {
+    if (diagnosticRunning || bundleCreating) return;
+    const accepted = await showThemedConfirmation(
+      'Create Support Bundle?',
+      'SiR System Monitor will automatically run all six read-only diagnostic checks before creating the support bundle. The checks run one at a time and can take about a minute, or longer on slower systems.',
+      {
+        icon: 'bi-file-earmark-zip-fill',
+        tone: 'warning',
+        confirmLabel: 'Run 6 Tests & Continue',
+        cancelLabel: 'Cancel',
+        detailIcon: 'bi-activity',
+        detail: 'The current results box will be cleared. Each test result—including failures or timeouts—will be added to the privacy-scrubbed ZIP. You can cancel while a check is running.'
+      }
+    );
+    if (!accepted) {
+      setStatus('Support bundle creation cancelled.');
+      return;
+    }
+
+    setBundleCreating(true);
+    if (output) output.value = '';
+    appendOutput(`SUPPORT BUNDLE DIAGNOSTIC SUITE\nStarted: ${new Date().toISOString()}\nChecks scheduled: ${testButtons.length}\n`);
+    try {
+      const results = [];
+      for (let index = 0; index < testButtons.length; index += 1) {
+        const button = testButtons[index];
+        const diagnosticId = String(button.dataset.diagnosticId || '').trim();
+        const label = String(button.querySelector('strong')?.textContent || 'Diagnostic').trim();
+        const result = await runDiagnosticAndWait(
+          diagnosticId,
+          label,
+          `Support bundle: running check ${index + 1} of ${testButtons.length} — ${label}...`
+        );
+        results.push({ diagnosticId, label, ...result });
+        if (result.cancelled) {
+          appendOutput(`\nSUPPORT BUNDLE SUITE CANCELLED\nCompleted checks: ${results.length} of ${testButtons.length}\n`);
+          setStatus('Support bundle suite cancelled. No bundle was created.', 'error');
+          return;
+        }
+      }
+
+      const passed = results.filter((result) => result.success).length;
+      const issues = results.length - passed;
+      appendOutput(`\n================================================================\nSUPPORT BUNDLE SUITE COMPLETE\nFinished: ${new Date().toISOString()}\nChecks attempted: ${results.length}\nPassed: ${passed}\nFailed or timed out: ${issues}\n================================================================\n`);
+      setStatus('All six checks finished. Choose where to save the support bundle...', 'running');
+      const result = await ipcRenderer.invoke('diagnostics:create-support-bundle', buildSupportBundlePayload(output?.value || ''));
+      if (result?.canceled === true) {
+        setStatus('The six checks completed, but support bundle saving was cancelled.');
+      } else if (result?.ok === true) {
+        setStatus(`Support bundle created: ${result.filePath}`, 'success');
+      } else {
+        setStatus(result?.error || 'Unable to create the support bundle.', 'error');
+      }
+    } catch (error) {
+      setStatus(`Unable to create the support bundle: ${error.message}`, 'error');
+    } finally {
+      setBundleCreating(false);
+    }
+  });
+
   openButton?.addEventListener('click', () => setDiagnosticsModalVisible(true));
   modal.querySelectorAll('[data-close-diagnostics]').forEach((button) => {
     button.addEventListener('click', () => setDiagnosticsModalVisible(false));
@@ -2817,8 +3201,7 @@ function initializeDiagnosticsModal() {
 
 function setImportSettingsModalVisible(visible) {
   const modal = document.getElementById('importSettingsModal');
-  if (!modal) return;
-  modal.classList.toggle('is-hidden', !visible);
+  setModalShellVisible(modal, visible);
 }
 
 function normalizeProfileName(name) {
@@ -2976,6 +3359,16 @@ async function applyImportedSettingsNow() {
   try { const fontBoldToggle = document.getElementById('fontBoldToggle'); if (fontBoldToggle && parsed[FONT_BOLD_KEY]) fontBoldToggle.checked = String(parsed[FONT_BOLD_KEY]).replace(/^"|"$/g, '') === 'true'; } catch (e) {}
   try { if (parsed[DISABLE_GLOW_EFFECTS_KEY]) applyDisableGlowEffects(String(parsed[DISABLE_GLOW_EFFECTS_KEY]).replace(/^"|"$/g, '') === 'true'); } catch (e) {}
   try { const disableGlowEffectsToggle = document.getElementById('disableGlowEffectsToggle'); if (disableGlowEffectsToggle && parsed[DISABLE_GLOW_EFFECTS_KEY]) disableGlowEffectsToggle.checked = String(parsed[DISABLE_GLOW_EFFECTS_KEY]).replace(/^"|"$/g, '') === 'true'; } catch (e) {}
+  try {
+    if (Object.prototype.hasOwnProperty.call(parsed, ANIMATION_SETTINGS_KEY)) {
+      applyAnimationSettings(parsed[ANIMATION_SETTINGS_KEY]);
+    } else if (Object.prototype.hasOwnProperty.call(parsed, DISABLE_SETTINGS_ANIMATIONS_KEY)) {
+      applyAnimationSettings({
+        ...loadAnimationSettings(),
+        settingsDropdowns: String(parsed[DISABLE_SETTINGS_ANIMATIONS_KEY]).replace(/^"|"$/g, '') !== 'true'
+      });
+    }
+  } catch (e) {}
   try { if (parsed[TEMPERATURE_UNIT_KEY]) applyTemperatureUnit(String(parsed[TEMPERATURE_UNIT_KEY]).replace(/^"|"$/g, '')); } catch (e) {}
   try { const tempSelect = document.getElementById('temperatureUnitSelect'); if (tempSelect && parsed[TEMPERATURE_UNIT_KEY]) tempSelect.value = String(parsed[TEMPERATURE_UNIT_KEY]).replace(/^"|"$/g, ''); } catch (e) {}
 
@@ -3080,14 +3473,110 @@ function initializeImportSettingsModal() {
   });
 }
 
-function setSettingsSectionExpanded(section, toggleButton, expanded) {
-  section.classList.toggle('is-collapsed', !expanded);
-  toggleButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+const settingsDisclosureAnimations = new WeakMap();
+const activeSettingsDisclosureContents = new Set();
+
+function settingsDisclosureMotionEnabled() {
+  return !document.body.classList.contains('no-settings-animations');
 }
 
-function setSettingsGroupExpanded(group, toggleButton, expanded) {
-  group.classList.toggle('is-collapsed', !expanded);
-  toggleButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+function cancelSettingsDisclosureAnimation(content, preserveHeight = false) {
+  const active = settingsDisclosureAnimations.get(content);
+  if (!active) return;
+  active.cancel(preserveHeight);
+}
+
+function settleSettingsDisclosureAnimations() {
+  Array.from(activeSettingsDisclosureContents).forEach((content) => {
+    cancelSettingsDisclosureAnimation(content, false);
+  });
+}
+
+function setSettingsDisclosureExpanded(owner, toggleButton, expanded, contentSelector, options = {}) {
+  const content = options.content || owner.querySelector(`:scope > ${contentSelector}`);
+  const isExpanded = !!expanded;
+  const ariaExpanded = toggleButton.getAttribute('aria-expanded');
+  const currentlyExpanded = ariaExpanded === null
+    ? !owner.classList.contains('is-collapsed')
+    : ariaExpanded === 'true';
+
+  toggleButton.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+  if (!content) {
+    owner.classList.toggle('is-collapsed', !isExpanded);
+    return;
+  }
+
+  content.setAttribute('aria-hidden', isExpanded ? 'false' : 'true');
+  content.toggleAttribute('inert', !isExpanded);
+
+  const animate = options.animate !== false && settingsDisclosureMotionEnabled();
+  if (!animate) {
+    cancelSettingsDisclosureAnimation(content, false);
+    owner.classList.toggle('is-collapsed', !isExpanded);
+    content.style.removeProperty('max-height');
+    return;
+  }
+
+  // Repeated search updates can request an already-open section. Let any active
+  // transition finish instead of restarting it and causing a visible stutter.
+  if (currentlyExpanded === isExpanded) return;
+
+  const startHeight = content.getBoundingClientRect().height;
+  cancelSettingsDisclosureAnimation(content, true);
+  content.classList.add('is-settings-disclosure-preparing');
+  content.style.maxHeight = `${Math.max(0, startHeight)}px`;
+  void content.offsetHeight;
+  content.classList.remove('is-settings-disclosure-preparing');
+  void content.offsetHeight;
+  content.classList.add('is-settings-disclosure-animating');
+  const animationSpeed = ANIMATION_SPEED_PRESETS[loadAnimationSettings().speed];
+  const durationMs = content.classList.contains('settings-group-content') ? animationSpeed.groupMs : animationSpeed.sectionMs;
+  let timeoutId = null;
+  let frameId = null;
+  let animationRecord = null;
+
+  const cleanup = (preserveHeight = false) => {
+    if (frameId !== null) window.cancelAnimationFrame(frameId);
+    if (timeoutId !== null) window.clearTimeout(timeoutId);
+    content.removeEventListener('transitionend', onTransitionEnd);
+    content.classList.remove('is-settings-disclosure-animating', 'is-settings-disclosure-preparing');
+    if (!preserveHeight) {
+      owner.classList.toggle('is-collapsed', !isExpanded);
+      content.style.removeProperty('max-height');
+    }
+    if (settingsDisclosureAnimations.get(content) === animationRecord) {
+      settingsDisclosureAnimations.delete(content);
+    }
+    activeSettingsDisclosureContents.delete(content);
+  };
+
+  const onTransitionEnd = (event) => {
+    if (event.target !== content || event.propertyName !== 'max-height') return;
+    cleanup(false);
+  };
+
+  animationRecord = { cancel: cleanup };
+  settingsDisclosureAnimations.set(content, animationRecord);
+  activeSettingsDisclosureContents.add(content);
+  content.addEventListener('transitionend', onTransitionEnd);
+
+  // max-height always transitions between measured numeric values, avoiding
+  // the browser's non-interpolable `height: auto` path in both directions.
+  frameId = window.requestAnimationFrame(() => {
+    frameId = null;
+    owner.classList.toggle('is-collapsed', !isExpanded);
+    const targetHeight = isExpanded ? content.scrollHeight : 0;
+    content.style.maxHeight = `${Math.max(0, targetHeight)}px`;
+  });
+  timeoutId = window.setTimeout(() => cleanup(false), durationMs + 180);
+}
+
+function setSettingsSectionExpanded(section, toggleButton, expanded, options = {}) {
+  setSettingsDisclosureExpanded(section, toggleButton, expanded, '.settings-section-content', options);
+}
+
+function setSettingsGroupExpanded(group, toggleButton, expanded, options = {}) {
+  setSettingsDisclosureExpanded(group, toggleButton, expanded, '.settings-group-content', options);
 }
 
 const SETTINGS_GROUP_PRESENTATION = {
@@ -3127,16 +3616,22 @@ function setupSettingsSearch() {
     groups.forEach((group) => {
       const groupToggle = group.querySelector(':scope > .settings-group-toggle-btn');
       const wasCollapsed = group.dataset.searchWasCollapsed === 'true';
-      group.classList.toggle('is-collapsed', wasCollapsed);
-      if (groupToggle) groupToggle.setAttribute('aria-expanded', wasCollapsed ? 'false' : 'true');
+      if (groupToggle) {
+        setSettingsGroupExpanded(group, groupToggle, !wasCollapsed, { animate: false });
+      } else {
+        group.classList.toggle('is-collapsed', wasCollapsed);
+      }
       delete group.dataset.searchWasCollapsed;
       group.classList.remove('is-settings-search-hidden', 'is-settings-search-match');
 
       group.querySelectorAll('.settings-section').forEach((section) => {
         const sectionToggle = section.querySelector(':scope > .settings-toggle-btn');
         const sectionWasCollapsed = section.dataset.searchWasCollapsed === 'true';
-        section.classList.toggle('is-collapsed', sectionWasCollapsed);
-        if (sectionToggle) sectionToggle.setAttribute('aria-expanded', sectionWasCollapsed ? 'false' : 'true');
+        if (sectionToggle) {
+          setSettingsSectionExpanded(section, sectionToggle, !sectionWasCollapsed, { animate: false });
+        } else {
+          section.classList.toggle('is-collapsed', sectionWasCollapsed);
+        }
         delete section.dataset.searchWasCollapsed;
         section.classList.remove('is-settings-search-hidden', 'is-settings-search-match');
       });
@@ -3260,10 +3755,10 @@ function setupSettingsGroupAccordion() {
       <span class="settings-group-toggle-icon" aria-hidden="true"><i class="bi bi-chevron-down"></i></span>`;
 
     const isExpanded = savedState[groupKey] !== undefined ? !!savedState[groupKey] : true;
-    setSettingsGroupExpanded(group, toggleButton, isExpanded);
+    setSettingsGroupExpanded(group, toggleButton, isExpanded, { animate: false, content: contentWrap });
 
     toggleButton.addEventListener('click', () => {
-      const nextExpanded = group.classList.contains('is-collapsed');
+      const nextExpanded = toggleButton.getAttribute('aria-expanded') !== 'true';
       setSettingsGroupExpanded(group, toggleButton, nextExpanded);
       updateSettingsAccordionState(groupKey, nextExpanded);
     });
@@ -3311,10 +3806,10 @@ function setupSettingsAccordion() {
     toggleButton.innerHTML = `<span class="settings-toggle-title">${titleIconHtml}<span>${escapeHtml(sectionTitle)}</span></span><span class="settings-toggle-icon" aria-hidden="true">▾</span>`;
 
     const isExpanded = savedState[sectionKey] !== undefined ? !!savedState[sectionKey] : false;
-    setSettingsSectionExpanded(section, toggleButton, isExpanded);
+    setSettingsSectionExpanded(section, toggleButton, isExpanded, { animate: false, content: contentWrap });
 
     toggleButton.addEventListener('click', () => {
-      const nextExpanded = section.classList.contains('is-collapsed');
+      const nextExpanded = toggleButton.getAttribute('aria-expanded') !== 'true';
       setSettingsSectionExpanded(section, toggleButton, nextExpanded);
       updateSettingsAccordionState(sectionKey, nextExpanded);
     });
@@ -3735,6 +4230,167 @@ function applyDisableGlowEffects(enabled) {
   const isEnabled = !!enabled;
   document.body.classList.toggle('no-glow', isEnabled);
   localStorage.setItem(DISABLE_GLOW_EFFECTS_KEY, isEnabled ? 'true' : 'false');
+}
+
+function normalizeAnimationSpeed(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(ANIMATION_SPEED_PRESETS, normalized) ? normalized : 'standard';
+}
+
+function normalizeAnimationIntensity(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(ANIMATION_INTENSITY_PRESETS, normalized) ? normalized : 'balanced';
+}
+
+function normalizeAnimationSettings(value) {
+  let parsed = value;
+  if (typeof parsed === 'string') {
+    try { parsed = JSON.parse(parsed); } catch (e) { parsed = {}; }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) parsed = {};
+  return {
+    enabled: parsed.enabled !== false,
+    settingsDropdowns: parsed.settingsDropdowns !== false,
+    dialogs: parsed.dialogs !== false,
+    viewTransitions: parsed.viewTransitions !== false,
+    sensorIcons: parsed.sensorIcons !== false,
+    settingsIcons: parsed.settingsIcons !== false,
+    speed: normalizeAnimationSpeed(parsed.speed),
+    intensity: normalizeAnimationIntensity(parsed.intensity)
+  };
+}
+
+function applyAnimationPresetVariables(settings) {
+  const normalized = normalizeAnimationSettings(settings);
+  const speed = ANIMATION_SPEED_PRESETS[normalized.speed];
+  const intensity = ANIMATION_INTENSITY_PRESETS[normalized.intensity];
+  const root = document.documentElement;
+  root.style.setProperty('--motion-icon-duration', `${speed.iconMs}ms`);
+  root.style.setProperty('--motion-focus-duration', `${speed.focusMs}ms`);
+  root.style.setProperty('--motion-dialog-duration', `${speed.dialogMs}ms`);
+  root.style.setProperty('--motion-view-duration', `${speed.viewMs}ms`);
+  root.style.setProperty('--motion-settings-group-duration', `${speed.groupMs}ms`);
+  root.style.setProperty('--motion-settings-section-duration', `${speed.sectionMs}ms`);
+  root.style.setProperty('--motion-icon-lift', `${intensity.iconLift}px`);
+  root.style.setProperty('--motion-icon-scale', String(intensity.iconScale));
+  root.style.setProperty('--motion-focus-rotate', `${intensity.focusRotate}deg`);
+  root.style.setProperty('--motion-focus-scale', String(intensity.focusScale));
+  root.style.setProperty('--motion-view-distance', `${intensity.viewDistance}px`);
+  root.style.setProperty('--motion-view-scale', String(intensity.viewScale));
+  root.style.setProperty('--motion-dialog-distance', `${intensity.dialogDistance}px`);
+  root.style.setProperty('--motion-disclosure-distance', `${intensity.disclosureDistance}px`);
+}
+
+function loadAnimationSettings() {
+  const raw = localStorage.getItem(ANIMATION_SETTINGS_KEY);
+  if (raw !== null) return normalizeAnimationSettings(raw);
+
+  // V1.3.2 originally exposed only this settings-specific opt-out. Preserve it
+  // while enabling the newly added dialog, view, and sensor-icon effects.
+  return normalizeAnimationSettings({
+    ...DEFAULT_ANIMATION_SETTINGS,
+    settingsDropdowns: localStorage.getItem(DISABLE_SETTINGS_ANIMATIONS_KEY) !== 'true'
+  });
+}
+
+function syncAnimationSettingsControls(settings) {
+  const normalized = normalizeAnimationSettings(settings);
+  const controls = {
+    animationEnabledToggle: normalized.enabled,
+    animationSettingsToggle: normalized.settingsDropdowns,
+    animationDialogsToggle: normalized.dialogs,
+    animationViewsToggle: normalized.viewTransitions,
+    animationSensorIconsToggle: normalized.sensorIcons,
+    animationSettingsIconsToggle: normalized.settingsIcons
+  };
+  Object.entries(controls).forEach(([id, checked]) => {
+    const input = document.getElementById(id);
+    if (input) input.checked = checked;
+  });
+
+  const featureControls = document.getElementById('animationFeatureControls');
+  if (featureControls) featureControls.classList.toggle('is-disabled', !normalized.enabled);
+  const presetControls = document.getElementById('animationPresetControls');
+  if (presetControls) presetControls.classList.toggle('is-disabled', !normalized.enabled);
+  const speedSelect = document.getElementById('animationSpeedSelect');
+  if (speedSelect) speedSelect.value = normalized.speed;
+  const intensitySelect = document.getElementById('animationIntensitySelect');
+  if (intensitySelect) intensitySelect.value = normalized.intensity;
+  ['animationSettingsToggle', 'animationDialogsToggle', 'animationViewsToggle', 'animationSensorIconsToggle', 'animationSettingsIconsToggle'].forEach((id) => {
+    const input = document.getElementById(id);
+    if (input) input.disabled = !normalized.enabled;
+  });
+  if (speedSelect) speedSelect.disabled = !normalized.enabled;
+  if (intensitySelect) intensitySelect.disabled = !normalized.enabled;
+}
+
+function applyAnimationSettings(settings, options = {}) {
+  const normalized = normalizeAnimationSettings(settings);
+  const settingsMotionDisabled = !normalized.enabled || !normalized.settingsDropdowns;
+  const dialogMotionDisabled = !normalized.enabled || !normalized.dialogs;
+  const viewMotionDisabled = !normalized.enabled || !normalized.viewTransitions;
+  const iconMotionDisabled = !normalized.enabled || !normalized.sensorIcons;
+  const settingsIconMotionDisabled = !normalized.enabled || !normalized.settingsIcons;
+
+  applyAnimationPresetVariables(normalized);
+
+  document.body.classList.toggle('no-settings-animations', settingsMotionDisabled);
+  document.body.classList.toggle('no-dialog-animations', dialogMotionDisabled);
+  document.body.classList.toggle('no-view-animations', viewMotionDisabled);
+  document.body.classList.toggle('no-sensor-icon-animations', iconMotionDisabled);
+  document.body.classList.toggle('no-settings-icon-animations', settingsIconMotionDisabled);
+  if (settingsMotionDisabled) settleSettingsDisclosureAnimations();
+  if (viewMotionDisabled) {
+    document.body.classList.remove('dashboard-view-to-summary', 'dashboard-view-to-dashboard');
+    if (dashboardViewTransitionTimer !== null) window.clearTimeout(dashboardViewTransitionTimer);
+    dashboardViewTransitionTimer = null;
+  }
+
+  if (options.persist !== false) {
+    localStorage.setItem(ANIMATION_SETTINGS_KEY, JSON.stringify(normalized));
+    localStorage.setItem(DISABLE_SETTINGS_ANIMATIONS_KEY, normalized.settingsDropdowns ? 'false' : 'true');
+  }
+  syncAnimationSettingsControls(normalized);
+  return normalized;
+}
+
+function applyDisableSettingsAnimations(enabled) {
+  applyAnimationSettings({
+    ...loadAnimationSettings(),
+    settingsDropdowns: !enabled
+  });
+}
+
+function initializeAnimationSettingsControls() {
+  const inputMap = {
+    animationEnabledToggle: 'enabled',
+    animationSettingsToggle: 'settingsDropdowns',
+    animationDialogsToggle: 'dialogs',
+    animationViewsToggle: 'viewTransitions',
+    animationSensorIconsToggle: 'sensorIcons',
+    animationSettingsIconsToggle: 'settingsIcons'
+  };
+  Object.entries(inputMap).forEach(([id, key]) => {
+    const input = document.getElementById(id);
+    if (!input || input.dataset.animationSettingReady === 'true') return;
+    input.dataset.animationSettingReady = 'true';
+    input.addEventListener('change', () => {
+      applyAnimationSettings({ ...loadAnimationSettings(), [key]: !!input.checked });
+    });
+  });
+  const selectMap = {
+    animationSpeedSelect: 'speed',
+    animationIntensitySelect: 'intensity'
+  };
+  Object.entries(selectMap).forEach(([id, key]) => {
+    const select = document.getElementById(id);
+    if (!select || select.dataset.animationSettingReady === 'true') return;
+    select.dataset.animationSettingReady = 'true';
+    select.addEventListener('change', () => {
+      applyAnimationSettings({ ...loadAnimationSettings(), [key]: select.value });
+    });
+  });
+  syncAnimationSettingsControls(loadAnimationSettings());
 }
 
 function applyFontBold(enabled) {
@@ -4480,8 +5136,24 @@ function applyDebugMode(enabled) {
   }
 }
 
-function applySummaryMode(enabled) {
-  summaryModeEnabled = !!enabled;
+function triggerDashboardViewTransition(toSummary) {
+  if (document.body.classList.contains('no-view-animations')) return;
+  const nextClass = toSummary ? 'dashboard-view-to-summary' : 'dashboard-view-to-dashboard';
+  document.body.classList.remove('dashboard-view-to-summary', 'dashboard-view-to-dashboard');
+  void document.body.offsetWidth;
+  document.body.classList.add(nextClass);
+  if (dashboardViewTransitionTimer !== null) window.clearTimeout(dashboardViewTransitionTimer);
+  const viewDurationMs = ANIMATION_SPEED_PRESETS[loadAnimationSettings().speed].viewMs;
+  dashboardViewTransitionTimer = window.setTimeout(() => {
+    document.body.classList.remove(nextClass);
+    dashboardViewTransitionTimer = null;
+  }, viewDurationMs + 100);
+}
+
+function applySummaryMode(enabled, options = {}) {
+  const nextEnabled = !!enabled;
+  const changed = summaryModeEnabled !== nextEnabled;
+  summaryModeEnabled = nextEnabled;
   document.body.classList.toggle('summary-mode', summaryModeEnabled);
   localStorage.setItem(SUMMARY_MODE_KEY, summaryModeEnabled ? 'true' : 'false');
 
@@ -4509,6 +5181,7 @@ function applySummaryMode(enabled) {
 
   invalidateRenderGroupCache();
   renderAllDynamicGroups(latestSelectedGroupedSensors || createEmptyGroupedBuckets(), { force: true });
+  if (changed && options.animate !== false) triggerDashboardViewTransition(summaryModeEnabled);
 }
 
 // Low Overhead Mode internals removed to clean up unused feature.
@@ -6022,6 +6695,7 @@ const ThemeManager = {
 const SettingsManager = {
   init() {
     sensorCustomNames = loadSensorCustomNames();
+    applyAnimationSettings(loadAnimationSettings());
     setupSettingsGroupAccordion();
     setupSettingsAccordion();
     setupSettingsSearch();
@@ -6468,6 +7142,8 @@ const SettingsManager = {
       });
     }
 
+    initializeAnimationSettingsControls();
+
     const overlayEnabledToggle = document.getElementById('overlayEnabledToggle');
     const overlayFontSizeSlider = document.getElementById('overlayFontSizeSlider');
     const overlayFontSizeValue = document.getElementById('overlayFontSizeValue');
@@ -6556,7 +7232,7 @@ const SettingsManager = {
     }
 
     if (saveSettingsProfileBtn) {
-      saveSettingsProfileBtn.addEventListener('click', () => {
+      saveSettingsProfileBtn.addEventListener('click', async () => {
         try {
           const typedName = normalizeProfileName(settingsProfileNameInput ? settingsProfileNameInput.value : '');
           let name = typedName;
@@ -6565,7 +7241,10 @@ const SettingsManager = {
             name = `Profile ${stamp}`;
           }
           if (!name) {
-            alert('Please enter a valid profile name.');
+            await showThemedMessage('Invalid Profile Name', 'Please enter a valid profile name.', {
+              icon: 'bi-exclamation-triangle-fill',
+              tone: 'error'
+            });
             return;
           }
 
@@ -6580,10 +7259,17 @@ const SettingsManager = {
           localStorage.setItem(ACTIVE_SETTINGS_PROFILE_KEY, name);
           renderSettingsProfiles();
           if (settingsProfileSelect) settingsProfileSelect.value = name;
-          alert(`Profile "${name}" saved.`);
+          await showThemedMessage('Profile Saved', `Profile "${name}" was saved successfully.`, {
+            icon: 'bi-check-circle-fill',
+            tone: 'success',
+            confirmLabel: 'Done'
+          });
         } catch (error) {
           console.error('Failed to save profile:', error);
-          alert('Failed to save profile: ' + (error && error.message ? error.message : String(error)));
+          await showThemedMessage('Profile Save Failed', 'Failed to save profile: ' + (error && error.message ? error.message : String(error)), {
+            icon: 'bi-exclamation-octagon-fill',
+            tone: 'error'
+          });
         }
       });
     }
@@ -6592,14 +7278,19 @@ const SettingsManager = {
       applySettingsProfileBtn.addEventListener('click', async () => {
         const selected = normalizeProfileName(settingsProfileSelect ? settingsProfileSelect.value : '');
         if (!selected) {
-          alert('Select a profile first.');
+          await showThemedMessage('No Profile Selected', 'Select a profile first.', {
+            icon: 'bi-info-circle-fill'
+          });
           return;
         }
 
         const profiles = loadSettingsProfiles();
         const profile = profiles[selected];
         if (!profile || !profile.snapshot || typeof profile.snapshot !== 'object') {
-          alert('Selected profile is invalid or missing snapshot data.');
+          await showThemedMessage('Invalid Profile', 'The selected profile is invalid or is missing its saved settings.', {
+            icon: 'bi-exclamation-triangle-fill',
+            tone: 'error'
+          });
           return;
         }
         const profileSnapshot = normalizeEnhancedAdministratorSnapshot(profile.snapshot);
@@ -6632,29 +7323,40 @@ const SettingsManager = {
     }
 
     if (renameSettingsProfileBtn) {
-      renameSettingsProfileBtn.addEventListener('click', () => {
+      renameSettingsProfileBtn.addEventListener('click', async () => {
         const selected = normalizeProfileName(settingsProfileSelect ? settingsProfileSelect.value : '');
         if (!selected) {
-          alert('Select a profile first.');
+          await showThemedMessage('No Profile Selected', 'Select a profile first.', {
+            icon: 'bi-info-circle-fill'
+          });
           return;
         }
 
         const nextName = normalizeProfileName(settingsProfileNameInput ? settingsProfileNameInput.value : '');
         if (!nextName) {
-          alert('Enter a new profile name in the profile name box.');
+          await showThemedMessage('Invalid Profile Name', 'Enter a new profile name in the profile name box.', {
+            icon: 'bi-exclamation-triangle-fill',
+            tone: 'error'
+          });
           return;
         }
 
         const profiles = loadSettingsProfiles();
         const existing = profiles[selected];
         if (!existing) {
-          alert('Selected profile no longer exists.');
+          await showThemedMessage('Profile Not Found', 'The selected profile no longer exists.', {
+            icon: 'bi-exclamation-triangle-fill',
+            tone: 'error'
+          });
           renderSettingsProfiles();
           return;
         }
 
         if (nextName !== selected && profiles[nextName]) {
-          alert('A profile with that name already exists.');
+          await showThemedMessage('Profile Name In Use', 'A profile with that name already exists.', {
+            icon: 'bi-exclamation-triangle-fill',
+            tone: 'error'
+          });
           return;
         }
 
@@ -6665,18 +7367,30 @@ const SettingsManager = {
         localStorage.setItem(ACTIVE_SETTINGS_PROFILE_KEY, nextName);
         renderSettingsProfiles();
         if (settingsProfileNameInput) settingsProfileNameInput.value = nextName;
-        alert(`Profile renamed to "${nextName}".`);
+        await showThemedMessage('Profile Renamed', `Profile renamed to "${nextName}".`, {
+          icon: 'bi-check-circle-fill',
+          tone: 'success',
+          confirmLabel: 'Done'
+        });
       });
     }
 
     if (deleteSettingsProfileBtn) {
-      deleteSettingsProfileBtn.addEventListener('click', () => {
+      deleteSettingsProfileBtn.addEventListener('click', async () => {
         const selected = normalizeProfileName(settingsProfileSelect ? settingsProfileSelect.value : '');
         if (!selected) {
-          alert('Select a profile first.');
+          await showThemedMessage('No Profile Selected', 'Select a profile first.', {
+            icon: 'bi-info-circle-fill'
+          });
           return;
         }
-        if (!confirm(`Delete profile "${selected}"?`)) return;
+        const confirmed = await showThemedConfirmation('Delete Profile?', `Delete profile "${selected}"? This cannot be undone.`, {
+          icon: 'bi-trash3-fill',
+          tone: 'warning',
+          confirmLabel: 'Delete Profile',
+          cancelLabel: 'Keep Profile'
+        });
+        if (!confirmed) return;
 
         const profiles = loadSettingsProfiles();
         if (profiles[selected]) delete profiles[selected];
@@ -7089,7 +7803,7 @@ const SettingsManager = {
       const storedSummaryMode = localStorage.getItem(SUMMARY_MODE_KEY);
       // Default to OFF for new users (stored === null) to avoid starting in summary mode
       const savedSummaryMode = storedSummaryMode === null ? false : storedSummaryMode === 'true';
-      applySummaryMode(savedSummaryMode);
+      applySummaryMode(savedSummaryMode, { animate: false });
 
       summaryButton.addEventListener('click', () => {
         applySummaryMode(!summaryModeEnabled);
@@ -7474,8 +8188,7 @@ const SettingsManager = {
     let inAppDownloadAvailable = true;
 
     const setUpdateModalVisible = (visible) => {
-      if (!updateAvailableModal) return;
-      updateAvailableModal.classList.toggle('is-hidden', !visible);
+      setModalShellVisible(updateAvailableModal, visible);
     };
 
     const setUpdateModalMessage = (message) => {
@@ -8569,6 +9282,14 @@ function applyUiTooltips() {
     customSettingsPanelColor: 'Independent background color for the settings panel.',
     customSettingsPanelAccentColor: 'Accent color used by settings controls, highlights, and active states.',
     customSettingsPanelIconColor: 'Icon color used throughout the settings panel.',
+    animationEnabledToggle: 'Enable or disable all configurable interface motion.',
+    animationSettingsToggle: 'Animate settings category and section opening and closing.',
+    animationDialogsToggle: 'Animate Help, Diagnostics, update, import, and confirmation dialogs.',
+    animationViewsToggle: 'Animate transitions between the dashboard and Summary Mode.',
+    animationSensorIconsToggle: 'Add lightweight live and hover motion to sensor-card header icons.',
+    animationSettingsIconsToggle: 'Apply lightweight live and hover motion to icons throughout Settings.',
+    animationSpeedSelect: 'Choose how quickly interface animations complete.',
+    animationIntensitySelect: 'Choose how far and strongly animated elements move.',
     resetThemeColorsBtn: 'Reset custom colors to current theme defaults.',
     showFps: 'Show/hide FPS group card.',
     showCpu: 'Show/hide CPU group card.',

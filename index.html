@@ -108,6 +108,55 @@
         </label>
       </div>
 
+      <div class="settings-section" data-section-key="appearance_animations">
+        <label class="settings-label"><i class="bi bi-stars settings-label-icon" aria-hidden="true"></i><span>Animations</span></label>
+        <label class="checkbox-label settings-switch-row animation-master-row">
+          <input type="checkbox" id="animationEnabledToggle">
+          <span>Enable interface animations</span>
+        </label>
+        <div class="settings-switch-grid animation-switch-grid" id="animationFeatureControls">
+          <label class="checkbox-label">
+            <input type="checkbox" id="animationSettingsToggle">
+            <span>Settings dropdowns</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="animationDialogsToggle">
+            <span>Menus &amp; dialogs</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="animationViewsToggle">
+            <span>Dashboard &amp; Summary</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="animationSensorIconsToggle">
+            <span>Sensor card icons</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="animationSettingsIconsToggle">
+            <span>Settings icons</span>
+          </label>
+        </div>
+        <div class="settings-field-grid animation-preset-grid" id="animationPresetControls">
+          <label class="settings-field-stack" for="animationSpeedSelect">
+            <span>Animation speed</span>
+            <select id="animationSpeedSelect" class="detection-select">
+              <option value="calm">Calm</option>
+              <option value="standard">Standard</option>
+              <option value="lively">Lively</option>
+            </select>
+          </label>
+          <label class="settings-field-stack" for="animationIntensitySelect">
+            <span>Motion intensity</span>
+            <select id="animationIntensitySelect" class="detection-select">
+              <option value="gentle">Gentle</option>
+              <option value="balanced">Balanced</option>
+              <option value="expressive">Expressive</option>
+            </select>
+          </label>
+        </div>
+        <div class="settings-note">These lightweight effects are saved with profiles and mirrored to the Web Monitor where the matching interface is available.</div>
+      </div>
+
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-pc-display-horizontal settings-label-icon" aria-hidden="true"></i><span>On-Screen Overlay</span></label>
         <div class="overlay-master-row">
@@ -907,8 +956,26 @@
       </div>
       <div class="setup-guide-footer diagnostics-footer">
         <button type="button" class="test-btn secondary-action" id="diagnosticsClearBtn">Clear Results</button>
+        <button type="button" class="test-btn diagnostics-bundle-btn" id="diagnosticsBundleBtn"><i class="bi bi-file-earmark-zip-fill" aria-hidden="true"></i><span>Create Support Bundle</span></button>
         <button type="button" class="test-btn" id="diagnosticsCopyBtn">Copy Results</button>
         <button type="button" class="test-btn" data-close-diagnostics>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="themedDialogModal" class="setup-guide-modal is-hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="themedDialogTitle" aria-describedby="themedDialogMessage">
+    <div class="setup-guide-dialog themed-dialog" role="document">
+      <div class="setup-guide-header themed-dialog-header">
+        <h2 id="themedDialogTitle"><i id="themedDialogIcon" class="bi bi-info-circle-fill themed-dialog-icon" aria-hidden="true"></i><span id="themedDialogTitleText">SiR System Monitor</span></h2>
+        <button type="button" class="setup-guide-close" id="themedDialogCloseBtn" aria-label="Close dialog">&times;</button>
+      </div>
+      <div class="setup-guide-body themed-dialog-body">
+        <p id="themedDialogMessage"></p>
+        <div id="themedDialogDetail" class="setup-guide-highlight themed-dialog-detail" hidden></div>
+      </div>
+      <div class="setup-guide-footer themed-dialog-footer">
+        <button type="button" class="test-btn secondary-action" id="themedDialogCancelBtn">Cancel</button>
+        <button type="button" class="test-btn" id="themedDialogConfirmBtn">OK</button>
       </div>
     </div>
   </div>

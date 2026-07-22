@@ -237,7 +237,7 @@ class SensorReader {
       };
 
       const request = https.get('https://api.ipify.org', {
-        headers: { 'User-Agent': 'SiR-System-Monitor/1.3.1' }
+        headers: { 'User-Agent': 'SiR-System-Monitor/1.3.2' }
       }, (response) => {
         let body = '';
         response.setEncoding('utf8');

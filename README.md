@@ -2,7 +2,7 @@
   <h1>SiR System Monitor</h1>
   <p><strong>Real-time hardware monitoring for Windows, your desktop, your overlay, and your browser.</strong></p>
   <p>
-    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.3.1" src="https://img.shields.io/badge/version-1.3.1-f97316?style=for-the-badge"></a>
+    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.3.2" src="https://img.shields.io/badge/version-1.3.2-f97316?style=for-the-badge"></a>
     <a href="#requirements"><img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&amp;logo=windows"></a>
     <a href="./LICENSE.txt"><img alt="GNU GPL v3" src="https://img.shields.io/badge/license-GPL--3.0-3DA639?style=for-the-badge"></a>
   </p>
@@ -28,17 +28,20 @@ SiR System Monitor is an open-source Windows desktop app that combines live syst
 | **Desktop and web layouts** | Give normal and Summary modes their own Compact, Balanced, Wide, Stacked, or freely resized Custom layout in both the app and Web Monitor. |
 | **Overlay and alerts** | Keep selected readings over other apps and highlight warning or critical threshold events. |
 | **App telemetry** | Monitor SiR's own CPU/RAM use, uptime, process/window counts, refresh timing, sensor counts, active alerts, and Web Monitor connections. |
-| **Built-in diagnostics** | Run support-oriented sensor, startup, recovery, and performance checks, then copy one combined report directly from the app. |
+| **Built-in diagnostics** | Run support-oriented checks, copy a combined report, or create a privacy-scrubbed ZIP support bundle directly from the app. |
+| **Configurable motion** | Independently control settings, dialog, Summary transition, and sensor-card icon animations, with matching Web Monitor behavior. |
 | **Profiles and portability** | Save named profiles or export the complete setup to JSON for backup and transfer. |
 
 Sensor groups include **FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, App, and Other**. FPS and frame-time values appear when an enabled source provides them.
 
-## What's new in 1.3.1
+## What's new in 1.3.2
 
-- Added selectable App telemetry that follows the same dashboard, Summary Mode, Web Monitor, overlay, alert, profile, and export pipeline as hardware sensors.
-- Corrected **SiR Memory Usage** to use Task Manager-comparable private memory; the larger working set remains available as an optional detailed sensor.
-- Added a Diagnostics button to the dashboard header with six safe, support-oriented checks.
-- Diagnostic results stream into one resizable, selectable box and can be cancelled, cleared, combined, and copied for reporting.
+- Added a dedicated **Appearance → Animations** section with one master switch, individual effect controls, and Calm/Standard/Lively speed plus Gentle/Balanced/Expressive intensity presets.
+- Added symmetric fly-in/fly-out motion to Help, Diagnostics, update, import, and confirmation dialogs.
+- Added lightweight Summary transitions and animated sensor-card header icons to both the desktop dashboard and Web Monitor, plus matching motion across settings icons with collapsed content automatically paused.
+- Animation choices are included in named profiles and exported settings; the former settings-animation preference is migrated automatically.
+- Added a privacy-scrubbed **Create Support Bundle** action that warns first, automatically runs all six diagnostics in sequence, and packages their complete results with settings, sensor metadata, and runtime state into a reviewable ZIP.
+- Profile notifications and confirmations now use theme-aware in-app dialogs instead of native white Windows message boxes.
 
 See the [full changelog](./CHANGELOG.md) for every change and fix.
 
@@ -66,8 +69,9 @@ Get the latest Windows installer or portable build from [GitHub Releases](https:
 2. Leave **Settings → Monitoring → Sensor Sources → Built-in Sensors** enabled.
 3. Open **Monitoring → Visible Sensors** and **Sensor Selection** to choose and arrange the readings you want.
 4. Choose separate normal and Summary card presets under **Appearance → Layout**, or select **Custom** for either mode to resize its cards independently.
-5. Enable **Enhanced Hardware Sensors** only if you want the additional readings supported by your hardware.
-6. Optionally configure the overlay, alerts, Web Monitor, startup behavior, and a settings profile. Use the top-row **Diagnostics** button when preparing a support report.
+5. Fine-tune interface motion under **Appearance → Animations**, including the effects mirrored to the Web Monitor.
+6. Enable **Enhanced Hardware Sensors** only if you want the additional readings supported by your hardware.
+7. Optionally configure the overlay, alerts, Web Monitor, startup behavior, and a settings profile. Use **Diagnostics → Create Support Bundle** when preparing a privacy-scrubbed support archive.
 
 ## Sensor sources
 
@@ -110,6 +114,8 @@ Open **Diagnostics** from the dashboard's top row. The page contains six allowli
 
 Only one check runs at a time. Longer checks can be cancelled, and every result is appended to one resizable text box that can be copied into a bug report. Diagnostic execution is restricted to fixed bundled scripts and arguments; the page cannot run arbitrary commands.
 
+**Create Support Bundle** first shows a theme-aware warning, then clears the results box and runs all six checks sequentially. Passes, failures, and timeouts are all retained in the report; an explicit cancellation stops the suite and does not create a ZIP. After all checks finish, the app asks where to save a privacy-scrubbed bundle containing the diagnostic results, a fresh system report, settings, sensor catalogue, and runtime state.
+
 ## Dashboard and appearance
 
 ### Sensor controls
@@ -144,6 +150,7 @@ Normal and Summary geometry and card order are stored separately, so resizing or
 - Font family, size, bold text, and monospace value controls
 - Celsius or Fahrenheit temperature display
 - Optional glow-effect disable switch
+- Optional settings-animation disable switch
 
 ## On-screen overlay
 
@@ -194,7 +201,7 @@ Under **Settings → Backup & Restore**, you can:
 - Preview an imported profile before applying it
 - Apply immediately or apply and reload
 
-Profiles and exports include appearance settings, all settings-panel colors, separate normal/Summary layouts, Custom card sizes and card order, sensor choices, alert rules, data sources, Web Monitor options, overlay configuration, startup behavior, and update preferences.
+Profiles and exports include appearance settings, settings motion preferences, all settings-panel colors, separate normal/Summary layouts, Custom card sizes and card order, sensor choices, alert rules, data sources, Web Monitor options, overlay configuration, startup behavior, and update preferences.
 
 ## Digital PSU support
 

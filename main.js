@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, ipcMain, shell, screen, globalShortcut } = require('electron');
+const { app, BrowserWindow, Menu, Tray, ipcMain, shell, screen, globalShortcut, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
@@ -7,6 +7,7 @@ const { execFile, spawn } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 const { summarizeElectronAppMetrics } = require('./appTelemetry');
 const { getDiagnosticDefinition, listPublicDiagnostics } = require('./diagnosticsCatalog');
+const { createSupportZip, sanitizeSupportText, sanitizeSupportValue } = require('./supportBundle');
 // Discord Rich Presence (in-repo IPC helper)
 const DISCORD_CLIENT_ID = '1479994487215227094';
 let discordIpc = null;
@@ -1567,6 +1568,60 @@ ipcMain.handle('diagnostics:cancel', (_event, runId) => {
     return { ok: true };
   } catch (error) {
     return { ok: false, error: `Unable to cancel the diagnostic: ${error.message}` };
+  }
+});
+
+ipcMain.handle('diagnostics:create-support-bundle', async (_event, rendererPayload = {}) => {
+  try {
+    const rawPayload = JSON.stringify(rendererPayload || {});
+    if (Buffer.byteLength(rawPayload, 'utf8') > 4 * 1024 * 1024) {
+      return { ok: false, error: 'The support bundle data exceeds the 4 MB safety limit.' };
+    }
+
+    const identity = {
+      userName: (() => { try { return os.userInfo().username; } catch (error) { return ''; } })(),
+      hostName: (() => { try { return os.hostname(); } catch (error) { return ''; } })()
+    };
+    const generatedAt = new Date();
+    const systemReport = sanitizeSupportText(await buildSystemDiagnosticReport(), identity);
+    const sanitizedPayload = sanitizeSupportValue(JSON.parse(rawPayload), identity);
+    const manifest = {
+      formatVersion: 1,
+      app: 'SiR System Monitor',
+      appVersion: app.getVersion(),
+      generatedAt: generatedAt.toISOString(),
+      privacy: {
+        redacted: ['user name', 'computer name', 'user profile paths', 'IP addresses', 'MAC addresses', 'email addresses', 'hosts', 'tokens', 'passwords', 'credentials', 'custom sensor names'],
+        note: 'Review the included text and JSON files before sharing the archive.'
+      },
+      files: ['manifest.json', 'system-report.txt', 'diagnostics.txt', 'settings.json', 'sensor-catalog.json', 'runtime.json']
+    };
+    const files = {
+      'manifest.json': `${JSON.stringify(manifest, null, 2)}\n`,
+      'system-report.txt': `${systemReport.trim()}\n`,
+      'diagnostics.txt': `${String(sanitizedPayload.diagnostics || 'No diagnostic checks were run before the bundle was created.').trim()}\n`,
+      'settings.json': `${JSON.stringify(sanitizedPayload.settings || {}, null, 2)}\n`,
+      'sensor-catalog.json': `${JSON.stringify(sanitizedPayload.sensorCatalog || {}, null, 2)}\n`,
+      'runtime.json': `${JSON.stringify(sanitizedPayload.runtime || {}, null, 2)}\n`
+    };
+    const archive = createSupportZip(files, generatedAt);
+    const stamp = generatedAt.toISOString().replace(/[:.]/g, '-');
+    const saveOptions = {
+      title: 'Create SiR System Monitor Support Bundle',
+      defaultPath: path.join(app.getPath('documents'), `SiR-System-Monitor-Support-${stamp}.zip`),
+      buttonLabel: 'Create Bundle',
+      filters: [{ name: 'ZIP archive', extensions: ['zip'] }],
+      properties: ['createDirectory', 'showOverwriteConfirmation']
+    };
+    const ownerWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    const saveResult = ownerWindow
+      ? await dialog.showSaveDialog(ownerWindow, saveOptions)
+      : await dialog.showSaveDialog(saveOptions);
+    if (saveResult.canceled || !saveResult.filePath) return { ok: false, canceled: true };
+    await fs.promises.writeFile(saveResult.filePath, archive);
+    return { ok: true, filePath: saveResult.filePath, bytes: archive.length };
+  } catch (error) {
+    return { ok: false, error: `Unable to create the support bundle: ${error.message}` };
   }
 });
 

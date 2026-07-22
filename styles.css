@@ -16,6 +16,20 @@
   --layout-card-min-width: 300px;
   --layout-card-height: 360px;
   --layout-card-gap: 14px;
+  --motion-icon-duration: 4.8s;
+  --motion-focus-duration: 0.5s;
+  --motion-dialog-duration: 0.24s;
+  --motion-view-duration: 0.34s;
+  --motion-settings-group-duration: 0.32s;
+  --motion-settings-section-duration: 0.28s;
+  --motion-icon-lift: 1.5px;
+  --motion-icon-scale: 1.08;
+  --motion-focus-rotate: -8deg;
+  --motion-focus-scale: 1.2;
+  --motion-view-distance: 10px;
+  --motion-view-scale: 0.985;
+  --motion-dialog-distance: 20px;
+  --motion-disclosure-distance: 5px;
 }
 
 /* Theme: Blue */
@@ -88,6 +102,37 @@ body.no-glow *::after {
   text-shadow: none !important;
   box-shadow: none !important;
   filter: none !important;
+}
+
+body.no-settings-animations .settings-group-content,
+body.no-settings-animations .settings-section-content,
+body.no-settings-animations .settings-group-toggle-icon,
+body.no-settings-animations .settings-toggle-icon {
+  scroll-behavior: auto !important;
+  transition: none !important;
+}
+
+body:not(.no-settings-icon-animations) .sidebar i::before {
+  transform-origin: center;
+  animation: sensor-card-icon-live var(--motion-icon-duration) ease-in-out infinite;
+}
+
+body:not(.no-settings-icon-animations) .sidebar button:hover i::before,
+body:not(.no-settings-icon-animations) .sidebar button:focus-visible i::before,
+body:not(.no-settings-icon-animations) .sidebar label:hover i::before,
+body:not(.no-settings-icon-animations) .sidebar .sensor-item-row:hover i::before,
+body:not(.no-settings-icon-animations) .sidebar .overlay-cluster-title:hover i::before,
+body:not(.no-settings-icon-animations) .sidebar .overlay-inline-heading:hover i::before {
+  animation: sensor-card-icon-focus var(--motion-focus-duration) cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+body:not(.no-settings-icon-animations) .settings-group.is-collapsed .settings-group-content i::before,
+body:not(.no-settings-icon-animations) .settings-section.is-collapsed .settings-section-content i::before {
+  animation-play-state: paused;
+}
+
+body.no-settings-icon-animations .sidebar i::before {
+  animation: none !important;
 }
 
 body.font-bold {
@@ -1089,10 +1134,17 @@ body.sensor-order-dragging * {
   align-items: center;
   justify-content: center;
   padding: 16px;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity var(--motion-dialog-duration) ease, visibility 0s linear;
 }
 
 .setup-guide-modal.is-hidden {
-  display: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--motion-dialog-duration) ease, visibility 0s linear var(--motion-dialog-duration);
 }
 
 .setup-guide-dialog {
@@ -1107,6 +1159,24 @@ body.sensor-order-dragging * {
   display: flex;
   flex-direction: column;
   box-shadow: 0 28px 60px rgba(0, 0, 0, 0.5);
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transform-origin: 50% 45%;
+  transition: opacity var(--motion-dialog-duration) ease, transform var(--motion-dialog-duration) cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.setup-guide-modal.is-hidden .setup-guide-dialog {
+  opacity: 0;
+  transform: translateY(var(--motion-dialog-distance)) scale(var(--motion-view-scale));
+}
+
+body.no-dialog-animations .setup-guide-modal,
+body.no-dialog-animations .setup-guide-dialog {
+  transition: none !important;
+}
+
+body.no-dialog-animations .setup-guide-modal.is-hidden {
+  visibility: hidden;
 }
 
 .setup-guide-header,
@@ -1154,6 +1224,78 @@ body.sensor-order-dragging * {
   padding: 10px 12px;
   font-size: calc(15px * var(--font-scale));
   line-height: 1.5;
+}
+
+.themed-dialog {
+  width: min(560px, 94vw);
+  --accent: var(--settings-panel-accent-color);
+  --accent-light: var(--settings-panel-icon-color);
+  --icon-color: var(--settings-panel-icon-color);
+  --themed-dialog-base: var(--settings-panel-color, var(--bg-secondary));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--themed-dialog-base) 90%, var(--bg-tertiary)), color-mix(in srgb, var(--themed-dialog-base) 88%, var(--bg-primary)));
+}
+
+.themed-dialog > .setup-guide-header,
+.themed-dialog > .setup-guide-footer {
+  background: color-mix(in srgb, var(--themed-dialog-base) 82%, var(--bg-tertiary));
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--border-color));
+}
+
+.themed-dialog-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.themed-dialog-icon {
+  color: var(--accent-light);
+  flex: 0 0 auto;
+}
+
+.themed-dialog-body {
+  padding-top: 18px;
+}
+
+.themed-dialog-body p {
+  margin: 0;
+  color: var(--text-primary);
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
+.themed-dialog-detail[hidden],
+#themedDialogCancelBtn[hidden] {
+  display: none;
+}
+
+.themed-dialog-detail {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.themed-dialog-detail i {
+  color: var(--accent-light);
+  margin-top: 2px;
+}
+
+.themed-dialog-footer #themedDialogConfirmBtn {
+  border-color: color-mix(in srgb, var(--accent) 76%, var(--border-color));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-light) 76%, white), color-mix(in srgb, var(--accent) 90%, black));
+  color: #08111f;
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.themed-dialog-footer #themedDialogConfirmBtn:hover {
+  border-color: color-mix(in srgb, var(--accent-light) 78%, white);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-light) 82%, white), color-mix(in srgb, var(--accent) 94%, black));
+}
+
+.themed-dialog.is-success .themed-dialog-icon,
+.themed-dialog.is-warning .themed-dialog-icon,
+.themed-dialog.is-error .themed-dialog-icon {
+  color: var(--accent-light);
 }
 
 .diagnostics-dialog {
@@ -1345,11 +1487,30 @@ body.sensor-order-dragging * {
 }
 
 .diagnostics-footer {
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.diagnostics-bundle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-color: color-mix(in srgb, var(--accent-light) 68%, var(--border-color));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-light) 22%, var(--bg-tertiary)), color-mix(in srgb, var(--accent) 18%, var(--bg-secondary)));
+}
+
+.diagnostics-bundle-btn i {
+  color: var(--icon-color);
 }
 
 @media (max-width: 900px) {
   .diagnostics-test-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .diagnostics-footer {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1899,6 +2060,52 @@ body.layout-custom .sensor-group {
 
 .sensor-group:hover {
   border-color: var(--accent);
+}
+
+body:not(.no-sensor-icon-animations) .sensor-group .group-icon {
+  transform-origin: center;
+  animation: sensor-card-icon-live var(--motion-icon-duration) ease-in-out infinite;
+}
+
+body:not(.no-sensor-icon-animations) .sensor-group:nth-child(3n + 2) .group-icon {
+  animation-delay: -1.6s;
+}
+
+body:not(.no-sensor-icon-animations) .sensor-group:nth-child(3n) .group-icon {
+  animation-delay: -3.2s;
+}
+
+body:not(.no-sensor-icon-animations) .sensor-group:hover .group-icon {
+  animation: sensor-card-icon-focus var(--motion-focus-duration) cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+body.dashboard-view-to-summary .sensor-group {
+  animation: dashboard-to-summary var(--motion-view-duration) cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+body.dashboard-view-to-dashboard .sensor-group {
+  animation: dashboard-to-standard var(--motion-view-duration) cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes sensor-card-icon-live {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(calc(-1 * var(--motion-icon-lift))) scale(var(--motion-icon-scale)); }
+}
+
+@keyframes sensor-card-icon-focus {
+  0% { transform: rotate(0deg) scale(1); }
+  45% { transform: rotate(var(--motion-focus-rotate)) scale(var(--motion-focus-scale)); }
+  100% { transform: rotate(0deg) scale(1); }
+}
+
+@keyframes dashboard-to-summary {
+  from { opacity: 0.45; transform: translateY(var(--motion-view-distance)) scale(var(--motion-view-scale)); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes dashboard-to-standard {
+  from { opacity: 0.45; transform: translateY(calc(-0.8 * var(--motion-view-distance))) scale(var(--motion-view-scale)); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .sensor-group.resizing {
@@ -2718,6 +2925,13 @@ select.detection-select:hover {
   color: var(--accent-light);
   background: color-mix(in srgb, var(--accent) 13%, var(--bg-primary));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 23%, transparent);
+  transition: background 0.22s ease, box-shadow 0.22s ease, transform 0.22s ease;
+}
+
+.settings-group:not(.is-collapsed) > .settings-group-toggle-btn .settings-group-toggle-mark {
+  background: color-mix(in srgb, var(--accent) 19%, var(--bg-primary));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent);
+  transform: scale(1.035);
 }
 
 .settings-group-toggle-copy {
@@ -2761,24 +2975,41 @@ select.detection-select:hover {
 }
 
 .settings-group-content {
+  height: auto;
   max-height: none;
   margin: 0;
   padding: 5px 8px 8px;
   display: grid;
   gap: 0;
-  overflow: visible;
+  overflow: hidden;
   border: 0;
   border-radius: 0;
   background: color-mix(in srgb, var(--bg-primary) 60%, var(--bg-secondary));
   opacity: 1;
-  transform: none;
+  transform: translateY(0);
   box-shadow: none;
-  transition: none;
+  transition:
+    max-height var(--motion-settings-group-duration) ease-in-out,
+    opacity var(--motion-settings-group-duration) ease-in-out,
+    transform var(--motion-settings-group-duration) ease-in-out;
   container-type: inline-size;
 }
 
 .settings-group.is-collapsed > .settings-group-content {
-  display: none;
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(calc(-1 * var(--motion-disclosure-distance)));
+}
+
+.settings-group-content.is-settings-disclosure-animating,
+.settings-section-content.is-settings-disclosure-animating {
+  will-change: max-height, opacity, transform;
+}
+
+.settings-group-content.is-settings-disclosure-preparing,
+.settings-section-content.is-settings-disclosure-preparing {
+  transition: none !important;
 }
 
 .settings-group .settings-section,
@@ -2831,6 +3062,12 @@ select.detection-select:hover {
   border-radius: 8px;
   color: var(--accent-light);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.settings-section:not(.is-collapsed) > .settings-toggle-btn .settings-label-icon {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  transform: scale(1.04);
 }
 
 .settings-toggle-icon {
@@ -2842,22 +3079,31 @@ select.detection-select:hover {
 }
 
 .settings-section-content {
+  height: auto;
   max-height: none;
   margin: 0 5px 8px;
   padding: 5px 9px 13px 13px;
   gap: 9px;
-  overflow: visible;
+  overflow: hidden;
   border: 0;
   border-left: 2px solid color-mix(in srgb, var(--accent) 42%, transparent);
   border-radius: 0 0 0 8px;
   background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 58%);
   opacity: 1;
-  transform: none;
-  transition: none;
+  transform: translateY(0);
+  transition:
+    max-height var(--motion-settings-section-duration) ease-in-out,
+    margin-bottom var(--motion-settings-section-duration) ease-in-out,
+    opacity var(--motion-settings-section-duration) ease-in-out,
+    transform var(--motion-settings-section-duration) ease-in-out;
 }
 
 .settings-section.is-collapsed > .settings-section-content {
-  display: none;
+  max-height: 0;
+  margin-bottom: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(calc(-0.8 * var(--motion-disclosure-distance)));
 }
 
 .settings-group.is-settings-search-hidden,
@@ -3035,6 +3281,27 @@ select.detection-select:hover {
 .settings-switch-grid {
   grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
   gap: 7px;
+}
+
+.animation-master-row {
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border-color));
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-secondary));
+}
+
+.animation-switch-grid,
+.animation-preset-grid {
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+.animation-switch-grid.is-disabled,
+.animation-preset-grid.is-disabled {
+  opacity: 0.48;
+  filter: saturate(0.55);
+}
+
+.animation-switch-grid input:disabled,
+.animation-preset-grid select:disabled {
+  cursor: not-allowed;
 }
 
 .source-switch-grid {
