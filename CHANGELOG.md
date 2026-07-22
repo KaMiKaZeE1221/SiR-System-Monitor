@@ -1,7 +1,5 @@
 # Changelog
 
-> Note: Entries for older builds are estimated from development history and may not map 1:1 to exact historic commit dates.
-
 ## 1.3.2 - 2026-07-22
 
 ### Added
