@@ -1,7 +1,7 @@
 {
   "name": "sir-system-monitor",
   "productName": "SiR System Monitor",
-  "version": "1.3.2",
+  "version": "1.3.5",
   "description": "Electron app for monitoring system statistics",
   "author": "SiR_KaMiKaZeE",
   "repository": {
@@ -30,8 +30,11 @@
     "test:settings-ui": "node scripts/test-settings-redesign.js",
     "test:animations": "node scripts/test-animation-system.js",
     "test:app-telemetry": "node scripts/test-app-telemetry.js",
+    "test:performance": "node scripts/test-performance-pass.js",
     "test:diagnostics-ui": "node scripts/test-diagnostics-ui.js",
     "test:support-bundle": "node scripts/test-support-bundle.js",
+    "test:discord": "node scripts/test-discord-integration.js",
+    "test:display": "node scripts/test-display-summary-drag.js",
     "test:version": "node scripts/test-version-consistency.js",
     "test:layout": "node scripts/test-layout-presets.js",
     "benchmark:sensors": "node scripts/benchmark-sensor-host.js",
@@ -104,6 +107,9 @@
       "!V1.3.0/**",
       "!V1.3.1/**",
       "!V1.3.2/**",
+      "!V1.3.3/**",
+      "!V1.3.4/**",
+      "!V1.3.5/**",
       "!scripts/build-installer.js",
       "!scripts/run-electron-builder.js"
     ],
@@ -121,7 +127,7 @@
       }
     ],
     "directories": {
-      "output": "V1.3.2"
+      "output": "V1.3.5"
     },
     "icon": "SiR_SM_Circle.ico",
     "win": {
@@ -132,7 +138,7 @@
       ]
     },
     "portable": {
-    "artifactName": "SiR-System-Monitor-Portable-1.3.2.${ext}"
+      "artifactName": "SiR-System-Monitor-Portable-1.3.5.${ext}"
     },
     "publish": [
       {
@@ -142,7 +148,7 @@
       }
     ],
     "nsis": {
-      "artifactName": "SiR-System-Monitor-Setup-1.3.2.${ext}",
+      "artifactName": "SiR-System-Monitor-Setup-1.3.5.${ext}",
       "license": "build/LICENSE.txt",
       "include": "build/installer.nsh",
       "oneClick": false,

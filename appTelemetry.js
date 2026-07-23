@@ -32,8 +32,12 @@ function summarizeElectronAppMetrics(processMetrics, options = {}) {
     gpuProcessCount: 0
   });
 
+  const taskManagerMemoryBytes = Math.max(0, finiteNumber(options.taskManagerMemoryBytes));
+
   return {
     ...totals,
+    taskManagerMemoryBytes: taskManagerMemoryBytes > 0 ? taskManagerMemoryBytes : totals.privateBytes,
+    taskManagerMemorySource: taskManagerMemoryBytes > 0 ? 'windows-private-working-set' : 'electron-private-commit-fallback',
     processCount: metrics.length,
     windowCount: Math.max(0, Math.round(finiteNumber(options.windowCount))),
     visibleWindowCount: Math.max(0, Math.round(finiteNumber(options.visibleWindowCount))),
@@ -58,13 +62,16 @@ function createAppSensor(id, name, value, units, options = {}) {
 function buildAppTelemetrySensors(runtimeStats = {}, context = {}) {
   const bytesToMegabytes = (value) => Math.max(0, finiteNumber(value)) / (1024 * 1024);
   const count = (value) => Math.max(0, Math.round(finiteNumber(value)));
-  const primaryMemoryBytes = finiteNumber(runtimeStats.privateBytes) > 0
-    ? runtimeStats.privateBytes
-    : runtimeStats.workingSetBytes;
+  const primaryMemoryBytes = finiteNumber(runtimeStats.taskManagerMemoryBytes) > 0
+    ? runtimeStats.taskManagerMemoryBytes
+    : (finiteNumber(runtimeStats.privateBytes) > 0
+      ? runtimeStats.privateBytes
+      : runtimeStats.workingSetBytes);
 
   return [
     createAppSensor('app_cpu_usage', 'SiR CPU Usage', runtimeStats.cpuPercent, '%', { sensorType: 'load', defaultEnabled: true }),
     createAppSensor('app_memory_usage', 'SiR Memory Usage', bytesToMegabytes(primaryMemoryBytes), 'MB', { sensorType: 'data', defaultEnabled: true }),
+    createAppSensor('app_private_commit_memory', 'SiR Private Commit', bytesToMegabytes(runtimeStats.privateBytes), 'MB'),
     createAppSensor('app_working_set_memory', 'SiR Working Set Memory', bytesToMegabytes(runtimeStats.workingSetBytes), 'MB'),
     createAppSensor('app_peak_memory', 'SiR Peak Memory', bytesToMegabytes(runtimeStats.peakWorkingSetBytes), 'MB'),
     createAppSensor('app_process_count', 'SiR Process Count', count(runtimeStats.processCount), 'processes', { sensorType: 'count', defaultEnabled: true }),

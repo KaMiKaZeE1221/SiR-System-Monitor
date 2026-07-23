@@ -6,6 +6,7 @@ const os = require('os');
 const { execFile, spawn } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 const { summarizeElectronAppMetrics } = require('./appTelemetry');
+const { sampleWindowsPrivateWorkingSets } = require('./windowsProcessMemory');
 const { getDiagnosticDefinition, listPublicDiagnostics } = require('./diagnosticsCatalog');
 const { createSupportZip, sanitizeSupportText, sanitizeSupportValue } = require('./supportBundle');
 // Discord Rich Presence (in-repo IPC helper)
@@ -67,7 +68,8 @@ let autoUpdaterInitialized = false;
 let updateDownloadedInfo = null;
 let discordActivityInterval = null;
 let discordReconnectInterval = null;
-const DISCORD_ACTIVITY_INTERVAL_MS = 5_000;
+let discordSessionStartedAt = 0;
+const DISCORD_ACTIVITY_INTERVAL_MS = 30_000;
 const DISCORD_RECONNECT_INTERVAL_MS = 5_000;
 let currentOverlayHotkey = null;
 let elevationRestartInProgress = false;
@@ -79,6 +81,35 @@ let activeDiagnosticRun = null;
 let diagnosticRunCounter = 0;
 
 const DIAGNOSTIC_OUTPUT_LIMIT_BYTES = 1024 * 1024;
+const APP_RUNTIME_SAMPLE_INTERVAL_MS = 1000;
+const MONITORING_REFRESH_MIN_MS = 1000;
+const MONITORING_REFRESH_MAX_MS = 5000;
+let cachedAppRuntimeSample = null;
+let monitoringTickInterval = null;
+let monitoringRefreshIntervalMs = MONITORING_REFRESH_MIN_MS;
+
+function stopMonitoringClock() {
+  if (monitoringTickInterval) {
+    clearInterval(monitoringTickInterval);
+    monitoringTickInterval = null;
+  }
+}
+
+function restartMonitoringClock(intervalMs) {
+  const numeric = Number(intervalMs);
+  monitoringRefreshIntervalMs = Number.isFinite(numeric)
+    ? Math.max(MONITORING_REFRESH_MIN_MS, Math.min(MONITORING_REFRESH_MAX_MS, Math.round(numeric)))
+    : MONITORING_REFRESH_MIN_MS;
+  stopMonitoringClock();
+  monitoringTickInterval = setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send('monitoring:tick', {
+      timestamp: Date.now(),
+      intervalMs: monitoringRefreshIntervalMs
+    });
+  }, monitoringRefreshIntervalMs);
+  return monitoringRefreshIntervalMs;
+}
 
 function isRunningAsAdministrator() {
   if (process.platform !== 'win32') return false;
@@ -110,14 +141,40 @@ function formatGpuIdentifier(value) {
   return Number.isFinite(numeric) ? `0x${Math.max(0, numeric).toString(16).padStart(4, '0').toUpperCase()}` : 'Unknown';
 }
 
-async function buildSystemDiagnosticReport() {
+function collectAppRuntimeSample(options = {}) {
+  const now = Date.now();
+  if (
+    options.force !== true &&
+    cachedAppRuntimeSample &&
+    (now - cachedAppRuntimeSample.sampledAt) < APP_RUNTIME_SAMPLE_INTERVAL_MS
+  ) {
+    return cachedAppRuntimeSample;
+  }
+
   const processMetrics = app.getAppMetrics();
   const windows = BrowserWindow.getAllWindows();
+  const privateWorkingSet = sampleWindowsPrivateWorkingSets(processMetrics.map((metric) => metric && metric.pid));
   const runtime = summarizeElectronAppMetrics(processMetrics, {
+    taskManagerMemoryBytes: privateWorkingSet.supported ? privateWorkingSet.totalBytes : 0,
     windowCount: windows.length,
     visibleWindowCount: windows.filter((window) => !window.isDestroyed() && window.isVisible()).length,
     uptimeSeconds: process.uptime()
   });
+
+  cachedAppRuntimeSample = {
+    sampledAt: now,
+    processMetrics,
+    privateWorkingSet,
+    runtime
+  };
+  return cachedAppRuntimeSample;
+}
+
+async function buildSystemDiagnosticReport() {
+  const runtimeSample = collectAppRuntimeSample({ force: true });
+  const processMetrics = runtimeSample.processMetrics;
+  const privateWorkingSet = runtimeSample.privateWorkingSet;
+  const runtime = runtimeSample.runtime;
   const cpus = os.cpus();
   const displays = screen.getAllDisplays();
   let gpuInfo = {};
@@ -141,7 +198,8 @@ async function buildSystemDiagnosticReport() {
     `Renderer processes: ${runtime.rendererProcessCount}`,
     `Utility processes: ${runtime.utilityProcessCount}`,
     `GPU processes: ${runtime.gpuProcessCount}`,
-    `Private memory (Task Manager comparable): ${formatDiagnosticMegabytes(runtime.privateBytes)}`,
+    `Memory (Task Manager private working set): ${formatDiagnosticMegabytes(runtime.taskManagerMemoryBytes)}`,
+    `Private commit: ${formatDiagnosticMegabytes(runtime.privateBytes)}`,
     `Working set (includes shared pages): ${formatDiagnosticMegabytes(runtime.workingSetBytes)}`,
     `Peak working set: ${formatDiagnosticMegabytes(runtime.peakWorkingSetBytes)}`,
     `Aggregate CPU usage: ${runtime.cpuPercent.toFixed(2)}%`,
@@ -174,7 +232,8 @@ async function buildSystemDiagnosticReport() {
 
   lines.push('', '[Electron Process Detail]');
   processMetrics.forEach((metric) => {
-    lines.push(`${metric.type || 'Unknown'} PID ${metric.pid}: CPU ${Number(metric.cpu && metric.cpu.percentCPUUsage || 0).toFixed(2)}%, private ${formatDiagnosticMegabytes(Number(metric.memory && metric.memory.privateBytes || 0) * 1024)}, working set ${formatDiagnosticMegabytes(Number(metric.memory && metric.memory.workingSetSize || 0) * 1024)}`);
+    const privateWorkingSetBytes = privateWorkingSet.processBytes[metric.pid];
+    lines.push(`${metric.type || 'Unknown'} PID ${metric.pid}: CPU ${Number(metric.cpu && metric.cpu.percentCPUUsage || 0).toFixed(2)}%, private working set ${formatDiagnosticMegabytes(privateWorkingSetBytes)}, private commit ${formatDiagnosticMegabytes(Number(metric.memory && metric.memory.privateBytes || 0) * 1024)}, working set ${formatDiagnosticMegabytes(Number(metric.memory && metric.memory.workingSetSize || 0) * 1024)}`);
   });
 
   lines.push('', '[GPU Feature Status]', JSON.stringify(app.getGPUFeatureStatus(), null, 2));
@@ -888,6 +947,9 @@ function initDiscordRPC() {
   if (!discordIpc || typeof discordIpc.connect !== 'function') return;
   if (!appBehaviorSettings.enableDiscordRichPresence) return;
   if (discordIpc.connected) {
+    if (!discordSessionStartedAt) {
+      discordSessionStartedAt = Math.floor(Date.now() / 1000);
+    }
     setDiscordActivity();
     if (!discordActivityInterval) {
       discordActivityInterval = setInterval(setDiscordActivity, DISCORD_ACTIVITY_INTERVAL_MS);
@@ -898,6 +960,9 @@ function initDiscordRPC() {
   try {
     discordIpc.connect(DISCORD_CLIENT_ID).then(() => {
       if (!appBehaviorSettings.enableDiscordRichPresence) return;
+      if (!discordSessionStartedAt) {
+        discordSessionStartedAt = Math.floor(Date.now() / 1000);
+      }
       sendDiscordPresenceStatus({ enabled: true, connected: true });
       setDiscordActivity();
       if (!discordActivityInterval) {
@@ -925,17 +990,22 @@ function setDiscordActivity() {
   }
   try {
     const appVersion = String(app.getVersion() || '').trim() || 'unknown';
-    // Updated presence payload per provided example
+    if (!discordSessionStartedAt) {
+      discordSessionStartedAt = Math.floor(Date.now() / 1000);
+    }
     discordIpc.setActivity({
-      details: 'Monitoring System Stats',
-      state: `v${appVersion}`,
-      startTimestamp: Math.floor(Date.now() / 1000),
-      largeImageKey: 'sir_sm_circle',
-      largeImageText: 'Numbani',
-      smallImageKey: 'sir_sm_circle',
-      smallImageText: `v${appVersion}`,
-      partyMax: 5000,
-      joinSecret: 'MTI4NzM0OjFpMmhuZToxMjMxMjM=',
+      type: 0,
+      details: 'Monitoring system performance',
+      state: `Desktop dashboard | v${appVersion}`,
+      timestamps: {
+        start: discordSessionStartedAt
+      },
+      assets: {
+        large_image: 'sir_sm_circle',
+        large_text: 'SiR System Monitor',
+        small_image: 'sir_sm_circle',
+        small_text: `Version ${appVersion}`
+      },
       buttons: [
         { label: 'Project', url: 'https://github.com/KaMiKaZeE1221/SiR-System-Monitor' }
       ]
@@ -970,7 +1040,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      backgroundThrottling: false
+      backgroundThrottling: true
     }
   });
 
@@ -1005,6 +1075,7 @@ function createWindow() {
       clearTimeout(startupRevealTimer);
       startupRevealTimer = null;
     }
+    stopMonitoringClock();
     shutdownOverlaySubsystem();
     mainWindow = null;
   });
@@ -1081,7 +1152,7 @@ function createOverlayWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      backgroundThrottling: false
+      backgroundThrottling: true
     }
   });
 
@@ -1453,6 +1524,7 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
+  stopMonitoringClock();
   shutdownOverlaySubsystem();
 });
 
@@ -1526,12 +1598,17 @@ ipcMain.handle('app:restart-elevated', async (_event, options = {}) => {
 });
 
 ipcMain.handle('app:get-runtime-stats', () => {
-  const windows = BrowserWindow.getAllWindows();
-  return summarizeElectronAppMetrics(app.getAppMetrics(), {
-    windowCount: windows.length,
-    visibleWindowCount: windows.filter((window) => !window.isDestroyed() && window.isVisible()).length,
-    uptimeSeconds: process.uptime()
-  });
+  return collectAppRuntimeSample().runtime;
+});
+
+ipcMain.handle('monitoring:set-refresh-interval', (event, intervalMs) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+    return { ok: false, error: 'The monitoring window is unavailable.' };
+  }
+  return {
+    ok: true,
+    intervalMs: restartMonitoringClock(intervalMs)
+  };
 });
 
 ipcMain.handle('diagnostics:list', () => listPublicDiagnostics());
@@ -1647,6 +1724,7 @@ ipcMain.handle('app-behavior:set', (_event, nextSettings) => {
       initDiscordRPC();
     } else {
       clearDiscordIntervals();
+      discordSessionStartedAt = 0;
       sendDiscordPresenceStatus({ enabled: false, connected: false });
       if (discordIpc) {
         try { discordIpc.clearActivity(); } catch (e) { /* ignore */ }

@@ -94,6 +94,8 @@ let updateInProgress = false;
 let rerunUpdateRequested = false;
 let updateLoopActive = false;
 let nextUpdateDueAt = 0;
+let mainProcessUpdateClockActive = false;
+let updateClockRequestId = 0;
 let lastSuccessfulSensorReadAt = 0;
 let lastSensorReadDurationMs = 0;
 let lastUpdateCycleDurationMs = 0;
@@ -112,6 +114,8 @@ const FONT_BOLD_KEY = 'fontBold';
 const DISABLE_GLOW_EFFECTS_KEY = 'disableGlowEffects';
 const DISABLE_SETTINGS_ANIMATIONS_KEY = 'disableSettingsAnimations';
 const ANIMATION_SETTINGS_KEY = 'animationSettings';
+const DISPLAY_MODE_KEY = 'displayMode';
+const CUSTOM_COLOR_PALETTES_KEY = 'customColorPalettesV1';
 const DEFAULT_ANIMATION_SETTINGS = Object.freeze({
   enabled: true,
   settingsDropdowns: true,
@@ -195,6 +199,8 @@ const SETTINGS_SNAPSHOT_KEYS = [
   SENSOR_CATEGORY_SELECTION_KEY,
   SENSOR_CUSTOM_NAMES_KEY,
   'customColors',
+  CUSTOM_COLOR_PALETTES_KEY,
+  DISPLAY_MODE_KEY,
   VIEW_MODE_KEY,
   LAYOUT_PRESET_KEY,
   CUSTOM_LAYOUT_CONFIG_KEY,
@@ -457,6 +463,10 @@ let activeSensorAlertState = {};
 let pendingVisibilityRefresh = false;
 let lastUiRenderAt = 0;
 let forceNextUiRender = true;
+let motionVisibilityObserver = null;
+let ambientMotionTimer = null;
+let ambientMotionCursor = 0;
+let ambientMotionDurationMs = ANIMATION_SPEED_PRESETS.standard.iconMs;
 let currentTemperatureUnit = 'c';
 let webMonitorServer = null;
 let webMonitorSockets = new Set();
@@ -879,18 +889,25 @@ function buildWebMonitorHtml(authToken = '') {
     .title { font-size: calc(22px * var(--font-scale)); font-weight: var(--font-weight-bold); color: var(--text-primary); }
     .meta { color: var(--text-secondary); font-size: calc(13px * var(--font-scale)); }
     .summary-toggle { border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); border-radius: 7px; padding: 6px 10px; cursor: pointer; font-size: calc(12px * var(--font-scale)); font-weight: var(--font-weight-bold); }
+    .summary-toggle[hidden] { display: none; }
     .summary-toggle:hover { background: var(--border-color); color: var(--text-primary); }
+    .summary-toggle.active { border-color: var(--accent-light); background: linear-gradient(135deg, color-mix(in srgb, var(--accent-light) 76%, white), color-mix(in srgb, var(--accent) 88%, black)); color: #08111f; }
+    body.display-light { color-scheme: light; }
+    body.display-dark { color-scheme: dark; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--layout-card-min-width)), 1fr)); gap: var(--layout-card-gap); }
     body.layout-stacked .grid { grid-template-columns: minmax(0, 1fr); }
     body.layout-custom .grid { grid-template-columns: repeat(36, minmax(0, 1fr)); grid-auto-rows: 8px; grid-auto-flow: dense; }
-    .card { border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); padding: 14px; height: var(--layout-card-height); overflow: hidden; display: flex; flex-direction: column; }
+    .card { border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); padding: 14px; height: var(--layout-card-height); overflow: hidden; display: flex; flex-direction: column; contain: layout style; }
     body.layout-custom .card { height: auto; min-width: 0; }
     .card h3 { margin: 0 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--bg-tertiary); font-size: calc(13px * var(--font-scale)); letter-spacing: .08em; color: var(--block-header-color); text-transform: uppercase; font-weight: var(--font-weight-bold); display: flex; align-items: center; gap: 8px; }
     .group-icon { color: var(--icon-color); font-size: calc(14px * var(--font-scale)); line-height: 1; }
-    body:not(.no-sensor-icon-animations) .card .group-icon { transform-origin: center; animation: web-sensor-icon-live var(--motion-icon-duration) ease-in-out infinite; }
-    body:not(.no-sensor-icon-animations) .card:nth-child(3n + 2) .group-icon { animation-delay: -1.6s; }
-    body:not(.no-sensor-icon-animations) .card:nth-child(3n) .group-icon { animation-delay: -3.2s; }
+    body:not(.no-sensor-icon-animations) .card .group-icon { transform-origin: center; }
+    body:not(.no-sensor-icon-animations) .card .group-icon.ambient-icon-motion { animation: web-sensor-icon-live var(--motion-focus-duration) ease-in-out 1; }
     body:not(.no-sensor-icon-animations) .card:hover .group-icon { animation: web-sensor-icon-focus var(--motion-focus-duration) cubic-bezier(.22,.61,.36,1); }
+    body.app-inactive .card .group-icon,
+    body.motion-visibility-ready:not(.no-sensor-icon-animations) .card .group-icon:not(.motion-in-view) { animation-play-state: paused !important; }
+    body.app-inactive *, body.app-inactive *::before, body.app-inactive *::after { animation-play-state: paused !important; }
+    body.motion-visibility-ready:not(.no-sensor-icon-animations) .card .group-icon.motion-in-view { will-change: transform; }
     body.web-view-to-summary .card { animation: web-dashboard-to-summary var(--motion-view-duration) cubic-bezier(.22,.61,.36,1) both; }
     body.web-view-to-dashboard .card { animation: web-dashboard-to-standard var(--motion-view-duration) cubic-bezier(.22,.61,.36,1) both; }
     @keyframes web-sensor-icon-live { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(calc(-1 * var(--motion-icon-lift))) scale(var(--motion-icon-scale)); } }
@@ -1015,6 +1032,7 @@ function buildWebMonitorHtml(authToken = '') {
         <div id="meta" class="meta">Waiting for data...</div>
       </div>
       <div class="header-right">
+        <button id="summaryResetToggle" class="summary-toggle" type="button" hidden>Reset Stats</button>
         <button id="summaryModeToggle" class="summary-toggle" type="button">Summary Mode</button>
       </div>
     </div>
@@ -1057,8 +1075,61 @@ function buildWebMonitorHtml(authToken = '') {
       layoutPreset: 'balanced',
       layoutSignature: '',
       viewTransitionTimer: null,
-      viewTransitionDurationMs: 340
+      viewTransitionDurationMs: 340,
+      ambientMotionTimer: null,
+      ambientMotionCursor: 0,
+      ambientMotionDurationMs: 4800
     };
+    const motionVisibilityObserver = typeof IntersectionObserver === 'function'
+      ? new IntersectionObserver((entries) => {
+          entries.forEach((entry) => {
+            entry.target.classList.toggle('motion-in-view', entry.isIntersecting);
+          });
+        }, { rootMargin: '96px' })
+      : null;
+
+    function observeWebMotionTargets(root) {
+      if (!motionVisibilityObserver || !root) return;
+      root.querySelectorAll('.card .group-icon').forEach((icon) => {
+        if (icon.classList.contains('motion-observed')) return;
+        icon.classList.add('motion-observed');
+        motionVisibilityObserver.observe(icon);
+      });
+      document.body.classList.add('motion-visibility-ready');
+      scheduleWebAmbientIconMotion();
+    }
+
+    function scheduleWebAmbientIconMotion(delayMs = 250) {
+      if (domState.ambientMotionTimer !== null) clearTimeout(domState.ambientMotionTimer);
+      domState.ambientMotionTimer = setTimeout(runWebAmbientIconMotionCycle, Math.max(0, Number(delayMs) || 0));
+    }
+
+    function runWebAmbientIconMotionCycle() {
+      document.querySelectorAll('.ambient-icon-motion').forEach((icon) => {
+        icon.classList.remove('ambient-icon-motion');
+      });
+      if (document.body.classList.contains('app-inactive') || document.body.classList.contains('no-sensor-icon-animations')) {
+        scheduleWebAmbientIconMotion(Math.max(1000, domState.ambientMotionDurationMs));
+        return;
+      }
+
+      const icons = Array.from(document.querySelectorAll('.card .group-icon.motion-in-view'))
+        .filter((icon) => icon.offsetParent !== null && !icon.matches(':hover'));
+      if (icons.length) {
+        const icon = icons[domState.ambientMotionCursor % icons.length];
+        domState.ambientMotionCursor = (domState.ambientMotionCursor + 1) % icons.length;
+        icon.classList.add('ambient-icon-motion');
+      }
+      scheduleWebAmbientIconMotion(domState.ambientMotionDurationMs + 200);
+    }
+
+    function syncWebActivityState() {
+      const active = !document.hidden &&
+        (typeof document.hasFocus !== 'function' || document.hasFocus());
+      document.body.classList.toggle('app-inactive', !active);
+      if (active) scheduleWebAmbientIconMotion(100);
+      else if (domState.ambientMotionTimer !== null) clearTimeout(domState.ambientMotionTimer);
+    }
 
     const SUMMARY_MODE_STORAGE_KEY = 'sirWebSummaryMode';
 
@@ -1130,8 +1201,10 @@ function buildWebMonitorHtml(authToken = '') {
       root.style.setProperty('--motion-view-distance', intensity.viewDistance + 'px');
       root.style.setProperty('--motion-view-scale', String(intensity.viewScale));
       domState.viewTransitionDurationMs = speed.viewMs;
+      domState.ambientMotionDurationMs = speed.iconMs;
       document.body.classList.toggle('no-view-animations', !normalized.enabled || !normalized.viewTransitions);
       document.body.classList.toggle('no-sensor-icon-animations', !normalized.enabled || !normalized.sensorIcons);
+      scheduleWebAmbientIconMotion(100);
       if (!normalized.enabled || !normalized.viewTransitions) {
         document.body.classList.remove('web-view-to-summary', 'web-view-to-dashboard');
         if (domState.viewTransitionTimer !== null) clearTimeout(domState.viewTransitionTimer);
@@ -1284,11 +1357,20 @@ function buildWebMonitorHtml(authToken = '') {
       }
 
       const units = sensor.units || '';
-      const minText = formatSummaryMetric(summary.min, units, sensor.name);
-      const maxText = formatSummaryMetric(summary.max, units, sensor.name);
+      const minText = summary.minFormatted
+        ? escapeHtml(summary.minFormatted)
+        : formatSummaryMetric(summary.min, units, sensor.name);
+      const averageText = summary.averageFormatted
+        ? escapeHtml(summary.averageFormatted)
+        : formatSummaryMetric(summary.average, units, sensor.name);
+      const maxText = summary.maxFormatted
+        ? escapeHtml(summary.maxFormatted)
+        : formatSummaryMetric(summary.max, units, sensor.name);
 
       return '<div class="summary-line">' +
         '<span class="summary-part"><span class="summary-label">Min</span><span class="summary-value">' + minText + '</span></span>' +
+        '<span class="summary-sep">•</span>' +
+        '<span class="summary-part"><span class="summary-label">Avg</span><span class="summary-value">' + averageText + '</span></span>' +
         '<span class="summary-sep">•</span>' +
         '<span class="summary-part"><span class="summary-label">Max</span><span class="summary-value">' + maxText + '</span></span>' +
       '</div>';
@@ -1304,7 +1386,10 @@ function buildWebMonitorHtml(authToken = '') {
       const button = document.getElementById('summaryModeToggle');
       if (button) {
         button.textContent = domState.summaryMode ? 'Exit Summary Mode' : 'Summary Mode';
+        button.classList.toggle('active', domState.summaryMode);
       }
+      const resetButton = document.getElementById('summaryResetToggle');
+      if (resetButton) resetButton.hidden = !domState.summaryMode;
       if (persist) {
         try {
           localStorage.setItem(SUMMARY_MODE_STORAGE_KEY, domState.summaryMode ? 'true' : 'false');
@@ -1338,6 +1423,10 @@ function buildWebMonitorHtml(authToken = '') {
     function applySyncedSettings(settings) {
       const root = document.documentElement;
       if (!settings || typeof settings !== 'object') return;
+      const displayMode = settings.displayMode === 'light' ? 'light' : 'dark';
+      document.body.classList.toggle('display-light', displayMode === 'light');
+      document.body.classList.toggle('display-dark', displayMode === 'dark');
+      root.style.colorScheme = displayMode;
 
       applyViewMode(settings.viewMode || 'standard');
       const activeLayoutPreset = domState.summaryMode
@@ -1511,6 +1600,7 @@ function buildWebMonitorHtml(authToken = '') {
         rowsWrap.scrollTop = previousScroll;
       });
 
+      observeWebMotionTargets(grid);
     }
 
     function updateGridValues(groups, orderedGroups) {
@@ -1621,7 +1711,7 @@ function buildWebMonitorHtml(authToken = '') {
       domState.structureKey = '';
     });
     async function load() {
-      if (loading) return;
+      if (loading || document.hidden) return;
       loading = true;
       try {
         const summaryParam = domState.summaryMode ? '1' : '0';
@@ -1643,6 +1733,13 @@ function buildWebMonitorHtml(authToken = '') {
       }
     }
 
+    document.addEventListener('visibilitychange', () => {
+      syncWebActivityState();
+      if (!document.hidden) load();
+    });
+    window.addEventListener('focus', syncWebActivityState);
+    window.addEventListener('blur', syncWebActivityState);
+    syncWebActivityState();
     load();
     setInterval(load, 1000);
   </script>
@@ -1759,15 +1856,20 @@ function publishWebMonitorPayload(mode, externalText) {
         expanded: expandedGraphSensors.has(sensor.id),
         history,
         summary: (includeSummary && hasNumericValue) ? (() => {
-          const stats = sensorSessionStats[sensor.id];
-          if (!stats || !Number.isFinite(stats.count) || stats.count <= 0) {
-            return { min: null, max: null, count: 0 };
+          const stats = summarizeSensorSessionStats(sensorSessionStats[sensor.id]);
+          if (!stats) {
+            return { min: null, average: null, max: null, count: 0 };
           }
           const normalizedMin = normalizeValueForDisplay(sensorForFormatting, stats.min);
+          const normalizedAverage = normalizeValueForDisplay(sensorForFormatting, stats.average);
           const normalizedMax = normalizeValueForDisplay(sensorForFormatting, stats.max);
           return {
             min: normalizedMin.value,
+            average: normalizedAverage.value,
             max: normalizedMax.value,
+            minFormatted: formatSensorNumericValue(sensorForFormatting, stats.min),
+            averageFormatted: formatSensorNumericValue(sensorForFormatting, stats.average),
+            maxFormatted: formatSensorNumericValue(sensorForFormatting, stats.max),
             count: stats.count
           };
         })() : null
@@ -1791,6 +1893,8 @@ function publishWebMonitorPayload(mode, externalText) {
       disableGlow: localStorage.getItem(DISABLE_GLOW_EFFECTS_KEY) === 'true',
       animations: loadAnimationSettings(),
       temperatureUnit: selectedTempUnit,
+      displayMode: getResolvedDisplayMode(),
+      displayModePreference: getDisplayModePreference(),
       summaryMode: summaryModeEnabled,
       viewMode: normalizeViewMode(localStorage.getItem(VIEW_MODE_KEY) || 'standard'),
       layoutPreset: selectedLayoutPreset,
@@ -1944,9 +2048,29 @@ async function startWebMonitorServer(settingsInput) {
       const reqUrl = new URL(req.url || '/', 'http://localhost');
 
       if (!isAuthorized(reqUrl, req)) {
-        const wantsJson = reqUrl.pathname === '/api/monitor';
+        const wantsJson = reqUrl.pathname.startsWith('/api/');
         res.writeHead(401, { 'Content-Type': wantsJson ? 'application/json; charset=utf-8' : 'text/plain; charset=utf-8' });
         res.end(wantsJson ? JSON.stringify({ error: 'Unauthorized' }) : 'Unauthorized');
+        return;
+      }
+
+      if (reqUrl.pathname === '/api/session/reset') {
+        if (settings.readOnlyApiMode) {
+          res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ error: 'Read-only API mode is enabled' }));
+          return;
+        }
+        if (String(req.method || 'GET').toUpperCase() !== 'POST') {
+          res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8', Allow: 'POST' });
+          res.end(JSON.stringify({ error: 'Method not allowed' }));
+          return;
+        }
+        resetSensorSessionStatistics();
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store, no-cache, must-revalidate'
+        });
+        res.end(JSON.stringify({ ok: true }));
         return;
       }
 
@@ -3317,23 +3441,25 @@ async function applyImportedSettingsNow() {
 
   // Apply immediate visual settings where possible
   try {
-    if (parsed.theme) ThemeManager.setTheme(String(parsed.theme).replace(/^"|"$/g, ''));
-    // update theme button active state
-    try {
-      const themeButtons = document.querySelectorAll('.theme-btn');
-      if (themeButtons && themeButtons.length && parsed.theme) {
-        themeButtons.forEach((b) => b.classList.remove('active'));
-        const btn = document.querySelector(`.theme-btn[data-theme="${String(parsed.theme).replace(/^"|"$/g, '')}"]`);
-        if (btn) btn.classList.add('active');
-      }
-    } catch (e) {}
+    ThemeManager.setTheme(
+      parsed.theme ? String(parsed.theme).replace(/^"|"$/g, '') : ThemeManager.getTheme(),
+      { persist: false, updatePalettes: false }
+    );
+    DisplayModeManager.apply(
+      parsed[DISPLAY_MODE_KEY] ? String(parsed[DISPLAY_MODE_KEY]).replace(/^"|"$/g, '') : getDisplayModePreference(),
+      { persist: false }
+    );
   } catch (e) {}
   try {
-    if (parsed[ CUSTOM_COLORS_KEY ]) {
+    if (!parsed[CUSTOM_COLOR_PALETTES_KEY] && parsed[CUSTOM_COLORS_KEY]) {
       const raw = parsed[ CUSTOM_COLORS_KEY ];
       let colors = null;
       try { colors = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (e) { colors = null; }
-      if (colors) CustomColorManager.applyColors(colors);
+      if (colors) {
+        localStorage.removeItem(CUSTOM_COLOR_PALETTES_KEY);
+        CustomColorManager.saveColors(colors, 'dark');
+        DisplayModeManager.apply(getDisplayModePreference(), { persist: false });
+      }
     }
   } catch (e) {}
 
@@ -4063,7 +4189,7 @@ function setupWindowResize() {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
         card.classList.remove('resizing');
-        card.draggable = true;
+        card.draggable = false;
 
         const finalHeight = snapToStep(card.getBoundingClientRect().height, heightSnap, minHeight, maxHeight);
         const finalSpanMatch = (card.style.gridColumn || '').match(/span\s+(\d+)/i);
@@ -4102,104 +4228,244 @@ function applyWindowOrder() {
   saveWindowOrder(finalOrder);
 }
 
+function reorderCardIdsForDrop(allIds, sourceId, targetId, before = true) {
+  const uniqueOrder = Array.from(new Set((Array.isArray(allIds) ? allIds : []).filter(Boolean)));
+  if (!uniqueOrder.includes(sourceId)) return uniqueOrder;
+  const nextOrder = uniqueOrder.filter((id) => id !== sourceId);
+  const targetIndex = nextOrder.indexOf(targetId);
+  const insertionIndex = targetIndex < 0
+    ? nextOrder.length
+    : targetIndex + (before ? 0 : 1);
+  nextOrder.splice(insertionIndex, 0, sourceId);
+  return nextOrder;
+}
+
 function setupWindowDragAndDrop() {
   const container = document.getElementById('statsContainer');
-  if (!container) return;
+  if (!container || container.dataset.cardDragReady === 'true') return;
+  container.dataset.cardDragReady = 'true';
 
-  let draggedId = null;
-  let draggedCard = null;
-  let dropTargetId = null;
-  let dropBefore = true;
-  const cards = Array.from(container.querySelectorAll('.sensor-group'));
-
-  const persistOrder = () => {
-    const nextOrder = Array.from(container.querySelectorAll('.sensor-group')).map((group) => group.id);
-    saveWindowOrder(nextOrder);
-  };
-
-  const clearDropIndicators = () => {
-    cards.forEach((entry) => entry.classList.remove('drag-over-before', 'drag-over-after'));
-    container.classList.remove('drag-over-end');
-    dropTargetId = null;
-  };
-
-  const setDropIndicator = (targetCard, before) => {
-    if (!targetCard || targetCard === draggedCard) return;
-    if (dropTargetId === targetCard.id && dropBefore === before) return;
-
-    clearDropIndicators();
-    dropTargetId = targetCard.id;
-    dropBefore = before;
-
-    targetCard.classList.add(before ? 'drag-over-before' : 'drag-over-after');
-  };
-
-  cards.forEach((card) => {
-    card.draggable = true;
-
-    card.addEventListener('dragstart', (event) => {
-      draggedId = card.id;
-      draggedCard = card;
-      dropTargetId = null;
-      dropBefore = true;
-      card.classList.add('dragging');
-      event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', card.id);
-    });
-
-    card.addEventListener('dragend', () => {
-      draggedId = null;
-      draggedCard = null;
-      cards.forEach((entry) => entry.classList.remove('dragging'));
-      clearDropIndicators();
-    });
+  Array.from(container.querySelectorAll('.sensor-group')).forEach((card) => {
+    card.draggable = false;
   });
 
-  container.addEventListener('dragover', (event) => {
-    event.preventDefault();
-    if (!draggedId) return;
+  const marker = document.createElement('div');
+  marker.className = 'card-drop-marker';
+  marker.hidden = true;
+  document.body.appendChild(marker);
 
-    const targetCard = event.target.closest('.sensor-group');
-    if (!targetCard || targetCard === draggedCard) {
-      clearDropIndicators();
-      container.classList.add('drag-over-end');
-    } else {
-      container.classList.remove('drag-over-end');
-      const rect = targetCard.getBoundingClientRect();
-      const centerX = rect.left + (rect.width / 2);
-      const centerY = rect.top + (rect.height / 2);
-      const useHorizontalOrder = Math.abs(event.clientY - centerY) <= Math.min(72, rect.height * 0.3);
-      const before = useHorizontalOrder ? event.clientX < centerX : event.clientY < centerY;
-      setDropIndicator(targetCard, before);
-    }
-    event.dataTransfer.dropEffect = 'move';
-  });
+  let dragState = null;
+  let autoScrollFrame = null;
+  let suppressClickUntil = 0;
 
-  container.addEventListener('drop', (event) => {
-    event.preventDefault();
-    if (!draggedId) return;
+  const getVisualCards = (sourceId) => Array.from(container.querySelectorAll('.sensor-group'))
+    .filter((card) => card.id !== sourceId && card.offsetParent !== null)
+    .map((card) => ({ card, rect: card.getBoundingClientRect() }))
+    .filter((entry) => entry.rect.width > 0 && entry.rect.height > 0);
 
-    const sourceId = event.dataTransfer.getData('text/plain') || draggedId;
-    const sourceCard = document.getElementById(sourceId);
-    if (!sourceCard) return;
+  const resolvePlacement = (clientX, clientY, sourceId) => {
+    const entries = getVisualCards(sourceId);
+    if (!entries.length) return null;
+    entries.sort((a, b) => (a.rect.top - b.rect.top) || (a.rect.left - b.rect.left));
 
-    if (dropTargetId && dropTargetId !== sourceId) {
-      const targetCard = document.getElementById(dropTargetId);
-      if (targetCard) {
-        if (dropBefore) {
-          container.insertBefore(sourceCard, targetCard);
-        } else {
-          container.insertBefore(sourceCard, targetCard.nextSibling);
-        }
+    const rows = [];
+    entries.forEach((entry) => {
+      const existing = rows.find((row) => Math.abs(row.top - entry.rect.top) <= 32);
+      if (existing) {
+        existing.entries.push(entry);
+        existing.top = Math.min(existing.top, entry.rect.top);
+        existing.bottom = Math.max(existing.bottom, entry.rect.bottom);
+      } else {
+        rows.push({ top: entry.rect.top, bottom: entry.rect.bottom, entries: [entry] });
       }
-      persistOrder();
-    } else if (container.classList.contains('drag-over-end')) {
-      container.appendChild(sourceCard);
-      persistOrder();
+    });
+    rows.sort((a, b) => a.top - b.top);
+    rows.forEach((row) => row.entries.sort((a, b) => a.rect.left - b.rect.left));
+
+    if (clientY < rows[0].top - 18) {
+      return { target: rows[0].entries[0], before: true, orientation: 'horizontal' };
+    }
+    const lastRow = rows[rows.length - 1];
+    if (clientY > lastRow.bottom + 18) {
+      return {
+        target: lastRow.entries[lastRow.entries.length - 1],
+        before: false,
+        orientation: 'horizontal'
+      };
     }
 
-    clearDropIndicators();
+    let selectedRow = rows[rows.length - 1];
+    for (let index = 0; index < rows.length; index += 1) {
+      // Compare row origins rather than row bottoms. Dense custom grids can place
+      // another row beside a much taller card, so bottom-based boundaries overlap.
+      const nextTop = rows[index + 1] ? rows[index + 1].top : rows[index].bottom;
+      const boundary = rows[index + 1]
+        ? (rows[index].top + nextTop) / 2
+        : rows[index].bottom;
+      if (clientY <= boundary) {
+        selectedRow = rows[index];
+        break;
+      }
+    }
+    const nextEntry = selectedRow.entries.find((entry) => clientX < (entry.rect.left + (entry.rect.width / 2)));
+    if (nextEntry) return { target: nextEntry, before: true, orientation: 'vertical' };
+    return {
+      target: selectedRow.entries[selectedRow.entries.length - 1],
+      before: false,
+      orientation: 'vertical'
+    };
+  };
+
+  const updateMarker = (placement) => {
+    if (!placement || !placement.target) {
+      marker.hidden = true;
+      return;
+    }
+    const rect = placement.target.card.getBoundingClientRect();
+    marker.hidden = false;
+    marker.classList.toggle('is-vertical', placement.orientation === 'vertical');
+    marker.classList.toggle('is-horizontal', placement.orientation !== 'vertical');
+    if (placement.orientation === 'vertical') {
+      marker.style.left = `${Math.round(placement.before ? rect.left - 2 : rect.right - 2)}px`;
+      marker.style.top = `${Math.round(rect.top)}px`;
+      marker.style.height = `${Math.round(rect.height)}px`;
+      marker.style.width = '4px';
+    } else {
+      marker.style.left = `${Math.round(rect.left)}px`;
+      marker.style.top = `${Math.round(placement.before ? rect.top - 2 : rect.bottom - 2)}px`;
+      marker.style.width = `${Math.round(rect.width)}px`;
+      marker.style.height = '4px';
+    }
+  };
+
+  const updatePlacement = () => {
+    if (!dragState || !dragState.active) return;
+    dragState.placement = resolvePlacement(dragState.clientX, dragState.clientY, dragState.sourceId);
+    updateMarker(dragState.placement);
+  };
+
+  const runAutoScroll = () => {
+    autoScrollFrame = null;
+    if (!dragState || !dragState.active) return;
+    const rect = container.getBoundingClientRect();
+    const edge = Math.min(90, Math.max(48, rect.height * 0.12));
+    let speed = 0;
+    if (dragState.clientY < rect.top + edge) {
+      speed = -Math.ceil(18 * (1 - Math.max(0, dragState.clientY - rect.top) / edge));
+    } else if (dragState.clientY > rect.bottom - edge) {
+      speed = Math.ceil(18 * (1 - Math.max(0, rect.bottom - dragState.clientY) / edge));
+    }
+    if (speed !== 0) {
+      const previousScrollTop = container.scrollTop;
+      container.scrollTop += speed;
+      if (container.scrollTop !== previousScrollTop) updatePlacement();
+    }
+    autoScrollFrame = window.requestAnimationFrame(runAutoScroll);
+  };
+
+  const finishDrag = (commit) => {
+    if (!dragState) return;
+    const state = dragState;
+    dragState = null;
+    if (autoScrollFrame !== null) {
+      window.cancelAnimationFrame(autoScrollFrame);
+      autoScrollFrame = null;
+    }
+    marker.hidden = true;
+    document.body.classList.remove('card-drag-active');
+    state.sourceCard.classList.remove('dragging');
+
+    if (commit && state.active && state.placement && state.placement.target) {
+      const allCards = Array.from(container.querySelectorAll('.sensor-group'));
+      const order = reorderCardIdsForDrop(
+        allCards.map((card) => card.id),
+        state.sourceId,
+        state.placement.target.card.id,
+        state.placement.before
+      );
+      const cardById = new Map(allCards.map((card) => [card.id, card]));
+      order.forEach((id) => {
+        const card = cardById.get(id);
+        if (card) container.appendChild(card);
+      });
+      saveWindowOrder(order, state.layoutMode);
+      suppressClickUntil = Date.now() + 250;
+    }
+  };
+
+  container.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || dragState) return;
+    const title = event.target.closest('.sensor-group-title');
+    const sourceCard = title ? title.closest('.sensor-group') : null;
+    if (!title || !sourceCard || !sourceCard.id || event.target.closest('button, input, select, textarea, a')) return;
+    dragState = {
+      pointerId: event.pointerId,
+      sourceId: sourceCard.id,
+      sourceCard,
+      layoutMode: getCurrentLayoutMode(),
+      startX: event.clientX,
+      startY: event.clientY,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      placement: null,
+      active: false
+    };
   });
+
+  document.addEventListener('pointermove', (event) => {
+    if (!dragState || event.pointerId !== dragState.pointerId) return;
+    dragState.clientX = event.clientX;
+    dragState.clientY = event.clientY;
+    if (!dragState.active && Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY) >= 6) {
+      dragState.active = true;
+      document.body.classList.add('card-drag-active');
+      dragState.sourceCard.classList.add('dragging');
+      autoScrollFrame = window.requestAnimationFrame(runAutoScroll);
+    }
+    if (dragState.active) {
+      event.preventDefault();
+      updatePlacement();
+    }
+  }, { passive: false });
+
+  document.addEventListener('pointerup', (event) => {
+    if (!dragState || event.pointerId !== dragState.pointerId) return;
+    finishDrag(true);
+  });
+  document.addEventListener('pointercancel', (event) => {
+    if (!dragState || event.pointerId !== dragState.pointerId) return;
+    finishDrag(false);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && dragState) finishDrag(false);
+  });
+  container.addEventListener('click', (event) => {
+    if (Date.now() < suppressClickUntil) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  }, true);
+}
+
+function setupStackedDashboardWheelScroll() {
+  const container = document.getElementById('statsContainer');
+  if (!container || container.dataset.stackedWheelReady === 'true') return;
+  container.dataset.stackedWheelReady = 'true';
+
+  container.addEventListener('wheel', (event) => {
+    if (!document.body.classList.contains('layout-stacked') || event.ctrlKey) return;
+    const eventTarget = event.target instanceof Element ? event.target : null;
+    if (!eventTarget || !eventTarget.closest('.sensor-group')) return;
+
+    let delta = Number(event.deltaY || event.deltaX || 0);
+    if (event.deltaMode === 1) delta *= 18;
+    if (event.deltaMode === 2) delta *= Math.max(1, container.clientHeight);
+    if (!Number.isFinite(delta) || delta === 0) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    container.scrollTop += delta;
+  }, { capture: true, passive: false });
 }
 
 function applyFontSize(size) {
@@ -4333,12 +4599,14 @@ function applyAnimationSettings(settings, options = {}) {
   const settingsIconMotionDisabled = !normalized.enabled || !normalized.settingsIcons;
 
   applyAnimationPresetVariables(normalized);
+  ambientMotionDurationMs = ANIMATION_SPEED_PRESETS[normalized.speed].iconMs;
 
   document.body.classList.toggle('no-settings-animations', settingsMotionDisabled);
   document.body.classList.toggle('no-dialog-animations', dialogMotionDisabled);
   document.body.classList.toggle('no-view-animations', viewMotionDisabled);
   document.body.classList.toggle('no-sensor-icon-animations', iconMotionDisabled);
   document.body.classList.toggle('no-settings-icon-animations', settingsIconMotionDisabled);
+  scheduleAmbientIconMotion(100);
   if (settingsMotionDisabled) settleSettingsDisclosureAnimations();
   if (viewMotionDisabled) {
     document.body.classList.remove('dashboard-view-to-summary', 'dashboard-view-to-dashboard');
@@ -5073,7 +5341,7 @@ function applySummaryCardLayout() {
 function syncCardInteractionState() {
   const cards = document.querySelectorAll('.sensor-group');
   cards.forEach((card) => {
-    card.draggable = true;
+    card.draggable = false;
   });
 }
 
@@ -5164,6 +5432,7 @@ function applySummaryMode(enabled, options = {}) {
       : '<i class="bi bi-grid-1x2-fill" aria-hidden="true"></i><span>Summary Mode</span>';
     button.classList.toggle('active', summaryModeEnabled);
   }
+  updateSummarySessionUi();
 
   if (summaryModeEnabled && debugModeEnabled) {
     applyDebugMode(false);
@@ -5324,9 +5593,34 @@ function updateSensorSessionStats(selectedGroupedSensors) {
   });
 }
 
+function summarizeSensorSessionStats(stats) {
+  if (!stats || !Number.isFinite(stats.min) || !Number.isFinite(stats.max) || !Number.isFinite(stats.sum) || !Number.isFinite(stats.count) || stats.count <= 0) {
+    return null;
+  }
+  return {
+    min: stats.min,
+    average: stats.sum / stats.count,
+    max: stats.max,
+    count: stats.count
+  };
+}
+
+function updateSummarySessionUi() {
+  const controls = document.getElementById('summarySessionControls');
+  if (controls) controls.hidden = !summaryModeEnabled;
+}
+
+function resetSensorSessionStatistics() {
+  Object.keys(sensorSessionStats).forEach((sensorId) => delete sensorSessionStats[sensorId]);
+  updateSensorSessionStats(latestSelectedGroupedSensors || createEmptyGroupedBuckets());
+  updateSummarySessionUi();
+  invalidateRenderGroupCache();
+  renderAllDynamicGroups(latestSelectedGroupedSensors || createEmptyGroupedBuckets(), { force: true });
+}
+
 function renderSensorSummary(sensor) {
-  const stats = sensor && sensor.id ? sensorSessionStats[sensor.id] : null;
-  if (!stats || !Number.isFinite(stats.min) || !Number.isFinite(stats.max) || !Number.isFinite(stats.count) || stats.count <= 0) {
+  const stats = summarizeSensorSessionStats(sensor && sensor.id ? sensorSessionStats[sensor.id] : null);
+  if (!stats) {
     const rawValue = sensor ? sensor.value : null;
     if (typeof rawValue === 'string') {
       const staticText = rawValue.trim() || '--';
@@ -5336,11 +5630,14 @@ function renderSensorSummary(sensor) {
   }
 
   const minText = formatSensorNumericValue(sensor, stats.min);
+  const averageText = formatSensorNumericValue(sensor, stats.average);
   const maxText = formatSensorNumericValue(sensor, stats.max);
 
   return `
     <div class="stat-summary-line" aria-label="Session summary">
       <span class="summary-metric"><span class="summary-metric-label">Min</span><span class="summary-metric-value">${escapeHtml(minText)}</span></span>
+      <span class="summary-separator">•</span>
+      <span class="summary-metric"><span class="summary-metric-label">Avg</span><span class="summary-metric-value">${escapeHtml(averageText)}</span></span>
       <span class="summary-separator">•</span>
       <span class="summary-metric"><span class="summary-metric-label">Max</span><span class="summary-metric-value">${escapeHtml(maxText)}</span></span>
     </div>
@@ -5697,7 +5994,8 @@ function buildGroupRenderSignature(sensors) {
           : 'none';
       }
       const displayLabel = String(sensor && sensor.displayLabel ? sensor.displayLabel : getFinalDisplayLabel(sensor));
-      return `${sensor.id}|${displayLabel}|${normalizedValue}|${sensor.units || ''}|${expanded}|summary:${summaryModeEnabled ? '1' : '0'}|${summarySignature}`;
+      const alertSeverity = activeSensorAlertState[sensor.id]?.severity || '';
+      return `${sensor.id}|${displayLabel}|${normalizedValue}|${sensor.units || ''}|${expanded}|alert:${alertSeverity}|summary:${summaryModeEnabled ? '1' : '0'}|${summarySignature}`;
     })
     .join('||');
 }
@@ -5746,6 +6044,75 @@ function renderAllDynamicGroups(selected, options = {}) {
   renderDynamicGroup('drivesSensorsDynamic', selected.drives);
   renderDynamicGroup('appSensorsDynamic', selected.app);
   renderDynamicGroup('externalSensorsDynamic', selected.other);
+}
+
+function refreshMotionVisibilityTargets(root = document) {
+  if (!motionVisibilityObserver || !root || typeof root.querySelectorAll !== 'function') return;
+  root.querySelectorAll('.sensor-group .group-icon, .sidebar i').forEach((icon) => {
+    if (icon.classList.contains('motion-observed')) return;
+    icon.classList.add('motion-observed');
+    motionVisibilityObserver.observe(icon);
+  });
+}
+
+function scheduleAmbientIconMotion(delayMs = 250) {
+  clearTimeout(ambientMotionTimer);
+  ambientMotionTimer = setTimeout(runAmbientIconMotionCycle, Math.max(0, Number(delayMs) || 0));
+}
+
+function runAmbientIconMotionCycle() {
+  document.querySelectorAll('.ambient-icon-motion').forEach((icon) => {
+    icon.classList.remove('ambient-icon-motion');
+  });
+
+  const body = document.body;
+  const animationsEnabled = !body.classList.contains('app-inactive') &&
+    (!body.classList.contains('no-sensor-icon-animations') || !body.classList.contains('no-settings-icon-animations'));
+  if (!animationsEnabled) {
+    scheduleAmbientIconMotion(Math.max(1000, ambientMotionDurationMs));
+    return;
+  }
+
+  const sensorIcons = body.classList.contains('no-sensor-icon-animations')
+    ? []
+    : Array.from(document.querySelectorAll('.sensor-group .group-icon.motion-in-view'));
+  const settingsIcons = body.classList.contains('no-settings-icon-animations') || !body.classList.contains('monitoring-mode')
+    ? []
+    : Array.from(document.querySelectorAll('.sidebar i.motion-in-view'));
+  const candidates = sensorIcons.concat(settingsIcons)
+    .filter((icon) => icon.offsetParent !== null && !icon.matches(':hover'));
+
+  if (candidates.length) {
+    const icon = candidates[ambientMotionCursor % candidates.length];
+    ambientMotionCursor = (ambientMotionCursor + 1) % candidates.length;
+    icon.classList.add('ambient-icon-motion');
+  }
+
+  scheduleAmbientIconMotion(ambientMotionDurationMs + 200);
+}
+
+function initializeMotionVisibilityTracking() {
+  if (typeof IntersectionObserver !== 'function') return;
+  motionVisibilityObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      entry.target.classList.toggle('motion-in-view', entry.isIntersecting);
+    });
+  }, { rootMargin: '96px' });
+  document.body.classList.add('motion-visibility-ready');
+  refreshMotionVisibilityTargets();
+  scheduleAmbientIconMotion();
+}
+
+function syncDesktopActivityState() {
+  const active = !document.hidden &&
+    (typeof document.hasFocus !== 'function' || document.hasFocus());
+  document.body.classList.toggle('app-inactive', !active);
+  if (active) scheduleAmbientIconMotion(100);
+  else clearTimeout(ambientMotionTimer);
+  if (active && pendingVisibilityRefresh) {
+    invalidateRenderGroupCache();
+    renderAllDynamicGroups(latestSelectedGroupedSensors || createEmptyGroupedBuckets(), { force: true });
+  }
 }
 
 function normalizeSensorSearchText(value) {
@@ -5894,6 +6261,7 @@ function renderSensorOptions(groupedSensors) {
     .join('');
 
   container.innerHTML = html || '<div class="settings-note">No other sensors detected</div>';
+  refreshMotionVisibilityTargets(container);
   applySensorSelectionFilter();
   refreshSensorAlertEditor(groupedSensors);
 }
@@ -6328,12 +6696,45 @@ function enrichGroupedSensorsWithRealtime(groupedSensors, externalData) {
   return base;
 }
 
+function updateDynamicGroupValuesInPlace(container, sensors) {
+  if (summaryModeEnabled || !Array.isArray(sensors) || !sensors.length) return false;
+  if (sensors.some((sensor) => expandedGraphSensors.has(sensor.id))) return false;
+
+  const rows = Array.from(container.children);
+  if (rows.length !== sensors.length || rows.some((row) => !row.classList.contains('stat'))) return false;
+
+  for (let index = 0; index < sensors.length; index += 1) {
+    const sensor = sensors[index];
+    const row = rows[index];
+    if (row.dataset.sensorId !== encodeURIComponent(sensor.id)) return false;
+
+    const label = row.querySelector('.stat-label');
+    const value = row.querySelector('.stat-value');
+    if (!label || !value) return false;
+
+    const nextLabel = String(sensor.displayLabel || getFinalDisplayLabel(sensor));
+    const nextValue = formatSensorValue(sensor);
+    if (label.textContent !== nextLabel) label.textContent = nextLabel;
+    if (value.textContent !== nextValue) value.textContent = nextValue;
+
+    const alertSeverity = activeSensorAlertState[sensor.id]?.severity || '';
+    row.classList.toggle('stat-alert-warning', alertSeverity === 'warning');
+    row.classList.toggle('stat-alert-critical', alertSeverity === 'critical');
+  }
+
+  return true;
+}
+
 function renderDynamicGroup(containerId, sensors) {
   const container = document.getElementById(containerId);
   if (!container) return;
 
   const nextSignature = buildGroupRenderSignature(sensors);
   if (renderGroupSignatureCache[containerId] === nextSignature) return;
+  if (updateDynamicGroupValuesInPlace(container, sensors)) {
+    renderGroupSignatureCache[containerId] = nextSignature;
+    return;
+  }
   renderGroupSignatureCache[containerId] = nextSignature;
 
   if (!sensors || !sensors.length) {
@@ -6537,6 +6938,19 @@ const BASE_COLOR_DEFAULTS = {
   settingsPanelAccent: '#0066ff',
   settingsPanelIcon: '#3f95ff'
 };
+const LIGHT_COLOR_DEFAULTS = {
+  font: '#202731',
+  sensorLabel: '#526173',
+  sensorValue: '#0066d9',
+  icon: '#0066d9',
+  graph: '#0066d9',
+  blockHeader: '#0057c7',
+  outline: '#c5cfdb',
+  background: '#f4f7fb',
+  settingsPanel: '#edf2f7',
+  settingsPanelAccent: '#0066d9',
+  settingsPanelIcon: '#005fc7'
+};
 const THEME_ACCENT_LIGHT_MAP = {
   blue: '#3f95ff',
   purple: '#b85cff',
@@ -6554,12 +6968,38 @@ const THEME_ACCENT_MAP = {
   orange: '#ff7a00'
 };
 
-function getThemeDefaults(themeName) {
+function normalizeDisplayMode(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return ['light', 'dark', 'system'].includes(normalized) ? normalized : 'dark';
+}
+
+function getDisplayModePreference() {
+  return normalizeDisplayMode(localStorage.getItem(DISPLAY_MODE_KEY) || 'dark');
+}
+
+function getSystemDisplayMode() {
+  try {
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  } catch (error) {
+    return 'dark';
+  }
+}
+
+function getResolvedDisplayMode(preference = getDisplayModePreference()) {
+  const normalized = normalizeDisplayMode(preference);
+  return normalized === 'system' ? getSystemDisplayMode() : normalized;
+}
+
+function getThemeDefaults(themeName, displayMode = getResolvedDisplayMode()) {
   const key = String(themeName || 'blue').toLowerCase();
-  const accentLight = THEME_ACCENT_LIGHT_MAP[key] || BASE_COLOR_DEFAULTS.sensorValue;
-  const accent = THEME_ACCENT_MAP[key] || BASE_COLOR_DEFAULTS.blockHeader;
+  const isLight = displayMode === 'light';
+  const base = isLight ? LIGHT_COLOR_DEFAULTS : BASE_COLOR_DEFAULTS;
+  const accentLight = isLight
+    ? (THEME_ACCENT_MAP[key] || base.sensorValue)
+    : (THEME_ACCENT_LIGHT_MAP[key] || base.sensorValue);
+  const accent = THEME_ACCENT_MAP[key] || base.blockHeader;
   return {
-    ...BASE_COLOR_DEFAULTS,
+    ...base,
     sensorValue: accentLight,
     icon: accentLight,
     graph: accentLight,
@@ -6589,63 +7029,71 @@ function adjustHexColor(hex, delta) {
 }
 
 const CustomColorManager = {
-  getColors(themeName) {
-    const defaults = getThemeDefaults(themeName || localStorage.getItem('theme') || 'blue');
+  normalizeColors(colors, themeName, displayMode) {
+    const defaults = getThemeDefaults(themeName || localStorage.getItem('theme') || 'blue', displayMode);
+    const source = colors && typeof colors === 'object' ? colors : {};
+    return Object.fromEntries(
+      Object.keys(defaults).map((key) => [key, normalizeHexColor(source[key], defaults[key])])
+    );
+  },
+  getPalettes(themeName) {
+    const theme = themeName || localStorage.getItem('theme') || 'blue';
+    let parsed = {};
+    let hasSavedPalettes = false;
     try {
-      const raw = localStorage.getItem(CUSTOM_COLORS_KEY);
-      const parsed = raw ? JSON.parse(raw) : {};
-      return {
-        font: normalizeHexColor(parsed.font, defaults.font),
-        sensorLabel: normalizeHexColor(parsed.sensorLabel, defaults.sensorLabel),
-        sensorValue: normalizeHexColor(parsed.sensorValue, defaults.sensorValue),
-        icon: normalizeHexColor(parsed.icon, defaults.icon),
-        graph: normalizeHexColor(parsed.graph, defaults.graph),
-        blockHeader: normalizeHexColor(parsed.blockHeader, defaults.blockHeader),
-        outline: normalizeHexColor(parsed.outline, defaults.outline),
-        background: normalizeHexColor(parsed.background, defaults.background),
-        settingsPanel: normalizeHexColor(parsed.settingsPanel, defaults.settingsPanel),
-        settingsPanelAccent: normalizeHexColor(parsed.settingsPanelAccent, defaults.settingsPanelAccent),
-        settingsPanelIcon: normalizeHexColor(parsed.settingsPanelIcon, defaults.settingsPanelIcon)
-      };
+      const raw = localStorage.getItem(CUSTOM_COLOR_PALETTES_KEY);
+      hasSavedPalettes = !!raw;
+      parsed = raw ? JSON.parse(raw) : {};
     } catch (error) {
-      return { ...defaults };
+      parsed = {};
     }
-  },
-  saveColors(colors) {
-    const defaults = getThemeDefaults(localStorage.getItem('theme') || 'blue');
-    const normalized = {
-      font: normalizeHexColor(colors && colors.font, defaults.font),
-      sensorLabel: normalizeHexColor(colors && colors.sensorLabel, defaults.sensorLabel),
-      sensorValue: normalizeHexColor(colors && colors.sensorValue, defaults.sensorValue),
-      icon: normalizeHexColor(colors && colors.icon, defaults.icon),
-      graph: normalizeHexColor(colors && colors.graph, defaults.graph),
-      blockHeader: normalizeHexColor(colors && colors.blockHeader, defaults.blockHeader),
-      outline: normalizeHexColor(colors && colors.outline, defaults.outline),
-      background: normalizeHexColor(colors && colors.background, defaults.background),
-      settingsPanel: normalizeHexColor(colors && colors.settingsPanel, defaults.settingsPanel),
-      settingsPanelAccent: normalizeHexColor(colors && colors.settingsPanelAccent, defaults.settingsPanelAccent),
-      settingsPanelIcon: normalizeHexColor(colors && colors.settingsPanelIcon, defaults.settingsPanelIcon)
+    let legacyDark = {};
+    try {
+      legacyDark = JSON.parse(localStorage.getItem(CUSTOM_COLORS_KEY) || '{}');
+    } catch (error) {
+      legacyDark = {};
+    }
+    const palettes = {
+      dark: this.normalizeColors(parsed.dark || legacyDark, theme, 'dark'),
+      light: this.normalizeColors(parsed.light, theme, 'light')
     };
+    if (!hasSavedPalettes) {
+      localStorage.setItem(CUSTOM_COLOR_PALETTES_KEY, JSON.stringify(palettes));
+    }
+    return palettes;
+  },
+  savePalettes(palettes, themeName) {
+    const theme = themeName || localStorage.getItem('theme') || 'blue';
+    const normalized = {
+      dark: this.normalizeColors(palettes && palettes.dark, theme, 'dark'),
+      light: this.normalizeColors(palettes && palettes.light, theme, 'light')
+    };
+    localStorage.setItem(CUSTOM_COLOR_PALETTES_KEY, JSON.stringify(normalized));
+    return normalized;
+  },
+  getColors(themeName, displayMode = getResolvedDisplayMode()) {
+    const mode = displayMode === 'light' ? 'light' : 'dark';
+    return this.getPalettes(themeName)[mode];
+  },
+  saveColors(colors, displayMode = getResolvedDisplayMode()) {
+    const theme = localStorage.getItem('theme') || 'blue';
+    const mode = displayMode === 'light' ? 'light' : 'dark';
+    const palettes = this.getPalettes(theme);
+    palettes[mode] = this.normalizeColors(colors, theme, mode);
+    const normalizedPalettes = this.savePalettes(palettes, theme);
+    const normalized = normalizedPalettes[mode];
+    // Preserve the legacy key so older profile readers still receive a complete palette.
     localStorage.setItem(CUSTOM_COLORS_KEY, JSON.stringify(normalized));
+    return normalized;
   },
-  applyColors(colors) {
-    const defaults = getThemeDefaults(localStorage.getItem('theme') || 'blue');
-    const normalized = {
-      font: normalizeHexColor(colors && colors.font, defaults.font),
-      sensorLabel: normalizeHexColor(colors && colors.sensorLabel, defaults.sensorLabel),
-      sensorValue: normalizeHexColor(colors && colors.sensorValue, defaults.sensorValue),
-      icon: normalizeHexColor(colors && colors.icon, defaults.icon),
-      graph: normalizeHexColor(colors && colors.graph, defaults.graph),
-      blockHeader: normalizeHexColor(colors && colors.blockHeader, defaults.blockHeader),
-      outline: normalizeHexColor(colors && colors.outline, defaults.outline),
-      background: normalizeHexColor(colors && colors.background, defaults.background),
-      settingsPanel: normalizeHexColor(colors && colors.settingsPanel, defaults.settingsPanel),
-      settingsPanelAccent: normalizeHexColor(colors && colors.settingsPanelAccent, defaults.settingsPanelAccent),
-      settingsPanelIcon: normalizeHexColor(colors && colors.settingsPanelIcon, defaults.settingsPanelIcon)
-    };
+  applyColors(colors, displayMode = getResolvedDisplayMode()) {
+    const mode = displayMode === 'light' ? 'light' : 'dark';
+    const normalized = this.normalizeColors(colors, localStorage.getItem('theme') || 'blue', mode);
+    const secondaryDelta = mode === 'light' ? -8 : 19;
+    const tertiaryDelta = mode === 'light' ? -17 : 32;
 
     document.body.style.setProperty('--text-primary', normalized.font);
-    document.body.style.setProperty('--text-secondary', normalized.font);
+    document.body.style.setProperty('--text-secondary', normalized.sensorLabel);
     document.body.style.setProperty('--sensor-label-color', normalized.sensorLabel);
     document.body.style.setProperty('--sensor-value-color', normalized.sensorValue);
     document.body.style.setProperty('--icon-color', normalized.icon);
@@ -6653,42 +7101,115 @@ const CustomColorManager = {
     document.body.style.setProperty('--block-header-color', normalized.blockHeader);
     document.body.style.setProperty('--border-color', normalized.outline);
     document.body.style.setProperty('--bg-primary', normalized.background);
-    document.body.style.setProperty('--bg-secondary', adjustHexColor(normalized.background, 19));
-    document.body.style.setProperty('--bg-tertiary', adjustHexColor(normalized.background, 32));
+    document.body.style.setProperty('--bg-secondary', adjustHexColor(normalized.background, secondaryDelta));
+    document.body.style.setProperty('--bg-tertiary', adjustHexColor(normalized.background, tertiaryDelta));
     document.body.style.setProperty('--settings-panel-color', normalized.settingsPanel);
     document.body.style.setProperty('--settings-panel-accent-color', normalized.settingsPanelAccent);
     document.body.style.setProperty('--settings-panel-icon-color', normalized.settingsPanelIcon);
+    return normalized;
   },
-  resetToThemeDefaults(themeName) {
-    const defaults = getThemeDefaults(themeName || localStorage.getItem('theme') || 'blue');
-    this.saveColors(defaults);
-    this.applyColors(defaults);
+  resetToThemeDefaults(themeName, displayMode = getResolvedDisplayMode()) {
+    const defaults = getThemeDefaults(themeName || localStorage.getItem('theme') || 'blue', displayMode);
+    this.saveColors(defaults, displayMode);
+    this.applyColors(defaults, displayMode);
     return defaults;
   }
 };
 
 const ThemeManager = {
-  setTheme(theme) {
-    const nextDefaults = getThemeDefaults(theme);
-    const currentColors = CustomColorManager.getColors(this.getTheme());
-    const migratedColors = {
-      ...currentColors,
-      sensorValue: nextDefaults.sensorValue,
-      icon: nextDefaults.icon,
-      graph: nextDefaults.graph,
-      blockHeader: nextDefaults.blockHeader,
-      settingsPanelAccent: nextDefaults.settingsPanelAccent,
-      settingsPanelIcon: nextDefaults.settingsPanelIcon
-    };
-
+  setTheme(theme, options = {}) {
+    const requestedTheme = String(theme || '').trim().toLowerCase();
+    const normalizedTheme = Object.prototype.hasOwnProperty.call(THEME_ACCENT_MAP, requestedTheme) ? requestedTheme : 'blue';
+    if (options.updatePalettes !== false) {
+      const palettes = CustomColorManager.getPalettes(this.getTheme());
+      ['dark', 'light'].forEach((mode) => {
+        const nextDefaults = getThemeDefaults(normalizedTheme, mode);
+        palettes[mode] = {
+          ...palettes[mode],
+          sensorValue: nextDefaults.sensorValue,
+          icon: nextDefaults.icon,
+          graph: nextDefaults.graph,
+          blockHeader: nextDefaults.blockHeader,
+          settingsPanelAccent: nextDefaults.settingsPanelAccent,
+          settingsPanelIcon: nextDefaults.settingsPanelIcon
+        };
+      });
+      CustomColorManager.savePalettes(palettes, normalizedTheme);
+    }
     document.body.classList.remove('theme-blue', 'theme-purple', 'theme-green', 'theme-red', 'theme-cyan', 'theme-orange');
-    document.body.classList.add(`theme-${theme}`);
-    localStorage.setItem('theme', theme);
-    CustomColorManager.saveColors(migratedColors);
-    CustomColorManager.applyColors(migratedColors);
+    document.body.classList.add(`theme-${normalizedTheme}`);
+    document.querySelectorAll('.theme-btn').forEach((button) => {
+      button.classList.toggle('active', button.dataset.theme === normalizedTheme);
+    });
+    if (options.persist !== false) localStorage.setItem('theme', normalizedTheme);
+    CustomColorManager.applyColors(CustomColorManager.getColors(normalizedTheme));
   },
   getTheme() {
     return localStorage.getItem('theme') || 'blue';
+  }
+};
+
+function syncCustomColorInputs(colors) {
+  const inputMap = {
+    customFontColor: 'font',
+    customSensorNameColor: 'sensorLabel',
+    customSensorValueColor: 'sensorValue',
+    customIconColor: 'icon',
+    customGraphColor: 'graph',
+    customBlockHeaderColor: 'blockHeader',
+    customOutlineColor: 'outline',
+    customBackgroundColor: 'background',
+    customSettingsPanelColor: 'settingsPanel',
+    customSettingsPanelAccentColor: 'settingsPanelAccent',
+    customSettingsPanelIconColor: 'settingsPanelIcon'
+  };
+  Object.entries(inputMap).forEach(([inputId, colorKey]) => {
+    const input = document.getElementById(inputId);
+    if (input && colors && colors[colorKey]) input.value = colors[colorKey];
+  });
+}
+
+function updateCustomColorModeNote(preference, effectiveMode) {
+  const note = document.getElementById('customColorModeNote');
+  if (!note) return;
+  const modeLabel = effectiveMode === 'light' ? 'Light' : 'Dark';
+  note.textContent = preference === 'system'
+    ? `Editing the ${modeLabel} palette currently selected by Windows.`
+    : `Editing the ${modeLabel} palette.`;
+}
+
+const DisplayModeManager = {
+  mediaQuery: null,
+  mediaListener: null,
+  apply(preference, options = {}) {
+    const normalized = normalizeDisplayMode(preference);
+    const effectiveMode = getResolvedDisplayMode(normalized);
+    if (options.persist !== false) localStorage.setItem(DISPLAY_MODE_KEY, normalized);
+    document.body.classList.toggle('display-light', effectiveMode === 'light');
+    document.body.classList.toggle('display-dark', effectiveMode === 'dark');
+    document.body.dataset.displayMode = effectiveMode;
+    document.body.style.colorScheme = effectiveMode;
+    document.querySelectorAll('.appearance-mode-btn').forEach((button) => {
+      button.classList.toggle('active', button.dataset.displayMode === normalized);
+    });
+    const colors = CustomColorManager.getColors(ThemeManager.getTheme(), effectiveMode);
+    CustomColorManager.applyColors(colors, effectiveMode);
+    syncCustomColorInputs(colors);
+    updateCustomColorModeNote(normalized, effectiveMode);
+    return effectiveMode;
+  },
+  init() {
+    this.apply(getDisplayModePreference(), { persist: false });
+    if (!window.matchMedia || this.mediaQuery) return;
+    this.mediaQuery = window.matchMedia('(prefers-color-scheme: light)');
+    this.mediaListener = () => {
+      if (getDisplayModePreference() === 'system') this.apply('system', { persist: false });
+    };
+    if (typeof this.mediaQuery.addEventListener === 'function') {
+      this.mediaQuery.addEventListener('change', this.mediaListener);
+    } else if (typeof this.mediaQuery.addListener === 'function') {
+      this.mediaQuery.addListener(this.mediaListener);
+    }
   }
 };
 
@@ -6699,6 +7220,8 @@ const SettingsManager = {
     setupSettingsGroupAccordion();
     setupSettingsAccordion();
     setupSettingsSearch();
+    ThemeManager.setTheme(ThemeManager.getTheme(), { persist: false, updatePalettes: false });
+    DisplayModeManager.init();
 
     const customFontColorInput = document.getElementById('customFontColor');
     const customSensorNameColorInput = document.getElementById('customSensorNameColor');
@@ -6715,31 +7238,19 @@ const SettingsManager = {
     let customColors = CustomColorManager.getColors();
     CustomColorManager.applyColors(customColors);
 
-    const syncCustomInputsFromColors = (colors) => {
-      if (!customFontColorInput || !customSensorNameColorInput || !customSensorValueColorInput || !customIconColorInput || !customGraphColorInput || !customBlockHeaderColorInput || !customOutlineColorInput || !customBackgroundColorInput || !customSettingsPanelColorInput || !customSettingsPanelAccentColorInput || !customSettingsPanelIconColorInput) {
-        return;
-      }
-      customFontColorInput.value = colors.font;
-      customSensorNameColorInput.value = colors.sensorLabel;
-      customSensorValueColorInput.value = colors.sensorValue;
-      customIconColorInput.value = colors.icon;
-      customGraphColorInput.value = colors.graph;
-      customBlockHeaderColorInput.value = colors.blockHeader;
-      customOutlineColorInput.value = colors.outline;
-      customBackgroundColorInput.value = colors.background;
-      customSettingsPanelColorInput.value = colors.settingsPanel;
-      customSettingsPanelAccentColorInput.value = colors.settingsPanelAccent;
-      customSettingsPanelIconColorInput.value = colors.settingsPanelIcon;
-    };
-
     const themeButtons = document.querySelectorAll('.theme-btn');
     themeButtons.forEach((btn) => {
       btn.addEventListener('click', (e) => {
-        themeButtons.forEach((b) => b.classList.remove('active'));
-        e.target.classList.add('active');
-        ThemeManager.setTheme(e.target.dataset.theme);
+        ThemeManager.setTheme(e.currentTarget.dataset.theme);
         customColors = CustomColorManager.getColors();
-        syncCustomInputsFromColors(customColors);
+        syncCustomColorInputs(customColors);
+      });
+    });
+
+    document.querySelectorAll('.appearance-mode-btn').forEach((button) => {
+      button.addEventListener('click', (event) => {
+        DisplayModeManager.apply(event.currentTarget.dataset.displayMode);
+        customColors = CustomColorManager.getColors();
       });
     });
 
@@ -6752,21 +7263,22 @@ const SettingsManager = {
     });
 
     if (customFontColorInput && customSensorNameColorInput && customSensorValueColorInput && customIconColorInput && customGraphColorInput && customBlockHeaderColorInput && customOutlineColorInput && customBackgroundColorInput && customSettingsPanelColorInput && customSettingsPanelAccentColorInput && customSettingsPanelIconColorInput) {
-      syncCustomInputsFromColors(customColors);
+      syncCustomColorInputs(customColors);
 
       const syncCustomColors = () => {
+        const defaults = getThemeDefaults(ThemeManager.getTheme(), getResolvedDisplayMode());
         customColors = {
-          font: normalizeHexColor(customFontColorInput.value, BASE_COLOR_DEFAULTS.font),
-          sensorLabel: normalizeHexColor(customSensorNameColorInput.value, BASE_COLOR_DEFAULTS.sensorLabel),
-          sensorValue: normalizeHexColor(customSensorValueColorInput.value, BASE_COLOR_DEFAULTS.sensorValue),
-          icon: normalizeHexColor(customIconColorInput.value, BASE_COLOR_DEFAULTS.icon),
-          graph: normalizeHexColor(customGraphColorInput.value, BASE_COLOR_DEFAULTS.graph),
-          blockHeader: normalizeHexColor(customBlockHeaderColorInput.value, BASE_COLOR_DEFAULTS.blockHeader),
-          outline: normalizeHexColor(customOutlineColorInput.value, BASE_COLOR_DEFAULTS.outline),
-          background: normalizeHexColor(customBackgroundColorInput.value, BASE_COLOR_DEFAULTS.background),
-          settingsPanel: normalizeHexColor(customSettingsPanelColorInput.value, BASE_COLOR_DEFAULTS.settingsPanel),
-          settingsPanelAccent: normalizeHexColor(customSettingsPanelAccentColorInput.value, BASE_COLOR_DEFAULTS.settingsPanelAccent),
-          settingsPanelIcon: normalizeHexColor(customSettingsPanelIconColorInput.value, BASE_COLOR_DEFAULTS.settingsPanelIcon)
+          font: normalizeHexColor(customFontColorInput.value, defaults.font),
+          sensorLabel: normalizeHexColor(customSensorNameColorInput.value, defaults.sensorLabel),
+          sensorValue: normalizeHexColor(customSensorValueColorInput.value, defaults.sensorValue),
+          icon: normalizeHexColor(customIconColorInput.value, defaults.icon),
+          graph: normalizeHexColor(customGraphColorInput.value, defaults.graph),
+          blockHeader: normalizeHexColor(customBlockHeaderColorInput.value, defaults.blockHeader),
+          outline: normalizeHexColor(customOutlineColorInput.value, defaults.outline),
+          background: normalizeHexColor(customBackgroundColorInput.value, defaults.background),
+          settingsPanel: normalizeHexColor(customSettingsPanelColorInput.value, defaults.settingsPanel),
+          settingsPanelAccent: normalizeHexColor(customSettingsPanelAccentColorInput.value, defaults.settingsPanelAccent),
+          settingsPanelIcon: normalizeHexColor(customSettingsPanelIconColorInput.value, defaults.settingsPanelIcon)
         };
         CustomColorManager.saveColors(customColors);
         CustomColorManager.applyColors(customColors);
@@ -6787,7 +7299,7 @@ const SettingsManager = {
       if (resetThemeColorsBtn) {
         resetThemeColorsBtn.addEventListener('click', () => {
           const defaults = CustomColorManager.resetToThemeDefaults(ThemeManager.getTheme());
-          syncCustomInputsFromColors(defaults);
+          syncCustomColorInputs(defaults);
         });
       }
     }
@@ -7269,6 +7781,16 @@ const SettingsManager = {
           await showThemedMessage('Profile Save Failed', 'Failed to save profile: ' + (error && error.message ? error.message : String(error)), {
             icon: 'bi-exclamation-octagon-fill',
             tone: 'error'
+          });
+        }
+        const summaryReset = document.getElementById('summaryResetToggle');
+        if (summaryReset) {
+          summaryReset.addEventListener('click', async () => {
+            const tokenSuffix = authToken ? ('?token=' + encodeURIComponent(authToken)) : '';
+            const response = await fetch('/api/session/reset' + tokenSuffix, { method: 'POST', cache: 'no-store' });
+            if (!response.ok) throw new Error('Unable to reset session statistics');
+            domState.structureKey = '';
+            load();
           });
         }
       });
@@ -7808,6 +8330,10 @@ const SettingsManager = {
       summaryButton.addEventListener('click', () => {
         applySummaryMode(!summaryModeEnabled);
       });
+    }
+    const resetSummaryStatsButton = document.getElementById('resetSummaryStatsBtn');
+    if (resetSummaryStatsButton) {
+      resetSummaryStatsButton.addEventListener('click', resetSensorSessionStatistics);
     }
 
     const debugButton = document.getElementById('debugModeBtn');
@@ -8961,10 +9487,8 @@ const SettingsManager = {
     const savedTheme = ThemeManager.getTheme();
     const savedRefreshRate = localStorage.getItem('refreshRate');
 
-    if (savedTheme !== 'blue') {
-      document.querySelector(`[data-theme="${savedTheme}"]`).click();
-    }
-    CustomColorManager.applyColors(CustomColorManager.getColors());
+    ThemeManager.setTheme(savedTheme, { persist: false, updatePalettes: false });
+    DisplayModeManager.apply(getDisplayModePreference(), { persist: false });
 
     if (savedRefreshRate) {
       updateInterval = clampRefreshInterval(savedRefreshRate);
@@ -9002,10 +9526,7 @@ async function updateStats(forceRender = false) {
     }
 
     const isDocumentHidden = typeof document !== 'undefined' && !!document.hidden;
-    const webMonitorActive = !!(webMonitorRuntime && webMonitorRuntime.running);
-    if (isDocumentHidden && !webMonitorActive) {
-      return;
-    }
+    const shouldUpdateDesktopUi = !isDocumentHidden;
 
     const aidaPath = localStorage.getItem('aidaPath') || '';
     const appRuntimeStatsPromise = getAppRuntimeStats();
@@ -9013,7 +9534,7 @@ async function updateStats(forceRender = false) {
     const data = await sensorReader.getEnhancedData(mode, { aidaPath, providers: providerSelection });
     lastSensorReadDurationMs = Math.max(0, performance.now() - sensorReadStartedAt);
     const appRuntimeStats = await appRuntimeStatsPromise;
-    const builtinStatus = document.getElementById('builtinSensorStatus');
+    const builtinStatus = shouldUpdateDesktopUi ? document.getElementById('builtinSensorStatus') : null;
     if (builtinStatus) {
       const diagnostics = data && data.external && data.external.diagnostics;
       if (providerSelection.builtin === false) {
@@ -9055,7 +9576,7 @@ async function updateStats(forceRender = false) {
       }
     }
 
-    const nativeFpsStatus = document.getElementById('nativeFpsStatus');
+    const nativeFpsStatus = shouldUpdateDesktopUi ? document.getElementById('nativeFpsStatus') : null;
     if (nativeFpsStatus) {
       const diagnostics = data && data.external && data.external.diagnostics;
       nativeFpsStatus.classList.remove('web-status-error');
@@ -9088,14 +9609,14 @@ async function updateStats(forceRender = false) {
     }
 
     // update external group title
-    const titleEl = document.querySelector('#externalGroup .sensor-group-title');
+    const titleEl = shouldUpdateDesktopUi ? document.querySelector('#externalGroup .sensor-group-title') : null;
     if (titleEl) {
       titleEl.innerHTML = '<i class="bi bi-tools group-icon" aria-hidden="true"></i><span>Other</span>';
     }
 
     if (!data) {
       lastDebugExternalData = null;
-      if (debugModeEnabled) {
+      if (debugModeEnabled && shouldUpdateDesktopUi) {
         renderDebugPanel(null, mode);
       }
       const now = Date.now();
@@ -9116,7 +9637,7 @@ async function updateStats(forceRender = false) {
     // External sensor data (MSI Afterburner/RTSS)
     if (data.external && typeof data.external === 'object') {
       lastDebugExternalData = data.external;
-      if (debugModeEnabled) {
+      if (debugModeEnabled && shouldUpdateDesktopUi) {
         renderDebugPanel(data.external, mode);
       }
       const externalInfo = [];
@@ -9184,7 +9705,7 @@ async function updateStats(forceRender = false) {
       }
     } else {
       lastDebugExternalData = null;
-      if (debugModeEnabled) {
+      if (debugModeEnabled && shouldUpdateDesktopUi) {
         renderDebugPanel(null, mode);
       }
       const now = Date.now();
@@ -9208,7 +9729,7 @@ async function updateStats(forceRender = false) {
     if (rerunUpdateRequested) {
       rerunUpdateRequested = false;
       setTimeout(() => {
-        updateStats(true);
+        updateStats(false);
       }, 0);
     }
   }
@@ -9222,7 +9743,7 @@ function scheduleNextUpdateTick() {
   updateTimer = setTimeout(async () => {
     if (!updateLoopActive) return;
 
-    await updateStats(true);
+    await updateStats(false);
 
     if (!updateLoopActive) return;
     const now = Date.now();
@@ -9237,12 +9758,39 @@ function restartUpdateTimer() {
   clearTimeout(updateTimer);
   updateLoopActive = true;
   nextUpdateDueAt = Date.now() + updateInterval;
+  const requestId = ++updateClockRequestId;
+  mainProcessUpdateClockActive = false;
+
+  if (ipcRenderer && typeof ipcRenderer.invoke === 'function') {
+    ipcRenderer.invoke('monitoring:set-refresh-interval', updateInterval).then((result) => {
+      if (requestId !== updateClockRequestId || !updateLoopActive) return;
+      if (result && result.ok === true) {
+        mainProcessUpdateClockActive = true;
+        clearTimeout(updateTimer);
+        return;
+      }
+      scheduleNextUpdateTick();
+    }).catch(() => {
+      if (requestId !== updateClockRequestId || !updateLoopActive) return;
+      scheduleNextUpdateTick();
+    });
+    return;
+  }
+
   scheduleNextUpdateTick();
+}
+
+if (ipcRenderer && typeof ipcRenderer.on === 'function') {
+  ipcRenderer.on('monitoring:tick', () => {
+    if (!updateLoopActive || !mainProcessUpdateClockActive) return;
+    updateStats(false);
+  });
 }
 
 function applyUiTooltips() {
   const tooltips = {
-    summaryModeBtn: 'Toggle summary mode (min/max focused view).',
+    summaryModeBtn: 'Toggle Summary Mode with session minimum, average, and maximum values.',
+    resetSummaryStatsBtn: 'Reset Summary Mode session minimum, average, and maximum values.',
     webMonitorToggleBtn: 'Toggle browser web monitor on/off.',
     discordPresenceToggleBtn: 'Toggle Discord Rich Presence integration.',
     overlayToggleBtn: 'Quickly toggle the on-screen overlay.',
@@ -9384,14 +9932,14 @@ document.addEventListener('DOMContentLoaded', () => {
     layoutResizeTimer = setTimeout(applyWindowSizes, 100);
   });
   setupWindowDragAndDrop();
+  setupStackedDashboardWheelScroll();
   setupSensorGraphInteractions();
   applyUiTooltips();
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && pendingVisibilityRefresh) {
-      invalidateRenderGroupCache();
-      renderAllDynamicGroups(latestSelectedGroupedSensors || createEmptyGroupedBuckets(), { force: true });
-    }
-  });
+  initializeMotionVisibilityTracking();
+  document.addEventListener('visibilitychange', syncDesktopActivityState);
+  window.addEventListener('focus', syncDesktopActivityState);
+  window.addEventListener('blur', syncDesktopActivityState);
+  syncDesktopActivityState();
   updateStats();
   restartUpdateTimer();
 });
@@ -9399,6 +9947,7 @@ document.addEventListener('DOMContentLoaded', () => {
 window.addEventListener('beforeunload', () => {
   updateLoopActive = false;
   clearTimeout(updateTimer);
+  clearTimeout(ambientMotionTimer);
   stopWebMonitorServer();
   if (sensorReader && typeof sensorReader.close === 'function') sensorReader.close();
 });

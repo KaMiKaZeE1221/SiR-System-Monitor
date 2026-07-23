@@ -33,6 +33,12 @@
 
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-palette-fill settings-label-icon" aria-hidden="true"></i><span>Color Theme</span></label>
+        <div class="appearance-mode-selector" role="group" aria-label="Application light and dark appearance">
+          <button class="appearance-mode-btn" type="button" data-display-mode="light"><i class="bi bi-sun-fill" aria-hidden="true"></i><span>Light</span></button>
+          <button class="appearance-mode-btn active" type="button" data-display-mode="dark"><i class="bi bi-moon-stars-fill" aria-hidden="true"></i><span>Dark</span></button>
+          <button class="appearance-mode-btn" type="button" data-display-mode="system"><i class="bi bi-display" aria-hidden="true"></i><span>Follow Windows</span></button>
+        </div>
+        <div class="settings-note">Follow Windows changes automatically with the Windows app-mode preference. Light and Dark keep independent custom color palettes.</div>
         <div class="theme-selector">
           <button class="theme-btn active" data-theme="blue">Blue</button>
           <button class="theme-btn" data-theme="purple">Purple</button>
@@ -362,6 +368,7 @@
             <input type="color" id="customSettingsPanelIconColor" class="color-picker-input" value="#3f95ff">
           </label>
         </div>
+        <div id="customColorModeNote" class="settings-note">Editing the current appearance palette.</div>
         <button id="resetThemeColorsBtn" class="test-btn color-reset-btn" type="button">Reset to Theme Defaults</button>
       </div>
 
@@ -678,6 +685,9 @@
       </h1>
       <div class="header-actions">
         <button id="summaryModeBtn" class="header-control-btn monitoring-mode-btn"><i class="bi bi-grid-1x2-fill" aria-hidden="true"></i><span>Summary Mode</span></button>
+        <div id="summarySessionControls" class="summary-session-controls" hidden>
+          <button id="resetSummaryStatsBtn" class="header-control-btn summary-reset-btn" type="button"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i><span>Reset Stats</span></button>
+        </div>
         <button id="webMonitorToggleBtn" class="header-control-btn web-monitor-toggle-btn disabled" title="Web Monitor">
           <i class="bi bi-globe" aria-hidden="true"></i>
           <span class="web-monitor-toggle-text">Web: Off</span>

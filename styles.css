@@ -94,6 +94,15 @@ body {
   --font-weight-medium: 600;
   --font-weight-bold: 700;
   font-weight: var(--font-weight-regular);
+  color-scheme: dark;
+}
+
+body.display-light {
+  color-scheme: light;
+}
+
+body.display-dark {
+  color-scheme: dark;
 }
 
 body.no-glow *,
@@ -114,7 +123,14 @@ body.no-settings-animations .settings-toggle-icon {
 
 body:not(.no-settings-icon-animations) .sidebar i::before {
   transform-origin: center;
-  animation: sensor-card-icon-live var(--motion-icon-duration) ease-in-out infinite;
+}
+
+body:not(.no-settings-icon-animations) .sidebar i.ambient-icon-motion::before {
+  animation: sensor-card-icon-live var(--motion-focus-duration) ease-in-out 1;
+}
+
+body.motion-visibility-ready:not(.no-settings-icon-animations) .sidebar i.motion-in-view::before {
+  will-change: transform;
 }
 
 body:not(.no-settings-icon-animations) .sidebar button:hover i::before,
@@ -129,6 +145,21 @@ body:not(.no-settings-icon-animations) .sidebar .overlay-inline-heading:hover i:
 body:not(.no-settings-icon-animations) .settings-group.is-collapsed .settings-group-content i::before,
 body:not(.no-settings-icon-animations) .settings-section.is-collapsed .settings-section-content i::before {
   animation-play-state: paused;
+}
+
+body:not(.monitoring-mode) .sidebar i::before,
+body.app-inactive .sidebar i::before,
+body.app-inactive .sensor-group .group-icon,
+body.app-inactive .status-dot,
+body.motion-visibility-ready:not(.no-settings-icon-animations) .sidebar i:not(.motion-in-view)::before,
+body.motion-visibility-ready:not(.no-sensor-icon-animations) .sensor-group .group-icon:not(.motion-in-view) {
+  animation-play-state: paused !important;
+}
+
+body.app-inactive *,
+body.app-inactive *::before,
+body.app-inactive *::after {
+  animation-play-state: paused !important;
 }
 
 body.no-settings-icon-animations .sidebar i::before {
@@ -675,6 +706,10 @@ body.sidebar-resizing * {
   -webkit-appearance: none;
   color-scheme: dark;
   overflow: hidden;
+}
+
+body.display-light .color-picker-input {
+  color-scheme: light;
 }
 
 .color-picker-input::-webkit-color-swatch-wrapper {
@@ -1652,6 +1687,21 @@ body.no-dialog-animations .setup-guide-modal.is-hidden {
   flex-wrap: wrap;
 }
 
+.summary-session-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.summary-session-controls[hidden] {
+  display: none;
+}
+
+.summary-reset-btn {
+  min-height: 34px;
+  padding: 7px 10px;
+}
+
 .header-control-btn {
   min-height: 42px;
   padding: 10px 14px;
@@ -1688,10 +1738,10 @@ body.no-dialog-animations .setup-guide-modal.is-hidden {
 .monitoring-mode-btn.active {
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--accent-light) 76%, white), color-mix(in srgb, var(--accent) 88%, black));
-  color: #f4f8ff;
+  color: #08111f;
 }
 
-.monitoring-mode-btn:not(.icon-only):hover {
+.monitoring-mode-btn:not(.icon-only):not(.active):hover {
   color: var(--text-primary);
 }
 
@@ -2026,17 +2076,19 @@ body.layout-custom .sensor-group {
   border: 1px solid var(--border-color);
   border-radius: 10px;
   padding: 14px;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 0.2s ease;
   height: var(--layout-card-height);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  contain: layout style;
 }
 
 .sensor-group-title {
   cursor: grab;
   user-select: none;
+  touch-action: none;
 }
 
 .sensor-group.dragging {
@@ -2058,21 +2110,45 @@ body.layout-custom .sensor-group {
   box-shadow: inset 0 -3px 0 var(--accent);
 }
 
+body.card-drag-active,
+body.card-drag-active * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+.card-drop-marker {
+  position: fixed;
+  z-index: 10050;
+  pointer-events: none;
+  border-radius: 999px;
+  background: var(--accent-light);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 72%, white),
+    0 0 14px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.card-drop-marker.is-vertical {
+  width: 4px;
+}
+
+.card-drop-marker.is-horizontal {
+  height: 4px;
+}
+
 .sensor-group:hover {
   border-color: var(--accent);
 }
 
 body:not(.no-sensor-icon-animations) .sensor-group .group-icon {
   transform-origin: center;
-  animation: sensor-card-icon-live var(--motion-icon-duration) ease-in-out infinite;
 }
 
-body:not(.no-sensor-icon-animations) .sensor-group:nth-child(3n + 2) .group-icon {
-  animation-delay: -1.6s;
+body:not(.no-sensor-icon-animations) .sensor-group .group-icon.ambient-icon-motion {
+  animation: sensor-card-icon-live var(--motion-focus-duration) ease-in-out 1;
 }
 
-body:not(.no-sensor-icon-animations) .sensor-group:nth-child(3n) .group-icon {
-  animation-delay: -3.2s;
+body.motion-visibility-ready:not(.no-sensor-icon-animations) .sensor-group .group-icon.motion-in-view {
+  will-change: transform;
 }
 
 body:not(.no-sensor-icon-animations) .sensor-group:hover .group-icon {
@@ -3174,6 +3250,46 @@ select.detection-select:hover {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.appearance-mode-selector {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.appearance-mode-btn {
+  min-height: 42px;
+  padding: 8px 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
+  border-radius: 9px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-tertiary) 94%, transparent), color-mix(in srgb, var(--bg-secondary) 90%, black));
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: calc(11px * var(--font-scale));
+  font-weight: var(--font-weight-medium);
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+}
+
+.appearance-mode-btn:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 72%, white);
+}
+
+.appearance-mode-btn.active {
+  border-color: color-mix(in srgb, var(--accent-light) 72%, white);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-light) 76%, white), color-mix(in srgb, var(--accent) 88%, black));
+  color: #08111f;
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.appearance-mode-btn i {
+  line-height: 1;
+}
+
 .theme-btn,
 .style-btn {
   min-height: 38px;
@@ -3656,6 +3772,7 @@ select.detection-select:hover {
     grid-column: 1 / -1;
   }
 
+  .appearance-mode-selector,
   .theme-selector,
   .overlay-colors-grid {
     grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));

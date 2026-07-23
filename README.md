@@ -2,7 +2,7 @@
   <h1>SiR System Monitor</h1>
   <p><strong>Real-time hardware monitoring for Windows, your desktop, your overlay, and your browser.</strong></p>
   <p>
-    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.3.4" src="https://img.shields.io/badge/version-1.3.4-f97316?style=for-the-badge"></a>
+    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.3.5" src="https://img.shields.io/badge/version-1.3.5-f97316?style=for-the-badge"></a>
     <a href="#requirements"><img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&amp;logo=windows"></a>
     <a href="./LICENSE.txt"><img alt="GNU GPL v3" src="https://img.shields.io/badge/license-GPL--3.0-3DA639?style=for-the-badge"></a>
   </p>
@@ -10,6 +10,8 @@
     <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest">Download</a> ·
     <a href="./CHANGELOG.md">What's new</a> ·
     <a href="./sensor-host/HARDWARE-SUPPORT.md">Hardware support</a> ·
+    <a href="./TERMS_OF_SERVICE.md">Terms</a> ·
+    <a href="./PRIVACY_POLICY.md">Privacy</a> ·
     <a href="#screenshots">Screenshots</a>
   </p>
 </div>
@@ -34,15 +36,15 @@ SiR System Monitor is an open-source Windows desktop app that combines live syst
 
 Sensor groups include **FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, App, and Other**. FPS and frame-time values appear when an enabled source provides them.
 
-## What's new in 1.3.4
+## What's new in 1.3.5
 
-- Completed a renderer performance pass without removing any dashboard, animation, overlay, alert, or Web Monitor features.
-- Kept hardware collection, alerts, histories, Web Monitor publishing, and OSD values refreshing while the desktop window is minimized or hidden, using a background-safe main-process refresh clock.
-- Paused interface animation whenever the desktop window is unfocused, while visible sensor values and alerts continue updating normally. Hidden dashboard painting is deferred until the window is shown again.
-- Limited ambient icon animation work to visible cards/settings controls and restored Chromium background throttling for the desktop and overlay windows.
-- Replaced full sensor-row rebuilds with in-place label, value, and alert updates on normal cards, reducing layout work and hover-related CPU spikes.
-- Hidden Web Monitor tabs now skip unnecessary polling and animation work until visible again.
-- Corrected **SiR Memory Usage** to use Windows' private working-set total—the value represented by Task Manager's normal Memory column. Private commit and full working set remain available as separate opt-in sensors.
+- Added **Light**, **Dark**, and **Follow Windows** appearance modes, with independent custom-color palettes saved for Light and Dark.
+- Expanded Summary Mode with running **Minimum**, **Average**, and **Maximum** values plus **Reset Stats** in both the desktop app and Web Monitor.
+- Made mouse-wheel and trackpad scrolling work across the full card surface when the desktop dashboard uses Stacked layout.
+- Replaced native card dragging with visual-grid placement, a precise drop marker, reliable edge scrolling, and predictable ordering in mixed-size Custom layouts.
+- Fixed the active **Exit Summary Mode** button contrast on bright accent themes.
+- Refined Discord Rich Presence so it reports a stable app session without invented player counts or placeholder game activity.
+- Added application and Discord integration [Terms of Service](./TERMS_OF_SERVICE.md) and [Privacy Policy](./PRIVACY_POLICY.md).
 
 See the [full changelog](./CHANGELOG.md) for every change and fix.
 
@@ -146,7 +148,8 @@ Normal and Summary geometry and card order are stored separately, so resizing or
 
 ### Themes and styles
 
-- Multiple dashboard themes plus independent settings-panel background, accent, and icon colors
+- Light, Dark, or Follow Windows appearance, with a separate customizable palette retained for each light/dark mode
+- Multiple accent themes plus independent settings-panel background, accent, and icon colors
 - `Classic`, `Neon`, `Minimal`, `Terminal`, `Accent Rail`, `Soft Glass`, `Split Header`, and `Status Tags` styles
 - Font family, size, bold text, and monospace value controls
 - Celsius or Fahrenheit temperature display
@@ -171,6 +174,7 @@ The optional Web Monitor mirrors the selected dashboard layout in a browser and 
 |---|---|
 | Dashboard | `http://<host>:<port>/` |
 | JSON API | `http://<host>:<port>/api/monitor` |
+| Reset Summary session | `POST http://<host>:<port>/api/session/reset` |
 
 Available controls include:
 
@@ -178,7 +182,7 @@ Available controls include:
 - Optional access-token authentication
 - Token generation, copying, and rotation
 - API-only mode, which disables the HTML dashboard
-- Alert highlighting and independent normal/Summary layout presets mirrored from the desktop app
+- Alert highlighting, light/dark appearance, session statistics, and independent normal/Summary layouts mirrored from the desktop app
 
 Access tokens are accepted through:
 
@@ -202,7 +206,7 @@ Under **Settings → Backup & Restore**, you can:
 - Preview an imported profile before applying it
 - Apply immediately or apply and reload
 
-Profiles and exports include appearance settings, settings motion preferences, all settings-panel colors, separate normal/Summary layouts, Custom card sizes and card order, sensor choices, alert rules, data sources, Web Monitor options, overlay configuration, startup behavior, and update preferences.
+Profiles and exports include the Light/Dark/Follow Windows preference, both custom appearance palettes, settings motion preferences, all settings-panel colors, separate normal/Summary layouts, Custom card sizes and card order, sensor choices, alert rules, data sources, Web Monitor options, overlay configuration, startup behavior, and update preferences.
 
 ## Digital PSU support
 
@@ -359,8 +363,10 @@ Screenshots/      README and project screenshots
 
 SiR System Monitor is licensed under the [GNU General Public License v3.0](./LICENSE.txt). Third-party components remain subject to their own licenses and notices.
 
+The official desktop application, Web Monitor, and Discord Rich Presence integration are also described by the [Terms of Service](./TERMS_OF_SERVICE.md) and [Privacy Policy](./PRIVACY_POLICY.md).
+
 ---
 
 <div align="center">
-  Built by <strong>SiR_KaMiKaZeE</strong> · <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest">Latest release</a> · <a href="./CHANGELOG.md">Changelog</a>
+  Built by <strong>SiR_KaMiKaZeE</strong> · <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest">Latest release</a> · <a href="./CHANGELOG.md">Changelog</a> · <a href="./TERMS_OF_SERVICE.md">Terms</a> · <a href="./PRIVACY_POLICY.md">Privacy</a>
 </div>

@@ -2,6 +2,28 @@
 
 > Note: Entries for older builds are estimated from development history and may not map 1:1 to exact historic commit dates.
 
+## 1.3.5 - 2026-07-23
+
+### Added
+- Added **Light**, **Dark**, and **Follow Windows** appearance modes. Follow Windows reacts to the Windows app-mode preference without restarting the app.
+- Added independent custom-color palettes for Light and Dark modes. Both palettes, the selected appearance mode, and Follow Windows are included in settings profiles and exported settings.
+- Added a true running **Average** beside Minimum and Maximum in desktop and Web Monitor Summary Mode.
+- Added **Reset Stats** controls for the running Summary session in the desktop app and Web Monitor.
+- Added display-mode, Summary statistics, web synchronization, profile persistence, and pointer-drag regression coverage.
+- Added application and Discord integration Terms of Service and Privacy Policy documents, linked from the README.
+
+### Changed
+- Replaced native HTML card drag-and-drop with pointer-based visual-grid placement, an exact insertion marker, movement threshold, drag cancellation, and stable edge auto-scroll.
+- Card order is now resolved from the cards' rendered rows and columns, making normal, Summary, mixed-width, and dense Custom layouts considerably more predictable.
+- Stacked desktop layouts now route mouse-wheel and trackpad input over sensor cards to the main dashboard scroller, matching the Web Monitor's page-scrolling behavior.
+- Refined Discord Rich Presence to use a stable application-session timestamp and valid activity fields, with a lower-frequency refresh and no fabricated party/player count.
+
+### Fixed
+- Fixed the active **Exit Summary Mode** button retaining white text on a bright theme background.
+- Fixed sensor cards intermittently ignoring a drop, landing beside the wrong card, or becoming difficult to move while the dashboard was scrolling.
+- Fixed Stacked layout requiring users to find empty background space or drag the scrollbar because card-level scroll regions trapped wheel input.
+- Fixed custom colors being represented by only one shared dark palette when switching between light and dark appearances.
+
 ## 1.3.4 - 2026-07-23
 
 ### Changed
