@@ -14,11 +14,17 @@ const previewScript = `
   body.settings-preview .container,
   body.settings-preview .sidebar-resize-handle,
   body.settings-preview .setup-guide-modal { display: none !important; }
+  body.settings-preview.slow-motion-preview .settings-group-content,
+  body.settings-preview.slow-motion-preview .settings-section-content {
+    transition-duration: 2s !important;
+  }
 </style>
 <script>
   document.addEventListener('DOMContentLoaded', () => {
     document.body.className = 'theme-orange settings-preview';
     const previewParams = new URLSearchParams(location.search);
+    const slowMotionPreview = previewParams.get('slowMotion') === '1';
+    document.body.classList.toggle('slow-motion-preview', slowMotionPreview);
     const requestedWidth = Math.max(300, Math.min(620, Number(previewParams.get('width')) || 460));
     const requestedPanelColor = String(previewParams.get('panelColor') || '').trim();
     if (/^#[0-9a-f]{6}$/i.test(requestedPanelColor)) {
@@ -32,6 +38,124 @@ const previewScript = `
     if (/^#[0-9a-f]{6}$/i.test(requestedSettingsIcon)) {
       document.body.style.setProperty('--settings-panel-icon-color', requestedSettingsIcon);
     }
+    const animationDefaults = { enabled: true, settingsDropdowns: true, dialogs: true, viewTransitions: true, sensorIcons: true, settingsIcons: true, speed: 'standard', intensity: 'balanced' };
+    let animationSettings = { ...animationDefaults };
+    try {
+      animationSettings = { ...animationDefaults, ...JSON.parse(localStorage.getItem('animationSettings') || '{}') };
+    } catch (error) {}
+    const animationSpeedPresets = {
+      calm: { iconMs: 6200, focusMs: 650, dialogMs: 320, viewMs: 440, groupMs: 420, sectionMs: 360 },
+      standard: { iconMs: 4800, focusMs: 500, dialogMs: 240, viewMs: 340, groupMs: 320, sectionMs: 280 },
+      lively: { iconMs: 3600, focusMs: 380, dialogMs: 180, viewMs: 260, groupMs: 250, sectionMs: 220 }
+    };
+    const animationIntensityPresets = {
+      gentle: { iconLift: .75, iconScale: 1.04, focusRotate: -4, focusScale: 1.1, viewDistance: 6, viewScale: .992, dialogDistance: 12, disclosureDistance: 3 },
+      balanced: { iconLift: 1.5, iconScale: 1.08, focusRotate: -8, focusScale: 1.2, viewDistance: 10, viewScale: .985, dialogDistance: 20, disclosureDistance: 5 },
+      expressive: { iconLift: 2.5, iconScale: 1.13, focusRotate: -12, focusScale: 1.28, viewDistance: 15, viewScale: .976, dialogDistance: 28, disclosureDistance: 8 }
+    };
+    const animationInputs = {
+      animationEnabledToggle: 'enabled',
+      animationSettingsToggle: 'settingsDropdowns',
+      animationDialogsToggle: 'dialogs',
+      animationViewsToggle: 'viewTransitions',
+      animationSensorIconsToggle: 'sensorIcons',
+      animationSettingsIconsToggle: 'settingsIcons'
+    };
+    const applyAnimationPreference = () => {
+      animationSettings.speed = animationSpeedPresets[animationSettings.speed] ? animationSettings.speed : 'standard';
+      animationSettings.intensity = animationIntensityPresets[animationSettings.intensity] ? animationSettings.intensity : 'balanced';
+      const speed = animationSpeedPresets[animationSettings.speed];
+      const intensity = animationIntensityPresets[animationSettings.intensity];
+      document.documentElement.style.setProperty('--motion-icon-duration', speed.iconMs + 'ms');
+      document.documentElement.style.setProperty('--motion-focus-duration', speed.focusMs + 'ms');
+      document.documentElement.style.setProperty('--motion-dialog-duration', speed.dialogMs + 'ms');
+      document.documentElement.style.setProperty('--motion-view-duration', speed.viewMs + 'ms');
+      document.documentElement.style.setProperty('--motion-settings-group-duration', speed.groupMs + 'ms');
+      document.documentElement.style.setProperty('--motion-settings-section-duration', speed.sectionMs + 'ms');
+      document.documentElement.style.setProperty('--motion-icon-lift', intensity.iconLift + 'px');
+      document.documentElement.style.setProperty('--motion-icon-scale', String(intensity.iconScale));
+      document.documentElement.style.setProperty('--motion-focus-rotate', intensity.focusRotate + 'deg');
+      document.documentElement.style.setProperty('--motion-focus-scale', String(intensity.focusScale));
+      document.documentElement.style.setProperty('--motion-view-distance', intensity.viewDistance + 'px');
+      document.documentElement.style.setProperty('--motion-view-scale', String(intensity.viewScale));
+      document.documentElement.style.setProperty('--motion-dialog-distance', intensity.dialogDistance + 'px');
+      document.documentElement.style.setProperty('--motion-disclosure-distance', intensity.disclosureDistance + 'px');
+      document.body.classList.toggle('no-settings-animations', !animationSettings.enabled || !animationSettings.settingsDropdowns);
+      document.body.classList.toggle('no-dialog-animations', !animationSettings.enabled || !animationSettings.dialogs);
+      document.body.classList.toggle('no-view-animations', !animationSettings.enabled || !animationSettings.viewTransitions);
+      document.body.classList.toggle('no-sensor-icon-animations', !animationSettings.enabled || !animationSettings.sensorIcons);
+      document.body.classList.toggle('no-settings-icon-animations', !animationSettings.enabled || !animationSettings.settingsIcons);
+      const features = document.getElementById('animationFeatureControls');
+      if (features) features.classList.toggle('is-disabled', !animationSettings.enabled);
+      const presets = document.getElementById('animationPresetControls');
+      if (presets) presets.classList.toggle('is-disabled', !animationSettings.enabled);
+      Object.entries(animationInputs).forEach(([id, key]) => {
+        const input = document.getElementById(id);
+        if (!input) return;
+        input.checked = animationSettings[key] !== false;
+        if (key !== 'enabled') input.disabled = !animationSettings.enabled;
+      });
+      const speedSelect = document.getElementById('animationSpeedSelect');
+      const intensitySelect = document.getElementById('animationIntensitySelect');
+      if (speedSelect) { speedSelect.value = animationSettings.speed; speedSelect.disabled = !animationSettings.enabled; }
+      if (intensitySelect) { intensitySelect.value = animationSettings.intensity; intensitySelect.disabled = !animationSettings.enabled; }
+      localStorage.setItem('animationSettings', JSON.stringify(animationSettings));
+    };
+    Object.entries(animationInputs).forEach(([id, key]) => {
+      const input = document.getElementById(id);
+      if (!input) return;
+      input.addEventListener('change', () => {
+        animationSettings = { ...animationSettings, [key]: !!input.checked };
+        applyAnimationPreference();
+      });
+    });
+    [['animationSpeedSelect', 'speed'], ['animationIntensitySelect', 'intensity']].forEach(([id, key]) => {
+      const select = document.getElementById(id);
+      if (!select) return;
+      select.addEventListener('change', () => {
+        animationSettings = { ...animationSettings, [key]: select.value };
+        applyAnimationPreference();
+      });
+    });
+    applyAnimationPreference();
+    const setDisclosureExpanded = (owner, button, content, expanded, animate) => {
+      const shouldAnimate = animate !== false
+        && !document.body.classList.contains('no-settings-animations');
+      button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      content.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+      content.toggleAttribute('inert', !expanded);
+      if (!shouldAnimate) {
+        owner.classList.toggle('is-collapsed', !expanded);
+        content.style.removeProperty('max-height');
+        return;
+      }
+      const startHeight = content.getBoundingClientRect().height;
+      content.classList.add('is-settings-disclosure-preparing');
+      content.style.maxHeight = Math.max(0, startHeight) + 'px';
+      void content.offsetHeight;
+      content.classList.remove('is-settings-disclosure-preparing');
+      void content.offsetHeight;
+      content.classList.add('is-settings-disclosure-animating');
+      const speed = animationSpeedPresets[animationSettings.speed] || animationSpeedPresets.standard;
+      const durationMs = slowMotionPreview ? 2000 : (content.classList.contains('settings-group-content') ? speed.groupMs : speed.sectionMs);
+      let finished = false;
+      const finish = (event) => {
+        if (event && (event.target !== content || event.propertyName !== 'max-height')) return;
+        if (finished) return;
+        finished = true;
+        content.removeEventListener('transitionend', finish);
+        content.classList.remove('is-settings-disclosure-animating', 'is-settings-disclosure-preparing');
+        owner.classList.toggle('is-collapsed', !expanded);
+        content.style.removeProperty('max-height');
+      };
+      content.addEventListener('transitionend', finish);
+      requestAnimationFrame(() => {
+        owner.classList.toggle('is-collapsed', !expanded);
+        const targetHeight = expanded ? content.scrollHeight : 0;
+        content.style.maxHeight = Math.max(0, targetHeight) + 'px';
+      });
+      setTimeout(() => finish(), durationMs + 180);
+    };
     const previewSidebar = document.querySelector('.sidebar');
     if (previewSidebar) {
       previewSidebar.style.setProperty('width', requestedWidth + 'px', 'important');
@@ -58,12 +182,10 @@ const previewScript = `
       button.innerHTML = '<span class="settings-group-toggle-main"><span class="settings-group-toggle-mark"><i class="bi ' + meta[0] + '"></i></span><span class="settings-group-toggle-copy"><span class="settings-group-toggle-title">' + name + '</span><span class="settings-group-toggle-description">' + meta[1] + '</span></span></span><span class="settings-group-toggle-icon"><i class="bi bi-chevron-down"></i></span>';
       group.append(button, content);
       const groupOpen = name === 'Appearance';
-      group.classList.toggle('is-collapsed', !groupOpen);
-      button.setAttribute('aria-expanded', groupOpen ? 'true' : 'false');
+      setDisclosureExpanded(group, button, content, groupOpen, false);
       button.addEventListener('click', () => {
         const open = group.classList.contains('is-collapsed');
-        group.classList.toggle('is-collapsed', !open);
-        button.setAttribute('aria-expanded', open ? 'true' : 'false');
+        setDisclosureExpanded(group, button, content, open, true);
       });
     });
     document.querySelectorAll('.sidebar .settings-section').forEach((section) => {
@@ -80,12 +202,10 @@ const previewScript = `
       button.innerHTML = '<span class="settings-toggle-title">' + (icon ? '<i class="' + icon.className + '"></i>' : '') + '<span>' + name + '</span></span><span class="settings-toggle-icon">▾</span>';
       section.append(button, content);
       const sectionOpen = name === 'On-Screen Overlay';
-      section.classList.toggle('is-collapsed', !sectionOpen);
-      button.setAttribute('aria-expanded', sectionOpen ? 'true' : 'false');
+      setDisclosureExpanded(section, button, content, sectionOpen, false);
       button.addEventListener('click', () => {
         const open = section.classList.contains('is-collapsed');
-        section.classList.toggle('is-collapsed', !open);
-        button.setAttribute('aria-expanded', open ? 'true' : 'false');
+        setDisclosureExpanded(section, button, content, open, true);
       });
     });
     const orderList = document.getElementById('overlayCategoryOrderList');

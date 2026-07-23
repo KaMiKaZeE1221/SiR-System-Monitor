@@ -29,6 +29,7 @@ const runtime = summarizeElectronAppMetrics([
     memory: { workingSetSize: 512, peakWorkingSetSize: 1024, privateBytes: 400 }
   }
 ], {
+  taskManagerMemoryBytes: 1700 * 1024,
   windowCount: 2,
   visibleWindowCount: 1,
   uptimeSeconds: 123.5
@@ -38,6 +39,8 @@ assert.strictEqual(runtime.cpuPercent, 4, 'Process CPU usage should be aggregate
 assert.strictEqual(runtime.workingSetBytes, 3584 * 1024, 'Working-set memory should convert from KB to bytes.');
 assert.strictEqual(runtime.peakWorkingSetBytes, 7168 * 1024, 'Peak memory should convert from KB to bytes.');
 assert.strictEqual(runtime.privateBytes, 2800 * 1024, 'Private memory should convert from KB to bytes.');
+assert.strictEqual(runtime.taskManagerMemoryBytes, 1700 * 1024, 'Task Manager memory should use the native private-working-set total.');
+assert.strictEqual(runtime.taskManagerMemorySource, 'windows-private-working-set', 'Native Task Manager memory should identify its source.');
 assert.strictEqual(runtime.processCount, 3, 'Process count should include every Electron process.');
 assert.strictEqual(runtime.rendererProcessCount, 1, 'Renderer processes should be classified.');
 assert.strictEqual(runtime.utilityProcessCount, 1, 'Utility processes should be classified.');
@@ -59,7 +62,8 @@ assert.strictEqual(byId.size, sensors.length, 'App telemetry sensor IDs must be 
 assert(sensors.length >= 16, 'The App group should expose a useful diagnostic sensor set.');
 assert(sensors.every((sensor) => sensor.group === 'app'), 'Every app telemetry sensor should use the App group.');
 assert(sensors.every((sensor) => sensor.provider === 'sir-app'), 'Every app telemetry sensor should identify its source.');
-assert(Math.abs(byId.get('app_memory_usage').value - (2800 / 1024)) < 0.0001, 'Primary app memory should use private bytes to match Windows Task Manager.');
+assert(Math.abs(byId.get('app_memory_usage').value - (1700 / 1024)) < 0.0001, 'Primary app memory should use Windows private working set to match Task Manager.');
+assert(Math.abs(byId.get('app_private_commit_memory').value - (2800 / 1024)) < 0.0001, 'Private commit should remain available as a separate opt-in diagnostic.');
 assert.strictEqual(byId.get('app_working_set_memory').value, 3.5, 'Detailed working-set memory should remain available separately.');
 assert.strictEqual(byId.get('app_sensor_read_duration').value, 28.5, 'Sensor read timing should be exposed.');
 assert.strictEqual(byId.get('app_detected_sensor_count').value, 142, 'Detected sensor count should be exposed.');
@@ -75,6 +79,7 @@ assert(appSource.includes("buildAppTelemetrySensors(runtimeStats"), 'The rendere
 assert(appSource.includes("'drives', 'app', 'other'"), 'App telemetry must be included in desktop and Web group order.');
 assert(mainSource.includes("ipcMain.handle('app:get-runtime-stats'"), 'The main process must expose lightweight Electron runtime metrics.');
 assert(mainSource.includes('app.getAppMetrics()'), 'Runtime telemetry must use Electron in-process metrics.');
+assert(mainSource.includes('sampleWindowsPrivateWorkingSets'), 'Runtime telemetry must sample Windows private working sets for Task Manager parity.');
 assert(html.includes('id="showApp"'), 'Visible Sensors must include an App checkbox.');
 assert(html.includes('id="appGroup"'), 'The dashboard must include an App sensor card.');
 assert(html.includes('id="appSensorsDynamic"'), 'The App card must use a standard dynamic sensor container.');

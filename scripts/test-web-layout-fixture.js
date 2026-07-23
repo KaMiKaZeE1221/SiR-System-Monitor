@@ -145,7 +145,7 @@ const server = http.createServer((request, response) => {
           const output = document.getElementById('diagnosticsOutput');
           const status = document.getElementById('diagnosticsStatus');
           document.querySelectorAll('[data-diagnostic-id]').forEach((button) => button.addEventListener('click', () => {
-            output.value = 'SiR System Monitor - Diagnostic Report\\nVersion: 1.3.2\\n\\n[Application]\\nPrivate memory (Task Manager comparable): 121.7 MB\\nWorking set (includes shared pages): 447.2 MB\\nAggregate CPU usage: 1.82%\\n\\n[Result]\\nDiagnostic completed successfully.';
+            output.value = 'SiR System Monitor - Diagnostic Report\\nVersion: 1.3.5\\n\\n[Application]\\nMemory (Task Manager private working set): 121.7 MB\\nPrivate commit: 286.4 MB\\nWorking set (includes shared pages): 447.2 MB\\nAggregate CPU usage: 1.82%\\n\\n[Result]\\nDiagnostic completed successfully.';
             status.textContent = button.querySelector('strong').textContent + ' completed.';
             button.blur();
           }));
@@ -178,7 +178,7 @@ const server = http.createServer((request, response) => {
 
     const payload = {
       app: 'SiR System Monitor',
-      version: '1.3.2',
+      version: '1.3.5',
       updatedAt: Date.now(),
       mode: 'builtin',
       groups: fixtureGroups,
