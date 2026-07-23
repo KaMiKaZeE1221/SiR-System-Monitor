@@ -1,5 +1,37 @@
 # Changelog
 
+> Note: Entries for older builds are estimated from development history and may not map 1:1 to exact historic commit dates.
+
+## 1.3.4 - 2026-07-23
+
+### Changed
+- Kept native sensor collection, sensor histories, alert evaluation, Web Monitor publishing, and OSD delivery active at the selected refresh interval while the desktop window is minimized or hidden.
+- Moved the monitoring refresh clock to Electron's main process so Chromium's hidden-page timer throttling cannot progressively delay a long-running minimized OSD.
+- Retained the V1.3.3 background performance safeguards: hidden dashboard DOM painting and interface animations remain suspended until the window is visible again.
+
+### Fixed
+- Fixed minimizing or hiding the desktop window stopping OSD values from updating when the Web Monitor service was off.
+- Fixed the hidden-window optimization pausing hardware sensor reads instead of pausing only desktop rendering work.
+
+## 1.3.3 - 2026-07-23
+
+### Added
+- Added Windows-native `PROCESS_MEMORY_COUNTERS_EX2` private-working-set sampling for every Electron process, with a safe Electron private-commit fallback on unsupported Windows versions.
+- Added V1.3.3 performance regression coverage for background throttling, inactive animation suspension, off-screen motion, hidden Web Monitor polling, in-place sensor updates, runtime-metric caching, and native memory aggregation.
+
+### Changed
+- Restored Chromium background throttling for the main and overlay windows instead of forcing every renderer timer and frame to run at full speed in the background.
+- Paused interface animation while the desktop window is unfocused and deferred dashboard painting only while it is truly hidden or minimized. Visible sensor values and alert styling continue updating when another app has focus; hidden dashboards catch up immediately when shown.
+- Limited continuous icon motion to icons inside or near the visible viewport. Settings icons are also paused while the settings sidebar or their parent disclosure is closed.
+- Changed normal sensor cards to update labels, values, and alert styling in place instead of rebuilding every sensor row on each refresh. Expanded graphs and Summary Mode retain their complete rendering paths.
+- Cached Electron process metrics for one second so fast sensor refresh settings do not repeatedly enumerate and resample the same app processes.
+- Hidden Web Monitor tabs now skip polling and animation work until visible again, while visible browser dashboards keep their normal one-second refresh.
+
+### Fixed
+- Fixed **SiR Memory Usage** reporting aggregate private commit while claiming to match Task Manager. It now reports Windows private working set, while the former value remains available as the separate **SiR Private Commit** sensor.
+- Fixed sensor-card hover causing avoidable CPU spikes through repeated DOM replacement, unnecessary shadow-transition tracking, and unrestricted off-screen icon animation.
+- Fixed animations continuing at full speed when the app was behind another window or minimized to the tray.
+
 ## 1.3.2 - 2026-07-22
 
 ### Added

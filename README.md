@@ -2,7 +2,7 @@
   <h1>SiR System Monitor</h1>
   <p><strong>Real-time hardware monitoring for Windows, your desktop, your overlay, and your browser.</strong></p>
   <p>
-    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.3.2" src="https://img.shields.io/badge/version-1.3.2-f97316?style=for-the-badge"></a>
+    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.3.4" src="https://img.shields.io/badge/version-1.3.4-f97316?style=for-the-badge"></a>
     <a href="#requirements"><img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&amp;logo=windows"></a>
     <a href="./LICENSE.txt"><img alt="GNU GPL v3" src="https://img.shields.io/badge/license-GPL--3.0-3DA639?style=for-the-badge"></a>
   </p>
@@ -34,14 +34,15 @@ SiR System Monitor is an open-source Windows desktop app that combines live syst
 
 Sensor groups include **FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, App, and Other**. FPS and frame-time values appear when an enabled source provides them.
 
-## What's new in 1.3.2
+## What's new in 1.3.4
 
-- Added a dedicated **Appearance → Animations** section with one master switch, individual effect controls, and Calm/Standard/Lively speed plus Gentle/Balanced/Expressive intensity presets.
-- Added symmetric fly-in/fly-out motion to Help, Diagnostics, update, import, and confirmation dialogs.
-- Added lightweight Summary transitions and animated sensor-card header icons to both the desktop dashboard and Web Monitor, plus matching motion across settings icons with collapsed content automatically paused.
-- Animation choices are included in named profiles and exported settings; the former settings-animation preference is migrated automatically.
-- Added a privacy-scrubbed **Create Support Bundle** action that warns first, automatically runs all six diagnostics in sequence, and packages their complete results with settings, sensor metadata, and runtime state into a reviewable ZIP.
-- Profile notifications and confirmations now use theme-aware in-app dialogs instead of native white Windows message boxes.
+- Completed a renderer performance pass without removing any dashboard, animation, overlay, alert, or Web Monitor features.
+- Kept hardware collection, alerts, histories, Web Monitor publishing, and OSD values refreshing while the desktop window is minimized or hidden, using a background-safe main-process refresh clock.
+- Paused interface animation whenever the desktop window is unfocused, while visible sensor values and alerts continue updating normally. Hidden dashboard painting is deferred until the window is shown again.
+- Limited ambient icon animation work to visible cards/settings controls and restored Chromium background throttling for the desktop and overlay windows.
+- Replaced full sensor-row rebuilds with in-place label, value, and alert updates on normal cards, reducing layout work and hover-related CPU spikes.
+- Hidden Web Monitor tabs now skip unnecessary polling and animation work until visible again.
+- Corrected **SiR Memory Usage** to use Windows' private working-set total—the value represented by Task Manager's normal Memory column. Private commit and full working set remain available as separate opt-in sensors.
 
 See the [full changelog](./CHANGELOG.md) for every change and fix.
 
@@ -81,7 +82,7 @@ SiR uses an isolated, persistent collector so standard sensor refreshes do not r
 |---|:---:|---|
 | **Built-in Sensors** | No | CPU utilization and overall clock, vendor-neutral FPS/frame time, memory capacity and activity, storage, network, latency, system data, and supported direct digital PSU telemetry. |
 | **Enhanced Hardware Sensors** | No | Supported CPU/GPU temperatures and clocks, power, voltage, fans, motherboard controllers, storage SMART data, and additional hardware telemetry. Administrator access may be required. |
-| **App telemetry** | No | SiR private memory (comparable to Task Manager), optional full working set, CPU, uptime, windows/processes, refresh performance, sensor/alert counts, and Web Monitor connections. Uses the existing refresh cycle and does not start another collector. |
+| **App telemetry** | No | SiR private working-set memory (comparable to Task Manager), optional private commit and full working set, CPU, uptime, windows/processes, refresh performance, sensor/alert counts, and Web Monitor connections. Uses the existing refresh cycle and does not start another collector. |
 | **RTSS / MSI** | Yes, optional | Additional FPS, frame-time, and compatible shared-memory telemetry. |
 | **AIDA64** | Yes, optional | Extra sensors exposed through AIDA64 shared memory. |
 | **HWiNFO / LHM Shared Memory** | Yes, optional | Compatibility access to sensors published by HWiNFO or a running LHM shared-memory provider. |
