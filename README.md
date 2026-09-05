@@ -2,7 +2,7 @@
   <h1>SiR System Monitor</h1>
   <p><strong>Real-time hardware monitoring for Windows, your desktop, your overlay, and your browser.</strong></p>
   <p>
-    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.3.5" src="https://img.shields.io/badge/version-1.3.5-f97316?style=for-the-badge"></a>
+    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.3.6" src="https://img.shields.io/badge/version-1.3.6-f97316?style=for-the-badge"></a>
     <a href="#requirements"><img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&amp;logo=windows"></a>
     <a href="./LICENSE.txt"><img alt="GNU GPL v3" src="https://img.shields.io/badge/license-GPL--3.0-3DA639?style=for-the-badge"></a>
   </p>
