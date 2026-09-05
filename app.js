@@ -6702,6 +6702,11 @@ function updateDynamicGroupValuesInPlace(container, sensors) {
 
   const rows = Array.from(container.children);
   if (rows.length !== sensors.length || rows.some((row) => !row.classList.contains('stat'))) return false;
+  // A graph may have just been collapsed. Values can only be updated in place
+  // when the existing DOM already has the same non-expanded structure; otherwise
+  // the old graph wrapper and expanded styling would survive until another view
+  // change forced a complete render.
+  if (rows.some((row) => row.classList.contains('is-expanded') || row.querySelector('.stat-graph-wrap, .stat-graph-empty'))) return false;
 
   for (let index = 0; index < sensors.length; index += 1) {
     const sensor = sensors[index];
