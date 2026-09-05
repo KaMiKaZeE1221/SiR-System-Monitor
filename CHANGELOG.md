@@ -1,6 +1,10 @@
 # Changelog
 
-> Note: Entries for older builds are estimated from development history and may not map 1:1 to exact historic commit dates.
+## 1.3.6 - 2026-09-06
+
+### Fixed
+- Fixed expanded sensor graphs remaining visible after clicking their sensor row to close them.
+- Fixed the low-overhead in-place renderer retaining stale graph markup and expanded styling until Summary Mode or another structural view change forced a full redraw.
 
 ## 1.3.5 - 2026-07-23
 
