@@ -67,4 +67,4 @@ assert(!cssSource.includes('animation: sensor-card-icon-live var(--motion-icon-d
 assert(cssSource.includes('body.app-inactive *::before'), 'Background pseudo-element animations should be paused.');
 assert(cssSource.includes('contain: layout style'), 'Sensor cards should contain layout recalculation.');
 
-console.log('V1.3.5 performance regression checks passed.');
+console.log('V1.3.7 performance regression checks passed.');

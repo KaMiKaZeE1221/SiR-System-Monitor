@@ -36,6 +36,11 @@ async function main() {
     assert.strictEqual(new Set(ids).size, ids.length, 'Sensor IDs are not unique.');
     assert(sensors.every((sensor) => typeof sensor.defaultEnabled === 'boolean'), 'A sensor is missing its default selection state.');
     assert(Number(data.diagnostics.workingSetBytes) > 0, 'Sensor host working-set diagnostics are missing.');
+    assert(Array.isArray(data.fanControls), 'Fan-control capability catalogue is missing.');
+    assert.strictEqual(typeof data.diagnostics.fanControlAvailable, 'boolean', 'Fan-control availability diagnostics are missing.');
+    assert(Number.isFinite(Number(data.diagnostics.fanControlCount)), 'Fan-control count diagnostics are missing.');
+    assert(Number.isFinite(Number(data.diagnostics.fanControlProtectedCount)), 'Protected fan-control diagnostics are missing.');
+    assert(Number.isFinite(Number(data.diagnostics.fanControlActiveCount)), 'Active fan-control diagnostics are missing.');
     assert.strictEqual(Number(data.diagnostics.directPsuDeviceIdsSupported), 19, 'The native PSU USB ID catalog is incomplete.');
     assert.strictEqual(Number(data.diagnostics.directPsuProtocolsSupported), 3, 'The native PSU protocol catalog is incomplete.');
     assert(Array.isArray(data.diagnostics.enhancedHardwareFamilies) && data.diagnostics.enhancedHardwareFamilies.length >= 10, 'Common enhanced-hardware coverage is not reported.');
@@ -133,12 +138,25 @@ async function main() {
       groups: Object.fromEntries(Object.entries(data.groupedSensors).map(([group, list]) => [group, list.length])),
       workingSetMb: Math.round((Number(data.diagnostics.workingSetBytes) / 1024 / 1024) * 10) / 10,
       enhancedAvailable: data.diagnostics.enhancedAvailable === true,
+      fanControls: data.fanControls.length,
+      fanControlCapabilities: data.fanControls.map((control) => ({
+        name: control.name,
+        hardware: control.hardwareName,
+        hardwareType: control.hardwareType,
+        mode: control.controlMode,
+        range: `${control.minSoftwareValue}-${control.maxSoftwareValue}%`,
+        relatedFanSensorId: control.relatedFanSensorId || null,
+        relatedFanRpm: Number.isFinite(Number(control.relatedFanRpm)) ? Number(control.relatedFanRpm) : null,
+        protected: control.protectedDevice === true,
+        available: control.available === true,
+        status: control.status || ''
+      })),
       warning: data.diagnostics.warning || null,
       firstSnapshotMs
     };
     console.log(JSON.stringify(summary, null, 2));
   } finally {
-    reader.close();
+    await reader.close({ forceAfterMs: 5000, graceful: true });
   }
 }
 
