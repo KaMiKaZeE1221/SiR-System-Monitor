@@ -24,6 +24,13 @@ const {
   mergeLiveAndCachedCatalog
 } = require('./sensorCatalogCache');
 const { buildAppTelemetrySensors } = require('./appTelemetry');
+const {
+  DEFAULT_FAN_CURVE,
+  normalizeFanChannel,
+  normalizeFanCurve,
+  normalizeFanControlSettings,
+  combineTemperatureValues
+} = require('./fanControl');
 const http = require('http');
 const os = require('os');
 const fs = require('fs');
@@ -140,6 +147,7 @@ const TEMPERATURE_UNIT_KEY = 'temperatureUnit';
 const PROVIDER_SELECTION_KEY = 'providerSelection';
 const SENSOR_CUSTOM_NAMES_KEY = 'sensorCustomNames';
 const SENSOR_ALERT_RULES_KEY = 'sensorAlertRules';
+const FAN_CONTROL_SETTINGS_KEY = 'fanControlSettingsV1';
 const SENSOR_CATALOG_CACHE_KEY = 'sensorCatalogCacheV1';
 const SETTINGS_ACCORDION_STATE_KEY = 'settingsAccordionState';
 const WINDOW_ORDER_KEY = 'windowOrder';
@@ -248,6 +256,7 @@ const SETTINGS_SNAPSHOT_KEYS = [
   WEB_MONITOR_SETTINGS_KEY,
   APP_BEHAVIOR_SETTINGS_KEY,
   SENSOR_ALERT_RULES_KEY,
+  FAN_CONTROL_SETTINGS_KEY,
   WINDOW_ORDER_KEY,
   SUMMARY_WINDOW_ORDER_KEY,
   WINDOW_SIZE_KEY,
@@ -460,6 +469,16 @@ let sensorCustomNames = {};
 let sensorAlertRules = {};
 let sensorAlertLastTriggeredAt = {};
 let activeSensorAlertState = {};
+let fanControlSettings = { enabled: false, channels: {} };
+let latestFanControlCapabilities = [];
+let latestFanControlTemperatureSensors = [];
+let fanControlRenderSignature = '';
+let fanControlViewEnabled = false;
+let fanControlEnableRequestPending = false;
+let fanControlApplyTimer = null;
+const GLOBAL_FAN_CURVE_EDITOR_ID = '__sir_global_curve__';
+let fanCurveEditorControlId = GLOBAL_FAN_CURVE_EDITOR_ID;
+let fanCurveDragState = null;
 let pendingVisibilityRefresh = false;
 let lastUiRenderAt = 0;
 let forceNextUiRender = true;
@@ -2573,6 +2592,747 @@ function moveSensorOrderByDrop(group, sensorId, targetSensorId, placeAfter, visi
   updateStats();
 }
 
+function loadFanControlSettings() {
+  try {
+    return normalizeFanControlSettings(localStorage.getItem(FAN_CONTROL_SETTINGS_KEY) || '{}');
+  } catch (error) {
+    return normalizeFanControlSettings({});
+  }
+}
+
+function saveFanControlSettings(options = {}) {
+  fanControlSettings = normalizeFanControlSettings(fanControlSettings);
+  localStorage.setItem(FAN_CONTROL_SETTINGS_KEY, JSON.stringify(fanControlSettings));
+  if (options.apply !== false) {
+    syncFanControlRuntime();
+    scheduleFanControlRuntimeApply();
+  }
+}
+
+function getFanControlChannel(controlId) {
+  const id = String(controlId || '').trim();
+  if (!fanControlSettings.channels[id]) {
+    fanControlSettings.channels[id] = normalizeFanChannel({});
+  } else {
+    fanControlSettings.channels[id] = normalizeFanChannel(fanControlSettings.channels[id]);
+  }
+  return fanControlSettings.channels[id];
+}
+
+function getFanCurveConfiguration(editorId) {
+  if (editorId === GLOBAL_FAN_CURVE_EDITOR_ID) {
+    fanControlSettings.globalCurve = normalizeFanCurve(fanControlSettings.globalCurve || {});
+    return fanControlSettings.globalCurve;
+  }
+  return getFanControlChannel(editorId);
+}
+
+function setFanCurveConfiguration(editorId, value) {
+  if (editorId === GLOBAL_FAN_CURVE_EDITOR_ID) {
+    fanControlSettings.globalCurve = normalizeFanCurve(value);
+    return fanControlSettings.globalCurve;
+  }
+  fanControlSettings.channels[editorId] = normalizeFanChannel(value);
+  return fanControlSettings.channels[editorId];
+}
+
+function getFanControlDisplayName(control) {
+  const channel = getFanControlChannel(control?.id);
+  return channel.displayName || String(control?.name || 'Fan Control');
+}
+
+function buildFanControlHostConfiguration() {
+  const providers = loadProviderSelection();
+  return {
+    enabled: fanControlSettings.enabled === true && providers.enhanced === true,
+    channels: Object.entries(fanControlSettings.channels || {}).map(([controlId, value]) => {
+      const channel = normalizeFanChannel(value);
+      const effectiveChannel = channel.mode === 'global'
+        ? normalizeFanChannel({
+            ...normalizeFanCurve(fanControlSettings.globalCurve || {}),
+            mode: 'curve',
+            offsetPercent: channel.offsetPercent
+          })
+        : channel;
+      return { controlId, ...effectiveChannel };
+    })
+  };
+}
+
+function syncFanControlRuntime() {
+  if (!sensorReader || typeof sensorReader.setFanControlConfiguration !== 'function') return;
+  sensorReader.setFanControlConfiguration(buildFanControlHostConfiguration());
+}
+
+function scheduleFanControlRuntimeApply() {
+  if (fanControlApplyTimer !== null) window.clearTimeout(fanControlApplyTimer);
+  fanControlApplyTimer = window.setTimeout(() => {
+    fanControlApplyTimer = null;
+    updateStats(true);
+  }, 80);
+}
+
+function flattenTemperatureSensors(groupedSensors) {
+  return Object.entries(groupedSensors || {}).flatMap(([group, sensors]) => (sensors || [])
+    .filter((sensor) => sensor && sensor.provider === 'builtin' &&
+      String(sensor.sensorType || '').toLowerCase() === 'temperature' &&
+      Number.isFinite(Number(sensor.value)))
+    .map((sensor) => ({
+      id: String(sensor.id || ''),
+      name: String(sensor.name || sensor.id || 'Temperature'),
+      group,
+      value: Number(sensor.value)
+    })))
+    .filter((sensor) => sensor.id)
+    .sort((left, right) => `${left.group} ${left.name}`.localeCompare(`${right.group} ${right.name}`));
+}
+
+function chooseDefaultFanTemperatureSensor(capability) {
+  const hardwareType = String(capability?.hardwareType || '').toLowerCase();
+  const preferredGroup = hardwareType.includes('gpu') ? 'gpu' : 'cpu';
+  return latestFanControlTemperatureSensors.find((sensor) => sensor.group === preferredGroup)?.id ||
+    latestFanControlTemperatureSensors[0]?.id || '';
+}
+
+function fanTemperatureOptions(selectedId, excludeId = '') {
+  const options = ['<option value="">Select a built-in temperature...</option>'];
+  if (selectedId && !latestFanControlTemperatureSensors.some((sensor) => sensor.id === selectedId)) {
+    options.push(`<option value="${escapeHtml(selectedId)}" selected>Selected source unavailable (failsafe active)</option>`);
+  }
+  latestFanControlTemperatureSensors.forEach((sensor) => {
+    if (excludeId && sensor.id === excludeId) return;
+    const selected = sensor.id === selectedId ? ' selected' : '';
+    const label = `${String(sensor.group || '').toUpperCase()} · ${sensor.name} (${sensor.value.toFixed(1)} °C)`;
+    options.push(`<option value="${escapeHtml(sensor.id)}"${selected}>${escapeHtml(label)}</option>`);
+  });
+  return options.join('');
+}
+
+function hasFanNumericValue(value) {
+  return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+}
+
+function getFanControlDuty(control) {
+  if (hasFanNumericValue(control?.requestedPercent)) return Number(control.requestedPercent);
+  if (hasFanNumericValue(control?.currentValue)) return Number(control.currentValue);
+  return 0;
+}
+
+function getFanCurveSourceTemperature(channel) {
+  const primary = latestFanControlTemperatureSensors.find((sensor) => sensor.id === channel.primarySensorId)?.value;
+  const secondary = latestFanControlTemperatureSensors.find((sensor) => sensor.id === channel.secondarySensorId)?.value;
+  return combineTemperatureValues(primary, secondary, channel.sensorMode);
+}
+
+function fanCurvePointCoordinates(point) {
+  const plotLeft = 48;
+  const plotTop = 18;
+  const plotWidth = 566;
+  const plotHeight = 218;
+  const x = plotLeft + ((Math.max(0, Math.min(110, Number(point.temperature) || 0)) / 110) * plotWidth);
+  const percent = Math.max(20, Math.min(100, Number(point.percent) || 20));
+  const y = plotTop + (((100 - percent) / 80) * plotHeight);
+  return { x, y };
+}
+
+function renderFanCurveChart(channel, controlId) {
+  const xTicks = [0, 20, 40, 60, 80, 100];
+  const yTicks = [20, 40, 60, 80, 100];
+  const grid = [
+    ...xTicks.map((temperature) => {
+      const { x } = fanCurvePointCoordinates({ temperature, percent: 20 });
+      return `<line x1="${x}" y1="18" x2="${x}" y2="236"></line><text x="${x}" y="260" text-anchor="middle">${temperature}°</text>`;
+    }),
+    ...yTicks.map((percent) => {
+      const { y } = fanCurvePointCoordinates({ temperature: 0, percent });
+      return `<line x1="48" y1="${y}" x2="614" y2="${y}"></line><text x="38" y="${y + 4}" text-anchor="end">${percent}%</text>`;
+    })
+  ].join('');
+  const coordinates = channel.curvePoints.map(fanCurvePointCoordinates);
+  const polyline = coordinates.map((point) => `${point.x},${point.y}`).join(' ');
+  const nodes = coordinates.map((point, index) => `<circle cx="${point.x}" cy="${point.y}" r="7" tabindex="0" role="slider" aria-label="Curve point ${index + 1}" data-fan-curve-node data-point-index="${index}"></circle>`).join('');
+  return `<svg class="fan-curve-chart" viewBox="0 0 640 274" preserveAspectRatio="xMidYMid meet" data-fan-curve-chart data-control-id="${escapeHtml(controlId)}" aria-label="Temperature to fan-speed curve">
+    <g class="fan-curve-grid">${grid}</g>
+    <polyline class="fan-curve-line-shadow" points="${polyline}"></polyline>
+    <polyline class="fan-curve-line" points="${polyline}"></polyline>
+    <g class="fan-curve-nodes">${nodes}</g>
+  </svg>`;
+}
+
+function updateFanCurveChartVisual(root, channel) {
+  const chart = root?.querySelector('[data-fan-curve-chart]');
+  if (!chart) return;
+  const coordinates = channel.curvePoints.map(fanCurvePointCoordinates);
+  const polyline = coordinates.map((point) => `${point.x},${point.y}`).join(' ');
+  chart.querySelectorAll('.fan-curve-line, .fan-curve-line-shadow').forEach((line) => line.setAttribute('points', polyline));
+  chart.querySelectorAll('[data-fan-curve-node]').forEach((node, index) => {
+    const point = coordinates[index];
+    if (!point) return;
+    node.setAttribute('cx', String(point.x));
+    node.setAttribute('cy', String(point.y));
+  });
+}
+
+function renderFanControlCard(control) {
+  const channel = getFanControlChannel(control.id);
+  const isProtected = control.protectedDevice === true || control.available !== true;
+  const mode = isProtected ? 'default' : channel.mode;
+  const displayName = channel.displayName || String(control.name || 'Fan Control');
+  const duty = getFanControlDuty(control);
+  const rpm = hasFanNumericValue(control.relatedFanRpm) ? `${Math.round(Number(control.relatedFanRpm))}` : '—';
+  const modeLabel = mode === 'global' ? 'Global curve' : mode === 'curve' ? 'Temperature curve' : mode === 'manual' ? 'Manual control' : 'BIOS / automatic';
+  const offsetLabel = `${channel.offsetPercent > 0 ? '+' : ''}${channel.offsetPercent.toFixed(0)}%`;
+  return `<article class="fan-control-card fan-control-tile${isProtected ? ' is-protected' : ''}${channel.collapsed ? ' is-collapsed' : ''}" data-fan-control-card="${escapeHtml(control.id)}">
+    <div class="fan-control-card-header">
+      <div class="fan-control-name-block">
+        <div class="fan-control-name-row">
+          <i class="bi bi-fan" aria-hidden="true"></i>
+          <input type="text" maxlength="80" value="${escapeHtml(displayName)}" placeholder="${escapeHtml(String(control.name || 'Fan Control'))}" data-fan-field="displayName" aria-label="Fan display name">
+          <button type="button" data-fan-action="reset-name" title="Reset fan name" aria-label="Reset fan name"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i></button>
+          <span class="fan-control-mode-badge">${escapeHtml(modeLabel)}</span>
+          <button type="button" data-fan-action="toggle-collapse" title="${channel.collapsed ? 'Expand fan card' : 'Minimize fan card'}" aria-label="${channel.collapsed ? 'Expand fan card' : 'Minimize fan card'}" aria-expanded="${channel.collapsed ? 'false' : 'true'}"><i class="bi bi-chevron-${channel.collapsed ? 'down' : 'up'}" aria-hidden="true"></i></button>
+        </div>
+        <small>${escapeHtml(control.hardwareName || control.hardwareType || 'Detected hardware')}</small>
+      </div>
+    </div>
+    <div class="fan-control-meter-row">
+      <div><strong data-fan-live-duty>${duty.toFixed(0)}%</strong><span>command</span></div>
+      <div><strong data-fan-live-rpm>${rpm}</strong><span>RPM</span></div>
+    </div>
+    <div class="fan-control-duty-track"><span data-fan-live-duty-fill style="width:${Math.max(0, Math.min(100, duty))}%"></span></div>
+    <div class="fan-control-expanded-content">
+      <div class="fan-control-live">
+        <span data-fan-runtime-status>${escapeHtml(control.status || 'BIOS / automatic')}</span>
+        <small data-fan-runtime-telemetry>Waiting for live control telemetry.</small>
+      </div>
+      ${isProtected ? '<div class="settings-note fan-control-protected"><i class="bi bi-shield-lock-fill" aria-hidden="true"></i><span>Protected channel; retained under hardware control.</span></div>' : ''}
+      <div class="fan-control-editor${isProtected ? ' is-disabled' : ''}">
+        <label class="settings-field"><span>Control assignment</span><select class="detection-select" data-fan-field="mode"${isProtected ? ' disabled' : ''}>
+          <option value="default"${mode === 'default' ? ' selected' : ''}>BIOS / Automatic</option>
+          <option value="manual"${mode === 'manual' ? ' selected' : ''}>Manual Percentage</option>
+          <option value="curve"${mode === 'curve' ? ' selected' : ''}>SiR Temperature Curve</option>
+          <option value="global"${mode === 'global' ? ' selected' : ''}>Global Curve</option>
+        </select></label>
+        <label class="settings-field fan-offset-field"><span>Output offset <strong data-fan-offset-label>${offsetLabel}</strong></span><div class="fan-offset-stepper"><button type="button" data-fan-action="offset-decrease" aria-label="Decrease fan offset"><i class="bi bi-dash-lg" aria-hidden="true"></i></button><input type="number" min="-50" max="50" step="1" value="${channel.offsetPercent}" data-fan-field="offsetPercent" aria-label="Fan output offset percentage"><button type="button" data-fan-action="offset-increase" aria-label="Increase fan offset"><i class="bi bi-plus-lg" aria-hidden="true"></i></button></div><small>Added to this fan after its manual or curve value.</small></label>
+        <div class="fan-manual-editor${mode === 'manual' ? '' : ' is-hidden'}" data-fan-panel="manual">
+          <label class="settings-label"><span>Manual fan level</span><strong data-fan-manual-value>${Math.round(channel.manualPercent)}%</strong></label>
+          <input type="range" min="20" max="100" step="1" value="${channel.manualPercent}" data-fan-field="manualPercent">
+        </div>
+        <button type="button" class="fan-curve-open-btn${mode === 'curve' || mode === 'global' ? ' is-assigned' : ''}" data-fan-action="edit-curve"${isProtected ? ' disabled' : ''}><i class="bi bi-bezier2" aria-hidden="true"></i><span>${mode === 'global' ? 'Edit global curve' : mode === 'curve' ? 'Edit individual curve' : 'Configure temperature curve'}</span><i class="bi bi-arrow-right" aria-hidden="true"></i></button>
+      </div>
+      <button type="button" class="fan-hide-card-btn" data-fan-action="hide-card"><i class="bi bi-eye-slash" aria-hidden="true"></i><span>Hide this fan card</span></button>
+    </div>
+  </article>`;
+}
+
+function renderFanCurveStudio(control, isGlobal = false) {
+  if (!control && !isGlobal) {
+    return '<div class="settings-note fan-control-empty"><i class="bi bi-bezier2" aria-hidden="true"></i><span>A supported writable fan is required before a curve can be configured.</span></div>';
+  }
+  const editorId = isGlobal ? GLOBAL_FAN_CURVE_EDITOR_ID : control.id;
+  const channel = getFanCurveConfiguration(editorId);
+  const sourceTemperature = getFanCurveSourceTemperature(channel);
+  const curveRows = channel.curvePoints.map((point, index) => `<div class="fan-curve-point">
+    <span class="fan-curve-point-index">${index + 1}</span>
+    <label><span>Temperature</span><input type="number" min="0" max="110" step="1" value="${point.temperature}" data-fan-field="curvePoint" data-point-field="temperature" data-point-index="${index}"></label>
+    <span class="fan-curve-arrow"><i class="bi bi-arrow-right" aria-hidden="true"></i></span>
+    <label><span>Fan</span><input type="number" min="20" max="100" step="1" value="${point.percent}" data-fan-field="curvePoint" data-point-field="percent" data-point-index="${index}"></label>
+    <button type="button" class="fan-curve-point-remove" data-fan-action="remove-point" data-point-index="${index}" title="Remove curve point" aria-label="Remove curve point"${channel.curvePoints.length <= 2 ? ' disabled' : ''}><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+  </div>`).join('');
+  const editorName = isGlobal ? 'Global cooling curve' : `${getFanControlDisplayName(control)} curve`;
+  return `<article class="fan-curve-studio${isGlobal ? ' is-global' : ''}" data-fan-control-card="${escapeHtml(editorId)}">
+    <div class="fan-curve-canvas-panel">
+      <div class="fan-curve-canvas-heading">
+        <div><strong>${escapeHtml(editorName)}</strong><span>${isGlobal ? 'Reusable response shared by every fan assigned to Global Curve.' : 'Independent response for this fan only.'} Drag a point or use the precise fields.</span></div>
+        <div class="fan-curve-source-readout"><span>Source</span><strong data-fan-curve-source-readout>${sourceTemperature === null ? '—' : `${sourceTemperature.toFixed(1)} °C`}</strong></div>
+      </div>
+      ${renderFanCurveChart(channel, editorId)}
+    </div>
+    <div class="fan-curve-config-panel">
+      <div class="fan-curve-toolbar">
+        <button type="button" class="test-btn secondary-action" data-fan-action="add-point"${channel.curvePoints.length >= 8 ? ' disabled' : ''}><i class="bi bi-plus-lg" aria-hidden="true"></i>Add point</button>
+        <button type="button" class="test-btn secondary-action" data-fan-action="reset-curve"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>Reset curve</button>
+      </div>
+      <div class="settings-field-grid fan-source-grid">
+        <label class="settings-field"><span>Primary temperature</span><select class="detection-select" data-fan-field="primarySensorId">${fanTemperatureOptions(channel.primarySensorId)}</select></label>
+        <label class="checkbox-label settings-switch-row"><input type="checkbox" data-fan-field="sensorMode"${channel.sensorMode === 'average' ? ' checked' : ''}><span>Average two temperature sensors</span></label>
+        <label class="settings-field${channel.sensorMode === 'average' ? '' : ' is-hidden'}" data-fan-secondary-field><span>Second temperature</span><select class="detection-select" data-fan-field="secondarySensorId">${fanTemperatureOptions(channel.secondarySensorId, channel.primarySensorId)}</select></label>
+      </div>
+      <div class="fan-curve-points">${curveRows}</div>
+      <div class="settings-field-grid fan-safety-grid">
+        <label class="settings-field"><span>Safe minimum %</span><input type="number" min="20" max="100" step="1" value="${channel.minimumPercent}" data-fan-field="minimumPercent"></label>
+        <label class="settings-field"><span>Hysteresis °C</span><input type="number" min="0" max="10" step="0.5" value="${channel.hysteresis}" data-fan-field="hysteresis"></label>
+        <label class="settings-field"><span>Emergency °C</span><input type="number" min="50" max="110" step="1" value="${channel.emergencyTemperature}" data-fan-field="emergencyTemperature"></label>
+      </div>
+      <button type="button" class="test-btn fan-curve-apply-btn" data-fan-action="apply-curve"><i class="bi bi-check2-circle" aria-hidden="true"></i>${isGlobal ? 'Assign Global Curve to all writable fans' : channel.mode === 'curve' ? 'Individual curve assigned to this fan' : 'Assign individual curve to fan'}</button>
+    </div>
+  </article>`;
+}
+
+function updateFanControlRuntimeLabels() {
+  const masterStatus = document.getElementById('fanControlStatus');
+  const providers = loadProviderSelection();
+  const writable = latestFanControlCapabilities.filter((control) => control?.available === true && control?.protectedDevice !== true);
+  const active = writable.filter((control) => String(control.controlMode || '').toLowerCase() === 'software');
+  if (masterStatus) {
+    if (providers.enhanced !== true) {
+      masterStatus.textContent = 'Enhanced Hardware Sensors must be enabled before fan controls can be used.';
+      masterStatus.classList.add('web-status-error');
+    } else if (!writable.length) {
+      masterStatus.textContent = 'No supported writable fan controls have been detected yet.';
+      masterStatus.classList.add('web-status-error');
+    } else {
+      masterStatus.textContent = `${writable.length} writable control${writable.length === 1 ? '' : 's'} detected · ${active.length} using software control.`;
+      masterStatus.classList.remove('web-status-error');
+    }
+  }
+
+  latestFanControlCapabilities.forEach((control) => {
+    const duty = getFanControlDuty(control);
+    document.querySelectorAll(`[data-fan-control-card="${CSS.escape(String(control.id || ''))}"]`).forEach((row) => {
+      const status = row.querySelector('[data-fan-runtime-status]');
+      const telemetry = row.querySelector('[data-fan-runtime-telemetry]');
+      const dutyValue = row.querySelector('[data-fan-live-duty]');
+      const rpmValue = row.querySelector('[data-fan-live-rpm]');
+      const dutyFill = row.querySelector('[data-fan-live-duty-fill]');
+      if (status) status.textContent = String(control.status || 'BIOS / automatic');
+      if (dutyValue) dutyValue.textContent = `${duty.toFixed(0)}%`;
+      if (rpmValue) rpmValue.textContent = hasFanNumericValue(control.relatedFanRpm) ? String(Math.round(Number(control.relatedFanRpm))) : '—';
+      if (dutyFill) dutyFill.style.width = `${Math.max(0, Math.min(100, duty))}%`;
+      if (telemetry) {
+        const details = [];
+        if (hasFanNumericValue(control.requestedPercent)) details.push(`Requested ${Number(control.requestedPercent).toFixed(0)}%`);
+        if (hasFanNumericValue(control.currentValue)) details.push(`Reported ${Number(control.currentValue).toFixed(0)}%`);
+        if (hasFanNumericValue(control.relatedFanRpm)) details.push(`${Math.round(Number(control.relatedFanRpm))} RPM`);
+        if (hasFanNumericValue(control.sourceTemperature)) details.push(`${Number(control.sourceTemperature).toFixed(1)} °C source`);
+        telemetry.textContent = details.length ? details.join(' · ') : 'Waiting for live control telemetry.';
+      }
+    });
+  });
+
+  const editorControl = latestFanControlCapabilities.find((control) => control.id === fanCurveEditorControlId);
+  if (editorControl || fanCurveEditorControlId === GLOBAL_FAN_CURVE_EDITOR_ID) {
+    const source = getFanCurveSourceTemperature(getFanCurveConfiguration(fanCurveEditorControlId));
+    document.querySelectorAll('[data-fan-curve-source-readout]').forEach((value) => {
+      value.textContent = source === null ? '—' : `${source.toFixed(1)} °C`;
+    });
+  }
+}
+
+function renderFanControlSettings(force = false) {
+  const container = document.getElementById('fanControlChannels');
+  const enabledToggle = document.getElementById('fanControlEnabled');
+  if (!container || !enabledToggle) return;
+  if (!fanControlEnableRequestPending) enabledToggle.checked = fanControlSettings.enabled === true;
+  if (!force && (fanCurveDragState || (container.contains(document.activeElement) && document.activeElement?.matches('input, select')))) {
+    updateFanControlRuntimeLabels();
+    return;
+  }
+
+  const editableControls = latestFanControlCapabilities.filter((control) => control?.available === true && control?.protectedDevice !== true);
+  const visibleControls = latestFanControlCapabilities.filter((control) => getFanControlChannel(control.id).hidden !== true);
+  const hiddenControlCount = latestFanControlCapabilities.length - visibleControls.length;
+  if (fanCurveEditorControlId !== GLOBAL_FAN_CURVE_EDITOR_ID && !editableControls.some((control) => control.id === fanCurveEditorControlId)) {
+    fanCurveEditorControlId = GLOBAL_FAN_CURVE_EDITOR_ID;
+  }
+  const editorControl = editableControls.find((control) => control.id === fanCurveEditorControlId) || null;
+  const editingGlobalCurve = fanCurveEditorControlId === GLOBAL_FAN_CURVE_EDITOR_ID;
+  const signature = JSON.stringify({
+    controls: latestFanControlCapabilities.map((control) => [control.id, control.name, control.hardwareName, control.protectedDevice]),
+    temperatures: latestFanControlTemperatureSensors.map((sensor) => [sensor.id, sensor.name, sensor.group]),
+    settings: fanControlSettings,
+    editor: fanCurveEditorControlId
+  });
+  if (!force && signature === fanControlRenderSignature) {
+    updateFanControlRuntimeLabels();
+    return;
+  }
+  fanControlRenderSignature = signature;
+
+  const controlCards = visibleControls.length
+    ? visibleControls.map(renderFanControlCard).join('')
+    : latestFanControlCapabilities.length
+      ? '<div class="settings-note fan-control-empty"><i class="bi bi-eye-slash" aria-hidden="true"></i><span>All detected fan cards are hidden. Use Show hidden fans to restore them.</span></div>'
+      : '<div class="settings-note fan-control-empty"><i class="bi bi-search" aria-hidden="true"></i><span>Waiting for supported motherboard or GPU fan controls. Controls appear only when Enhanced Hardware Sensors exposes a writable channel.</span></div>';
+  const editorOptions = [`<option value="${GLOBAL_FAN_CURVE_EDITOR_ID}"${editingGlobalCurve ? ' selected' : ''}>Global Curve · all assigned fans</option>`, ...editableControls.map((control) => `<option value="${escapeHtml(control.id)}"${control.id === fanCurveEditorControlId ? ' selected' : ''}>${escapeHtml(getFanControlDisplayName(control))} · individual curve</option>`)].join('');
+  container.innerHTML = `<section class="fan-workspace-section fan-controls-board">
+    <div class="fan-workspace-section-heading"><div><span class="fan-section-icon"><i class="bi bi-sliders" aria-hidden="true"></i></span><span><strong>Controls</strong><small>Assign firmware, manual, or temperature-curve control per channel.</small></span></div><div class="fan-section-heading-actions">${hiddenControlCount ? `<button type="button" class="fan-section-action-btn" data-fan-action="show-hidden"><i class="bi bi-eye" aria-hidden="true"></i><span>Show ${hiddenControlCount} hidden</span></button>` : ''}<b>${visibleControls.length}/${latestFanControlCapabilities.length}</b></div></div>
+    <div class="fan-control-grid">${controlCards}</div>
+  </section>
+  <section class="fan-workspace-section fan-curves-board${fanControlSettings.curveStudioCollapsed ? ' is-collapsed' : ''}" data-fan-curve-studio-section>
+    <div class="fan-workspace-section-heading fan-curve-heading"><div><span class="fan-section-icon"><i class="bi bi-bezier2" aria-hidden="true"></i></span><span><strong>Curve Studio</strong><small>Build the global response or an independent curve for one fan.</small></span></div>
+      <div class="fan-curve-heading-actions"><label class="fan-editor-picker"><span>Edit curve</span><select class="detection-select" data-fan-editor-picker>${editorOptions}</select></label><button type="button" class="fan-section-collapse-btn" data-fan-action="toggle-curve-studio" aria-label="${fanControlSettings.curveStudioCollapsed ? 'Expand Curve Studio' : 'Minimize Curve Studio'}" aria-expanded="${fanControlSettings.curveStudioCollapsed ? 'false' : 'true'}"><i class="bi bi-chevron-${fanControlSettings.curveStudioCollapsed ? 'down' : 'up'}" aria-hidden="true"></i></button></div>
+    </div>
+    ${renderFanCurveStudio(editorControl, editingGlobalCurve)}
+  </section>`;
+  updateFanControlRuntimeLabels();
+}
+
+function updateFanControlData(externalData, groupedSensors, updateUi = true) {
+  latestFanControlCapabilities = Array.isArray(externalData?.fanControls) ? externalData.fanControls : [];
+  latestFanControlTemperatureSensors = flattenTemperatureSensors(groupedSensors);
+  if (updateUi) renderFanControlSettings(false);
+  syncFanControlRuntime();
+}
+
+function initializeFanControlSettings() {
+  fanControlSettings = loadFanControlSettings();
+  syncFanControlRuntime();
+  const enabledToggle = document.getElementById('fanControlEnabled');
+  const restoreButton = document.getElementById('fanControlRestoreAllBtn');
+  const container = document.getElementById('fanControlChannels');
+  if (!enabledToggle || !container || container.dataset.initialized === 'true') return;
+  container.dataset.initialized = 'true';
+  enabledToggle.checked = fanControlSettings.enabled === true;
+
+  enabledToggle.addEventListener('change', async () => {
+    const requestedEnabled = enabledToggle.checked === true;
+    fanControlEnableRequestPending = true;
+    if (requestedEnabled) {
+      if (loadProviderSelection().enhanced !== true) {
+        fanControlEnableRequestPending = false;
+        enabledToggle.checked = false;
+        await showThemedConfirmation(
+          'Enhanced Sensors Required',
+          'Fan Control needs Enhanced Hardware Sensors and administrator access. Enable Enhanced Hardware Sensors first, then return here.',
+          { icon: 'bi-shield-lock-fill', tone: 'warning', confirmLabel: 'Understood', cancelLabel: 'Close' }
+        );
+        return;
+      }
+      const accepted = await showThemedConfirmation(
+        'Enable Experimental Fan Control?',
+        'SiR will take software control only of supported fan channels that you configure. Incorrect fan settings can cause overheating or hardware instability.',
+        {
+          icon: 'bi-fan',
+          tone: 'warning',
+          confirmLabel: 'Enable Fan Control',
+          cancelLabel: 'Cancel',
+          detailIcon: 'bi-shield-exclamation',
+          detail: 'Missing temperature data, a stalled fan, or an emergency temperature forces 100%. Closing SiR normally, disabling this feature, or losing the app heartbeat returns claimed channels to BIOS control.'
+        }
+      );
+      if (!accepted) {
+        fanControlEnableRequestPending = false;
+        enabledToggle.checked = false;
+        return;
+      }
+    }
+    fanControlEnableRequestPending = false;
+    fanControlSettings.enabled = requestedEnabled;
+    enabledToggle.checked = requestedEnabled;
+    saveFanControlSettings();
+    renderFanControlSettings(true);
+  });
+
+  restoreButton?.addEventListener('click', async () => {
+    const accepted = await showThemedConfirmation(
+      'Return All Fans to BIOS?',
+      'Every SiR fan-control channel will be set back to BIOS / Automatic mode.',
+      { icon: 'bi-arrow-counterclockwise', confirmLabel: 'Return to BIOS', cancelLabel: 'Cancel' }
+    );
+    if (!accepted) return;
+    Object.keys(fanControlSettings.channels || {}).forEach((controlId) => {
+      fanControlSettings.channels[controlId] = normalizeFanChannel({
+        ...fanControlSettings.channels[controlId],
+        mode: 'default'
+      });
+    });
+    fanControlSettings.enabled = false;
+    enabledToggle.checked = false;
+    saveFanControlSettings();
+    renderFanControlSettings(true);
+  });
+
+  container.addEventListener('input', (event) => {
+    const field = event.target.closest('[data-fan-field]');
+    const card = event.target.closest('[data-fan-control-card]');
+    if (!field || !card) return;
+    const controlId = String(card.dataset.fanControlCard || '');
+    const fieldName = String(field.dataset.fanField || '');
+    if (fieldName === 'displayName' && controlId !== GLOBAL_FAN_CURVE_EDITOR_ID) {
+      const channel = getFanControlChannel(controlId);
+      channel.displayName = String(field.value || '');
+      fanControlSettings.channels[controlId] = normalizeFanChannel(channel);
+      saveFanControlSettings({ apply: false });
+      return;
+    }
+
+    const isCurveField = fieldName === 'curvePoint' || ['minimumPercent', 'hysteresis', 'emergencyTemperature'].includes(fieldName);
+    const channel = isCurveField ? getFanCurveConfiguration(controlId) : getFanControlChannel(controlId);
+    if (fieldName === 'manualPercent' && controlId !== GLOBAL_FAN_CURVE_EDITOR_ID) {
+      channel.manualPercent = Number(field.value);
+      const manualValue = card.querySelector('[data-fan-manual-value]');
+      if (manualValue) manualValue.textContent = `${Math.round(Number(field.value))}%`;
+    } else if (fieldName === 'offsetPercent' && controlId !== GLOBAL_FAN_CURVE_EDITOR_ID) {
+      channel.offsetPercent = Number(field.value);
+      const offsetValue = Math.max(-50, Math.min(50, Number(field.value) || 0));
+      const offsetLabel = card.querySelector('[data-fan-offset-label]');
+      if (offsetLabel) offsetLabel.textContent = `${offsetValue > 0 ? '+' : ''}${offsetValue.toFixed(0)}%`;
+    } else if (fieldName === 'curvePoint') {
+      const pointIndex = Number(field.dataset.pointIndex);
+      const pointField = String(field.dataset.pointField || '');
+      if (channel.curvePoints[pointIndex] && ['temperature', 'percent'].includes(pointField)) {
+        channel.curvePoints[pointIndex][pointField] = Number(field.value);
+      }
+    } else if (['minimumPercent', 'hysteresis', 'emergencyTemperature'].includes(fieldName)) {
+      channel[fieldName] = Number(field.value);
+    } else {
+      return;
+    }
+    if (isCurveField) {
+      setFanCurveConfiguration(controlId, channel);
+    } else {
+      fanControlSettings.channels[controlId] = normalizeFanChannel(channel);
+    }
+    saveFanControlSettings();
+    if (fieldName === 'curvePoint') {
+      updateFanCurveChartVisual(card, getFanCurveConfiguration(controlId));
+    }
+  });
+
+  container.addEventListener('change', (event) => {
+    const editorPicker = event.target.closest('[data-fan-editor-picker]');
+    if (editorPicker) {
+      fanCurveEditorControlId = String(editorPicker.value || '');
+      renderFanControlSettings(true);
+      return;
+    }
+    const field = event.target.closest('[data-fan-field]');
+    const card = event.target.closest('[data-fan-control-card]');
+    if (!field || !card) return;
+    const controlId = String(card.dataset.fanControlCard || '');
+    const fieldName = String(field.dataset.fanField || '');
+    if (fieldName === 'mode') {
+      if (controlId === GLOBAL_FAN_CURVE_EDITOR_ID) return;
+      const channel = getFanControlChannel(controlId);
+      channel.mode = field.value;
+      if (channel.mode === 'curve' && !channel.primarySensorId) {
+        channel.primarySensorId = chooseDefaultFanTemperatureSensor(latestFanControlCapabilities.find((control) => control.id === controlId));
+      }
+      if (channel.mode === 'global' && !fanControlSettings.globalCurve.primarySensorId) {
+        const globalCurve = getFanCurveConfiguration(GLOBAL_FAN_CURVE_EDITOR_ID);
+        globalCurve.primarySensorId = chooseDefaultFanTemperatureSensor(null);
+        setFanCurveConfiguration(GLOBAL_FAN_CURVE_EDITOR_ID, globalCurve);
+      }
+      fanControlSettings.channels[controlId] = normalizeFanChannel(channel);
+    } else if (fieldName === 'primarySensorId' || fieldName === 'secondarySensorId') {
+      const channel = getFanCurveConfiguration(controlId);
+      channel[fieldName] = field.value;
+      setFanCurveConfiguration(controlId, channel);
+    } else if (fieldName === 'sensorMode') {
+      const channel = getFanCurveConfiguration(controlId);
+      channel.sensorMode = field.checked ? 'average' : 'single';
+      if (channel.sensorMode === 'average' && !channel.secondarySensorId) {
+        channel.secondarySensorId = latestFanControlTemperatureSensors.find((sensor) => sensor.id !== channel.primarySensorId)?.id || '';
+      }
+      setFanCurveConfiguration(controlId, channel);
+    } else {
+      return;
+    }
+    saveFanControlSettings();
+    renderFanControlSettings(true);
+  });
+
+  container.addEventListener('click', async (event) => {
+    const action = event.target.closest('[data-fan-action]');
+    if (!action) return;
+    const actionName = String(action.dataset.fanAction || '');
+    if (actionName === 'toggle-curve-studio') {
+      fanControlSettings.curveStudioCollapsed = fanControlSettings.curveStudioCollapsed !== true;
+      saveFanControlSettings({ apply: false });
+      renderFanControlSettings(true);
+      return;
+    }
+    if (actionName === 'show-hidden') {
+      latestFanControlCapabilities.forEach((control) => {
+        fanControlSettings.channels[control.id] = normalizeFanChannel({
+          ...getFanControlChannel(control.id),
+          hidden: false
+        });
+      });
+      saveFanControlSettings({ apply: false });
+      renderFanControlSettings(true);
+      return;
+    }
+    const card = action.closest('[data-fan-control-card]');
+    const controlId = String(card?.dataset.fanControlCard || '');
+    if (!controlId) return;
+    if (actionName === 'toggle-collapse' && controlId !== GLOBAL_FAN_CURVE_EDITOR_ID) {
+      const channel = getFanControlChannel(controlId);
+      channel.collapsed = channel.collapsed !== true;
+      fanControlSettings.channels[controlId] = normalizeFanChannel(channel);
+      saveFanControlSettings({ apply: false });
+      renderFanControlSettings(true);
+      return;
+    }
+    if (actionName === 'hide-card' && controlId !== GLOBAL_FAN_CURVE_EDITOR_ID) {
+      const channel = getFanControlChannel(controlId);
+      channel.hidden = true;
+      fanControlSettings.channels[controlId] = normalizeFanChannel(channel);
+      saveFanControlSettings({ apply: false });
+      renderFanControlSettings(true);
+      return;
+    }
+    if ((actionName === 'offset-decrease' || actionName === 'offset-increase') && controlId !== GLOBAL_FAN_CURVE_EDITOR_ID) {
+      const channel = getFanControlChannel(controlId);
+      channel.offsetPercent += actionName === 'offset-increase' ? 1 : -1;
+      fanControlSettings.channels[controlId] = normalizeFanChannel(channel);
+      saveFanControlSettings();
+      renderFanControlSettings(true);
+      return;
+    }
+    if (actionName === 'edit-curve') {
+      fanCurveEditorControlId = getFanControlChannel(controlId).mode === 'global'
+        ? GLOBAL_FAN_CURVE_EDITOR_ID
+        : controlId;
+      renderFanControlSettings(true);
+      requestAnimationFrame(() => {
+        document.querySelector('[data-fan-curve-studio-section]')?.scrollIntoView({
+          behavior: document.body.classList.contains('no-view-animations') ? 'auto' : 'smooth',
+          block: 'start'
+        });
+      });
+      return;
+    }
+    if (actionName === 'reset-name' && controlId !== GLOBAL_FAN_CURVE_EDITOR_ID) {
+      const channel = getFanControlChannel(controlId);
+      channel.displayName = '';
+      fanControlSettings.channels[controlId] = normalizeFanChannel(channel);
+      saveFanControlSettings({ apply: false });
+      renderFanControlSettings(true);
+      return;
+    }
+    if (actionName === 'add-point') {
+      const channel = getFanCurveConfiguration(controlId);
+      if (channel.curvePoints.length >= 8) return;
+      let insertIndex = 1;
+      let largestGap = -1;
+      for (let index = 1; index < channel.curvePoints.length; index += 1) {
+        const gap = channel.curvePoints[index].temperature - channel.curvePoints[index - 1].temperature;
+        if (gap > largestGap) {
+          largestGap = gap;
+          insertIndex = index;
+        }
+      }
+      const lower = channel.curvePoints[insertIndex - 1];
+      const upper = channel.curvePoints[insertIndex];
+      if (!lower || !upper || largestGap < 2) return;
+      channel.curvePoints.splice(insertIndex, 0, {
+        temperature: Math.round((lower.temperature + upper.temperature) / 2),
+        percent: Math.round((lower.percent + upper.percent) / 2)
+      });
+      setFanCurveConfiguration(controlId, channel);
+      saveFanControlSettings();
+      renderFanControlSettings(true);
+      return;
+    }
+    if (actionName === 'remove-point') {
+      const channel = getFanCurveConfiguration(controlId);
+      const pointIndex = Number(action.dataset.pointIndex);
+      if (channel.curvePoints.length <= 2 || !Number.isInteger(pointIndex) || !channel.curvePoints[pointIndex]) return;
+      channel.curvePoints.splice(pointIndex, 1);
+      setFanCurveConfiguration(controlId, channel);
+      saveFanControlSettings();
+      renderFanControlSettings(true);
+      return;
+    }
+    if (actionName === 'reset-curve') {
+      const isGlobal = controlId === GLOBAL_FAN_CURVE_EDITOR_ID;
+      const control = latestFanControlCapabilities.find((item) => item.id === controlId);
+      const accepted = await showThemedConfirmation(
+        isGlobal ? 'Reset Global Curve?' : `Reset ${getFanControlDisplayName(control)} Curve?`,
+        'The temperature-to-fan-speed points will return to the SiR default curve. Your temperature sources and safety limits will be kept.',
+        { icon: 'bi-arrow-counterclockwise', confirmLabel: 'Reset Curve', cancelLabel: 'Cancel' }
+      );
+      if (!accepted) return;
+      const channel = getFanCurveConfiguration(controlId);
+      channel.curvePoints = DEFAULT_FAN_CURVE.map((point) => ({ ...point }));
+      setFanCurveConfiguration(controlId, channel);
+      saveFanControlSettings();
+      renderFanControlSettings(true);
+      return;
+    }
+    if (actionName === 'apply-curve') {
+      if (controlId === GLOBAL_FAN_CURVE_EDITOR_ID) {
+        const globalCurve = getFanCurveConfiguration(controlId);
+        if (!globalCurve.primarySensorId) {
+          globalCurve.primarySensorId = chooseDefaultFanTemperatureSensor(null);
+          setFanCurveConfiguration(controlId, globalCurve);
+        }
+        latestFanControlCapabilities
+          .filter((control) => control?.available === true && control?.protectedDevice !== true)
+          .forEach((control) => {
+            fanControlSettings.channels[control.id] = normalizeFanChannel({
+              ...getFanControlChannel(control.id),
+              mode: 'global'
+            });
+          });
+      } else {
+        const channel = getFanControlChannel(controlId);
+        channel.mode = 'curve';
+        if (!channel.primarySensorId) {
+          channel.primarySensorId = chooseDefaultFanTemperatureSensor(latestFanControlCapabilities.find((control) => control.id === controlId));
+        }
+        fanControlSettings.channels[controlId] = normalizeFanChannel(channel);
+      }
+      saveFanControlSettings();
+      renderFanControlSettings(true);
+      return;
+    }
+  });
+
+  container.addEventListener('pointerdown', (event) => {
+    const node = event.target.closest('[data-fan-curve-node]');
+    const chart = node?.closest('[data-fan-curve-chart]');
+    if (!node || !chart) return;
+    event.preventDefault();
+    const controlId = String(chart.dataset.controlId || '');
+    const pointIndex = Number(node.dataset.pointIndex);
+    if (!controlId || !Number.isInteger(pointIndex)) return;
+    fanCurveDragState = { pointerId: event.pointerId, controlId, pointIndex, chart, node };
+    node.setPointerCapture?.(event.pointerId);
+    node.classList.add('is-dragging');
+  });
+
+  container.addEventListener('pointermove', (event) => {
+    if (!fanCurveDragState || event.pointerId !== fanCurveDragState.pointerId) return;
+    const { chart, controlId, pointIndex } = fanCurveDragState;
+    const rect = chart.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const svgX = ((event.clientX - rect.left) / rect.width) * 640;
+    const svgY = ((event.clientY - rect.top) / rect.height) * 274;
+    const channel = getFanCurveConfiguration(controlId);
+    const previousTemperature = pointIndex > 0 ? channel.curvePoints[pointIndex - 1].temperature + 1 : 0;
+    const nextTemperature = pointIndex < channel.curvePoints.length - 1 ? channel.curvePoints[pointIndex + 1].temperature - 1 : 110;
+    const temperature = Math.round(Math.max(previousTemperature, Math.min(nextTemperature, ((svgX - 48) / 566) * 110)));
+    const percent = Math.round(Math.max(20, Math.min(100, 100 - (((svgY - 18) / 218) * 80))));
+    channel.curvePoints[pointIndex] = { temperature, percent };
+    if (controlId === GLOBAL_FAN_CURVE_EDITOR_ID) {
+      fanControlSettings.globalCurve = channel;
+    } else {
+      fanControlSettings.channels[controlId] = channel;
+    }
+    const studio = chart.closest('[data-fan-control-card]');
+    const temperatureInput = studio?.querySelector(`[data-fan-field="curvePoint"][data-point-index="${pointIndex}"][data-point-field="temperature"]`);
+    const percentInput = studio?.querySelector(`[data-fan-field="curvePoint"][data-point-index="${pointIndex}"][data-point-field="percent"]`);
+    if (temperatureInput) temperatureInput.value = String(temperature);
+    if (percentInput) percentInput.value = String(percent);
+    updateFanCurveChartVisual(studio, channel);
+  });
+
+  const finishCurveDrag = (event) => {
+    if (!fanCurveDragState || (event.pointerId !== undefined && event.pointerId !== fanCurveDragState.pointerId)) return;
+    fanCurveDragState.node?.classList.remove('is-dragging');
+    fanCurveDragState = null;
+    saveFanControlSettings();
+    renderFanControlSettings(true);
+  };
+  container.addEventListener('pointerup', finishCurveDrag);
+  container.addEventListener('pointercancel', finishCurveDrag);
+
+  renderFanControlSettings(true);
+}
+
 function loadProviderSelection() {
   try {
     const raw = localStorage.getItem(PROVIDER_SELECTION_KEY);
@@ -3413,8 +4173,43 @@ async function prepareSensorCollectorForReload() {
   updateLoopActive = false;
   clearTimeout(updateTimer);
   if (sensorReader && typeof sensorReader.close === 'function') {
-    await sensorReader.close({ forceAfterMs: 2000 });
+    await sensorReader.close({ forceAfterMs: 4000, graceful: true });
   }
+}
+
+let sensorCollectorShutdownPromise = null;
+function prepareSensorCollectorForShutdown() {
+  if (sensorCollectorShutdownPromise) return sensorCollectorShutdownPromise;
+  sensorCollectorShutdownPromise = (async () => {
+    updateLoopActive = false;
+    mainProcessUpdateClockActive = false;
+    clearTimeout(updateTimer);
+    clearTimeout(fanControlApplyTimer);
+    clearTimeout(ambientMotionTimer);
+    if (sensorReader && typeof sensorReader.setFanControlConfiguration === 'function') {
+      sensorReader.setFanControlConfiguration({ enabled: false, channels: [] });
+    }
+    if (sensorReader && typeof sensorReader.close === 'function') {
+      await sensorReader.close({ forceAfterMs: 5000, graceful: true });
+    }
+  })();
+  return sensorCollectorShutdownPromise;
+}
+
+if (ipcRenderer && typeof ipcRenderer.on === 'function') {
+  ipcRenderer.on('app:prepare-shutdown', async (_event, payload = {}) => {
+    let error = '';
+    try {
+      await prepareSensorCollectorForShutdown();
+    } catch (shutdownError) {
+      error = String(shutdownError && shutdownError.message ? shutdownError.message : shutdownError || '');
+    }
+    ipcRenderer.send('app:shutdown-ready', {
+      requestId: Number(payload.requestId) || 0,
+      ok: !error,
+      error
+    });
+  });
 }
 
 function closeImportSettingsModal() {
@@ -3543,6 +4338,11 @@ async function applyImportedSettingsNow() {
   try {
     syncSensorHideUntickedButton();
     applySensorSelectionFilter();
+  } catch (e) {}
+  try {
+    fanControlSettings = loadFanControlSettings();
+    syncFanControlRuntime();
+    renderFanControlSettings(true);
   } catch (e) {}
 
   await persistCrossProcessSettingsFromSnapshot(parsed);
@@ -5407,7 +6207,7 @@ function applyDebugMode(enabled) {
 function triggerDashboardViewTransition(toSummary) {
   if (document.body.classList.contains('no-view-animations')) return;
   const nextClass = toSummary ? 'dashboard-view-to-summary' : 'dashboard-view-to-dashboard';
-  document.body.classList.remove('dashboard-view-to-summary', 'dashboard-view-to-dashboard');
+  document.body.classList.remove('dashboard-view-to-summary', 'dashboard-view-to-dashboard', 'dashboard-view-to-fan-control', 'dashboard-view-from-fan-control');
   void document.body.offsetWidth;
   document.body.classList.add(nextClass);
   if (dashboardViewTransitionTimer !== null) window.clearTimeout(dashboardViewTransitionTimer);
@@ -5418,8 +6218,55 @@ function triggerDashboardViewTransition(toSummary) {
   }, viewDurationMs + 100);
 }
 
+function triggerFanControlViewTransition(entering) {
+  if (document.body.classList.contains('no-view-animations')) return;
+  const nextClass = entering ? 'dashboard-view-to-fan-control' : 'dashboard-view-from-fan-control';
+  document.body.classList.remove('dashboard-view-to-summary', 'dashboard-view-to-dashboard', 'dashboard-view-to-fan-control', 'dashboard-view-from-fan-control');
+  void document.body.offsetWidth;
+  document.body.classList.add(nextClass);
+  if (dashboardViewTransitionTimer !== null) window.clearTimeout(dashboardViewTransitionTimer);
+  const viewDurationMs = ANIMATION_SPEED_PRESETS[loadAnimationSettings().speed].viewMs;
+  dashboardViewTransitionTimer = window.setTimeout(() => {
+    document.body.classList.remove(nextClass);
+    dashboardViewTransitionTimer = null;
+  }, viewDurationMs + 100);
+}
+
+function applyFanControlView(enabled, options = {}) {
+  const nextEnabled = !!enabled;
+  const changed = fanControlViewEnabled !== nextEnabled;
+  if (nextEnabled && summaryModeEnabled) {
+    applySummaryMode(false, { animate: false });
+  }
+  fanControlViewEnabled = nextEnabled;
+  document.body.classList.toggle('fan-control-mode', fanControlViewEnabled);
+
+  const workspace = document.getElementById('fanControlView');
+  const dashboard = document.getElementById('statsContainer');
+  const button = document.getElementById('fanControlViewBtn');
+  if (workspace) workspace.hidden = !fanControlViewEnabled;
+  if (dashboard) dashboard.hidden = fanControlViewEnabled;
+  if (button) {
+    button.innerHTML = fanControlViewEnabled
+      ? '<i class="bi bi-arrow-left" aria-hidden="true"></i><span>Exit Fan Control</span>'
+      : '<i class="bi bi-fan" aria-hidden="true"></i><span>Fan Control</span>';
+    button.classList.toggle('active', fanControlViewEnabled);
+    button.setAttribute('aria-pressed', fanControlViewEnabled ? 'true' : 'false');
+  }
+
+  if (fanControlViewEnabled) {
+    renderFanControlSettings(true);
+  }
+  if (changed && options.animate !== false) {
+    triggerFanControlViewTransition(fanControlViewEnabled);
+  }
+}
+
 function applySummaryMode(enabled, options = {}) {
   const nextEnabled = !!enabled;
+  if (nextEnabled && fanControlViewEnabled) {
+    applyFanControlView(false, { animate: false });
+  }
   const changed = summaryModeEnabled !== nextEnabled;
   summaryModeEnabled = nextEnabled;
   document.body.classList.toggle('summary-mode', summaryModeEnabled);
@@ -8292,6 +9139,8 @@ const SettingsManager = {
 
         nextSelection[providerKey] = !!checkbox.checked;
         saveProviderSelection(nextSelection);
+        syncFanControlRuntime();
+        renderFanControlSettings(true);
         if (providerKey === 'enhanced') refreshHardwareAccessDriverUi();
         updateStats();
       });
@@ -8334,6 +9183,13 @@ const SettingsManager = {
 
       summaryButton.addEventListener('click', () => {
         applySummaryMode(!summaryModeEnabled);
+      });
+    }
+    const fanControlViewButton = document.getElementById('fanControlViewBtn');
+    if (fanControlViewButton) {
+      applyFanControlView(false, { animate: false });
+      fanControlViewButton.addEventListener('click', () => {
+        applyFanControlView(!fanControlViewEnabled);
       });
     }
     const resetSummaryStatsButton = document.getElementById('resetSummaryStatsBtn');
@@ -9503,6 +10359,7 @@ const SettingsManager = {
     }
 
     applyOverlaySettings();
+    initializeFanControlSettings();
     initializeSetupGuideModal();
     initializeDiagnosticsModal();
     initializeImportSettingsModal();
@@ -9666,6 +10523,7 @@ async function updateStats(forceRender = false) {
           fps: Number.isFinite(externalFps) ? externalFps : data.external.fps,
           frameTime: Number.isFinite(normalizedFrameTime) ? normalizedFrameTime : data.external.frameTime
         }), appRuntimeStats);
+        updateFanControlData(data.external, groupedWithRealtime, shouldUpdateDesktopUi);
         const enhancedStillInitializing = providerSelection.enhanced === true &&
           data.external.diagnostics?.enhancedInitializing === true;
 
@@ -9795,6 +10653,7 @@ if (ipcRenderer && typeof ipcRenderer.on === 'function') {
 function applyUiTooltips() {
   const tooltips = {
     summaryModeBtn: 'Toggle Summary Mode with session minimum, average, and maximum values.',
+    fanControlViewBtn: 'Open the dedicated fan-control workspace for supported hardware channels.',
     resetSummaryStatsBtn: 'Reset Summary Mode session minimum, average, and maximum values.',
     webMonitorToggleBtn: 'Toggle browser web monitor on/off.',
     discordPresenceToggleBtn: 'Toggle Discord Rich Presence integration.',
@@ -9876,6 +10735,8 @@ function applyUiTooltips() {
     providerBuiltin: 'Enable the bundled SiR sensor collector (no separate monitoring app required).',
     providerEnhanced: 'Enable expanded hardware access through the bundled LibreHardwareMonitor library.',
     hardwareAccessDriverInstallBtn: 'Install the bundled low-level driver used for Intel CPU package power and other protected hardware readings.',
+    fanControlEnabled: 'Enable guarded software control for supported fan channels.',
+    fanControlRestoreAllBtn: 'Disable SiR fan control and return every claimed channel to BIOS automatic control.',
     providerRTSS: 'Enable RTSS/MSI shared-memory provider.',
     providerAIDA64: 'Enable AIDA64 shared-memory provider.',
     providerHWiNFO: 'Enable HWiNFO/LHM shared-memory provider.',
@@ -9954,5 +10815,5 @@ window.addEventListener('beforeunload', () => {
   clearTimeout(updateTimer);
   clearTimeout(ambientMotionTimer);
   stopWebMonitorServer();
-  if (sensorReader && typeof sensorReader.close === 'function') sensorReader.close();
+  prepareSensorCollectorForShutdown();
 });

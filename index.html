@@ -432,7 +432,7 @@
         </div>
       </div>
 
-        <div class="settings-section" data-section-key="appearance_overlay_settings">
+      <div class="settings-section" data-section-key="appearance_overlay_settings">
         <label class="settings-label"><i class="bi bi-broadcast-pin settings-label-icon" aria-hidden="true"></i><span>Ping Host</span></label>
         <input type="text" id="latencyHost" class="detection-select" value="1.1.1.1" placeholder="Host/IP to ping (e.g. 1.1.1.1)">
         <div class="settings-note">Used for latency stats: current, average, minimum, maximum, and packet loss.</div>
@@ -685,6 +685,7 @@
       </h1>
       <div class="header-actions">
         <button id="summaryModeBtn" class="header-control-btn monitoring-mode-btn"><i class="bi bi-grid-1x2-fill" aria-hidden="true"></i><span>Summary Mode</span></button>
+        <button id="fanControlViewBtn" class="header-control-btn monitoring-mode-btn"><i class="bi bi-fan" aria-hidden="true"></i><span>Fan Control</span></button>
         <div id="summarySessionControls" class="summary-session-controls" hidden>
           <button id="resetSummaryStatsBtn" class="header-control-btn summary-reset-btn" type="button"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i><span>Reset Stats</span></button>
         </div>
@@ -779,6 +780,30 @@
         <div id="externalSensorsDynamic" class="sensor-scroll"></div>
       </div>
     </div>
+
+    <section id="fanControlView" class="fan-control-workspace" aria-labelledby="fanControlViewTitle" hidden>
+      <div class="fan-control-workspace-header">
+        <div class="fan-control-workspace-title">
+          <span class="fan-control-workspace-icon"><i class="bi bi-fan" aria-hidden="true"></i></span>
+          <div>
+            <div class="fan-control-workspace-eyebrow">Hardware Control <span class="settings-label-tag">Experimental</span></div>
+            <h2 id="fanControlViewTitle">Fan Control</h2>
+            <p>Configure supported fan channels without leaving the live dashboard collector.</p>
+          </div>
+        </div>
+        <div class="fan-control-workspace-actions">
+          <label class="checkbox-label settings-switch-row fan-control-master">
+            <input type="checkbox" id="fanControlEnabled">
+            <span>Enable guarded fan control</span>
+          </label>
+          <button id="fanControlRestoreAllBtn" class="test-btn" type="button"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> Return All Fans to BIOS</button>
+        </div>
+      </div>
+
+      <div id="fanControlStatus" class="settings-note fan-control-workspace-status" aria-live="polite">Waiting for enhanced fan-control capabilities...</div>
+      <div id="fanControlChannels" class="fan-control-list"></div>
+      <div class="settings-note fan-control-safety-note"><i class="bi bi-shield-check" aria-hidden="true"></i><span>Safety: 20% absolute minimum, configurable safe floor, gradual ramping, 100% on missing temperature or detected stall, 15-second heartbeat fallback, and BIOS restoration on normal shutdown. Pump, AIO, and PSU controls remain protected.</span></div>
+    </section>
   </div>
 
   <div id="setupGuideModal" class="setup-guide-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="setupGuideTitle">
@@ -971,6 +996,7 @@
         <button type="button" class="test-btn" data-close-diagnostics>Close</button>
       </div>
     </div>
+
   </div>
 
   <div id="themedDialogModal" class="setup-guide-modal is-hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="themedDialogTitle" aria-describedby="themedDialogMessage">

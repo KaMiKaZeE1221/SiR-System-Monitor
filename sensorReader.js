@@ -21,6 +21,7 @@ class BuiltinSensorHostClient {
     this.lastSnapshot = null;
     this.lastSnapshotAt = 0;
     this.lastSnapshotEnhanced = false;
+    this.fanControlConfiguration = { enabled: false, channels: [] };
   }
 
   resolveExecutablePath() {
@@ -32,38 +33,85 @@ class BuiltinSensorHostClient {
     return candidates.find((candidate) => fs.existsSync(candidate)) || null;
   }
 
-  stop(options = {}) {
+  async stop(options = {}) {
     const child = this.child;
     this.child = null;
-    this.buffer = '';
     this.rejectPending(new Error('Built-in sensor host stopped.'));
-    if (!child) return Promise.resolve();
+    if (!child) {
+      this.buffer = '';
+      return;
+    }
 
     const forceAfterMs = Math.max(100, Math.min(5000, Number(options.forceAfterMs) || 1000));
-    return new Promise((resolve) => {
+    const graceful = options.graceful !== false;
+    const stopDeadline = Date.now() + forceAfterMs;
+    if (!graceful && child.stdout) {
+      child.stdout.removeAllListeners('data');
+    }
+    const exited = new Promise((resolve) => {
       let settled = false;
-      let forceTimer = null;
       const finish = () => {
         if (settled) return;
         settled = true;
-        if (forceTimer) clearTimeout(forceTimer);
         resolve();
       };
-
       child.once('exit', finish);
       child.once('close', finish);
-      try { child.stdin.end(); } catch (e) {}
       if (child.exitCode !== null || child.killed) {
         finish();
-        return;
       }
-
-      forceTimer = setTimeout(() => {
-        try { child.kill(); } catch (e) {}
-        setTimeout(finish, 100);
-      }, forceAfterMs);
-      if (forceTimer && typeof forceTimer.unref === 'function') forceTimer.unref();
     });
+
+    if (graceful && child.exitCode === null && !child.killed) {
+      const id = this.nextRequestId++;
+      try {
+        const shutdownAcknowledged = new Promise((resolve, reject) => {
+          const timer = setTimeout(() => {
+            this.pending.delete(id);
+            reject(new Error('Built-in sensor host shutdown timed out.'));
+          }, Math.max(100, forceAfterMs - 250));
+          this.pending.set(id, { resolve, reject, timer });
+          try {
+            child.stdin.write(`${JSON.stringify({ id, command: 'shutdown' })}\n`);
+          } catch (error) {
+            clearTimeout(timer);
+            this.pending.delete(id);
+            reject(error);
+          }
+        });
+        await Promise.race([shutdownAcknowledged, exited]);
+        const pendingShutdown = this.pending.get(id);
+        if (pendingShutdown) {
+          clearTimeout(pendingShutdown.timer);
+          this.pending.delete(id);
+        }
+      } catch (error) {
+        this.lastError = error.message;
+      }
+    }
+
+    try { child.stdin.end(); } catch (e) {}
+    const remainingMs = Math.max(0, stopDeadline - Date.now());
+    let exitTimer = null;
+    await Promise.race([
+      exited,
+      new Promise((resolve) => {
+        exitTimer = setTimeout(resolve, remainingMs);
+      })
+    ]);
+    if (exitTimer) clearTimeout(exitTimer);
+    if (child.exitCode === null && !child.killed) {
+      try { child.kill(); } catch (e) {}
+      let killTimer = null;
+      await Promise.race([
+        exited,
+        new Promise((resolve) => {
+          killTimer = setTimeout(resolve, 100);
+        })
+      ]);
+      if (killTimer) clearTimeout(killTimer);
+    }
+    if (!this.child) this.buffer = '';
   }
 
   rejectPending(error) {
@@ -76,7 +124,7 @@ class BuiltinSensorHostClient {
 
   start(enhanced) {
     if (this.child && this.enhanced === enhanced && !this.child.killed) return true;
-    if (this.child) this.stop();
+    if (this.child) this.stop({ graceful: false });
 
     const executablePath = this.resolveExecutablePath();
     if (!executablePath) {
@@ -145,19 +193,28 @@ class BuiltinSensorHostClient {
     if (!entry) return;
     this.pending.delete(Number(message.id));
     clearTimeout(entry.timer);
-    if (message.ok && message.snapshot) {
-      this.lastSnapshot = message.snapshot;
-      this.lastSnapshotAt = Date.now();
-      this.lastSnapshotEnhanced = message.snapshot?.diagnostics?.enhancedRequested === true;
-      entry.resolve(message.snapshot);
-    }
-    else entry.reject(new Error(message.error || 'Built-in sensor host request failed.'));
+    if (message.ok) {
+      if (message.snapshot) {
+        this.lastSnapshot = message.snapshot;
+        this.lastSnapshotAt = Date.now();
+        this.lastSnapshotEnhanced = message.snapshot?.diagnostics?.enhancedRequested === true;
+      }
+      entry.resolve(message.snapshot || message.result || null);
+    } else entry.reject(new Error(message.error || 'Built-in sensor host request failed.'));
   }
 
   getHeldSnapshot(enhanced) {
     if (!this.lastSnapshot || this.lastSnapshotEnhanced !== enhanced) return null;
     if ((Date.now() - this.lastSnapshotAt) > HOST_SNAPSHOT_HOLD_MS) return null;
     return this.lastSnapshot;
+  }
+
+  setFanControlConfiguration(configuration) {
+    const input = configuration && typeof configuration === 'object' ? configuration : {};
+    this.fanControlConfiguration = {
+      enabled: input.enabled === true,
+      channels: Array.isArray(input.channels) ? input.channels : []
+    };
   }
 
   async getSnapshot(options = {}) {
@@ -175,7 +232,11 @@ class BuiltinSensorHostClient {
       }, enhanced ? 12000 : 5000);
       this.pending.set(id, { resolve, reject, timer });
       try {
-        this.child.stdin.write(`${JSON.stringify({ id, command: 'snapshot' })}\n`);
+        this.child.stdin.write(`${JSON.stringify({
+          id,
+          command: 'snapshot',
+          fanControl: this.fanControlConfiguration
+        })}\n`);
       } catch (error) {
         clearTimeout(timer);
         this.pending.delete(id);
@@ -199,6 +260,10 @@ class SensorReader {
     this.wanIpRequest = null;
     this.wanIpHttpRequest = null;
     this.wanIpRequestTimeout = null;
+  }
+
+  setFanControlConfiguration(configuration) {
+    this.builtinHost.setFanControlConfiguration(configuration);
   }
 
   getPrimaryLanIp() {
@@ -237,7 +302,7 @@ class SensorReader {
       };
 
       const request = https.get('https://api.ipify.org', {
-        headers: { 'User-Agent': 'SiR-System-Monitor/1.3.6' }
+        headers: { 'User-Agent': 'SiR-System-Monitor/1.3.7' }
       }, (response) => {
         let body = '';
         response.setEncoding('utf8');
@@ -380,7 +445,8 @@ class SensorReader {
       groupedSensors,
       timestamp: Number(snapshot.timestamp) || Date.now(),
       source: snapshot.diagnostics && snapshot.diagnostics.enhancedAvailable ? 'builtin+enhanced' : 'builtin',
-      diagnostics: snapshot.diagnostics || {}
+      diagnostics: snapshot.diagnostics || {},
+      fanControls: Array.isArray(snapshot.fanControls) ? snapshot.fanControls : []
     };
   }
 
@@ -417,7 +483,8 @@ class SensorReader {
       groupedSensors,
       timestamp: Date.now(),
       source: [builtinData.source, externalData.source].filter(Boolean).join('+'),
-      diagnostics: builtinData.diagnostics || {}
+      diagnostics: builtinData.diagnostics || {},
+      fanControls: Array.isArray(builtinData.fanControls) ? builtinData.fanControls : []
     };
   }
 

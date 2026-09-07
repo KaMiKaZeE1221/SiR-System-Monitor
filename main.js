@@ -79,6 +79,10 @@ let startupRevealHandled = false;
 let startupWindowOpenedByUser = false;
 let activeDiagnosticRun = null;
 let diagnosticRunCounter = 0;
+let rendererShutdownPrepared = false;
+let rendererShutdownPromise = null;
+let rendererShutdownRequestId = 0;
+let gracefulQuitPromise = null;
 
 const DIAGNOSTIC_OUTPUT_LIMIT_BYTES = 1024 * 1024;
 const APP_RUNTIME_SAMPLE_INTERVAL_MS = 1000;
@@ -109,6 +113,60 @@ function restartMonitoringClock(intervalMs) {
     });
   }, monitoringRefreshIntervalMs);
   return monitoringRefreshIntervalMs;
+}
+
+function prepareRendererForShutdown() {
+  if (rendererShutdownPrepared) return Promise.resolve({ ok: true, alreadyPrepared: true });
+  if (rendererShutdownPromise) return rendererShutdownPromise;
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+    rendererShutdownPrepared = true;
+    return Promise.resolve({ ok: true, rendererUnavailable: true });
+  }
+
+  const targetContents = mainWindow.webContents;
+  const requestId = ++rendererShutdownRequestId;
+  rendererShutdownPromise = new Promise((resolve) => {
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      ipcMain.removeListener('app:shutdown-ready', handleReady);
+      rendererShutdownPrepared = true;
+      resolve(result);
+    };
+    const handleReady = (event, payload = {}) => {
+      if (event.sender !== targetContents || Number(payload.requestId) !== requestId) return;
+      finish(payload);
+    };
+    const timeout = setTimeout(() => {
+      finish({ ok: false, timeout: true, error: 'Timed out while restoring automatic fan control.' });
+    }, 5500);
+    ipcMain.on('app:shutdown-ready', handleReady);
+    try {
+      targetContents.send('app:prepare-shutdown', { requestId });
+    } catch (error) {
+      finish({ ok: false, error: error.message });
+    }
+  }).finally(() => {
+    rendererShutdownPromise = null;
+  });
+  return rendererShutdownPromise;
+}
+
+function requestGracefulQuit() {
+  if (rendererShutdownPrepared) {
+    app.quit();
+    return Promise.resolve();
+  }
+  if (gracefulQuitPromise) return gracefulQuitPromise;
+  isQuitting = true;
+  stopMonitoringClock();
+  shutdownOverlaySubsystem();
+  gracefulQuitPromise = prepareRendererForShutdown().finally(() => {
+    setImmediate(() => app.quit());
+  });
+  return gracefulQuitPromise;
 }
 
 function isRunningAsAdministrator() {
@@ -901,8 +959,7 @@ function createTray() {
     {
       label: 'Quit',
       click: () => {
-        isQuitting = true;
-        app.quit();
+        requestGracefulQuit();
       }
     }
   ]));
@@ -1065,9 +1122,16 @@ function createWindow() {
   });
 
   mainWindow.on('close', (event) => {
-    if (isQuitting || !appBehaviorSettings.closeToTray) return;
+    if (isQuitting) {
+      if (!rendererShutdownPrepared) event.preventDefault();
+      return;
+    }
     event.preventDefault();
-    mainWindow.hide();
+    if (appBehaviorSettings.closeToTray) {
+      mainWindow.hide();
+      return;
+    }
+    requestGracefulQuit();
   });
 
   mainWindow.on('closed', () => {
@@ -1522,10 +1586,14 @@ app.whenReady().then(async () => {
   try { initDiscordRPC(); } catch (e) { /* ignore */ }
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
   isQuitting = true;
   stopMonitoringClock();
   shutdownOverlaySubsystem();
+  if (!rendererShutdownPrepared && mainWindow && !mainWindow.isDestroyed()) {
+    event.preventDefault();
+    requestGracefulQuit();
+  }
 });
 
 app.on('window-all-closed', () => {
@@ -1576,8 +1644,7 @@ ipcMain.handle('app:restart-elevated', async (_event, options = {}) => {
       ELEVATION_RELAUNCH_ARGUMENT
     ]);
     setTimeout(() => {
-      isQuitting = true;
-      app.quit();
+      requestGracefulQuit();
     }, 350);
     return { ok: true, settings: appBehaviorSettings };
   } catch (error) {
@@ -1836,6 +1903,8 @@ ipcMain.handle('app-update:quit-and-install', async () => {
   }
 
   try {
+    await prepareRendererForShutdown();
+    rendererShutdownPrepared = true;
     isQuitting = true;
     setImmediate(() => {
       autoUpdater.quitAndInstall(false, true);
