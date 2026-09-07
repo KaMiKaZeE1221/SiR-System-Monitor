@@ -1,5 +1,63 @@
 # Changelog
 
+## 1.3.8 - 2026-09-08
+
+### Added
+- Added a dedicated **App Behavior → Performance** section with current hardware-acceleration state, restart-required feedback, Chromium cache size, and explanatory tooltips.
+- Added a persisted **Disable hardware acceleration** compatibility switch equivalent to the `SIR_DISABLE_GPU_ACCELERATION=1` troubleshooting launch option. The preference is included in named profiles and settings exports/imports.
+- Added a theme-aware **Clear App Cache** action that removes regenerable Chromium HTTP and compiled-code caches while preserving profiles, layouts, sensor choices, custom names, alerts, and other settings.
+
+### Changed
+- Enabled Chromium hardware acceleration by default so the dashboard's transform- and opacity-based motion uses the compositor efficiently. Troubleshooting launches can opt out with `SIR_DISABLE_GPU_ACCELERATION=1` (or the legacy `SIR_ENABLE_GPU_ACCELERATION=0`).
+- Batched desktop sensor DOM updates into one animation-frame pass per accepted refresh and applied the same scheduling model to the Web Monitor.
+- Kept existing sensor rows mounted while live labels, formatted values, alert classes, and Summary statistics change instead of regenerating their markup.
+- Isolated expanded graph calculations and path updates from ordinary sensor values in a follow-up animation frame on both desktop and web.
+- Changed animation activity tracking to pause motion only while the document is hidden, rather than whenever another application has focus. Sensor collection, alert evaluation, OSD delivery, and Web Monitor publishing remain active while hidden or minimized.
+- Restricted sensor-card hover feedback to compositor-friendly `transform` and `opacity` transitions and strengthened card paint containment.
+
+### Fixed
+- Fixed recurring sensor values, expanded graphs, and Summary statistics causing avoidable row or group reconstruction during normal refreshes.
+- Fixed visible dashboard animations being suspended merely because the user focused another application.
+
+## 1.3.7 - 2026-09-07
+
+### Added
+- Added opt-in experimental fan control for motherboard and GPU channels that LibreHardwareMonitor explicitly exposes as writable.
+- Added per-channel BIOS/Automatic, Manual Percentage, and Temperature Curve modes with live requested duty, reported control, source temperature, status, and related fan RPM telemetry.
+- Added selectable built-in temperature sources for every curve, including an option to average two independently selected temperature sensors.
+- Added editable fan curves, configurable safe minimum duty, hysteresis, and emergency-temperature controls.
+- Added editable fan names directly on the Fan Control page, with a per-channel reset button that restores the detected hardware name.
+- Added persistent per-fan card minimization, card hiding with a Show Hidden recovery action, and whole Curve Studio minimization for tidier fan-control layouts.
+- Added a signed per-fan output offset from -50% to +50%, applied safely after that fan's manual or curve calculation without reducing emergency or missing-sensor failsafe output.
+- Added a reusable Global Curve that can be assigned to every writable fan at once and can follow either one temperature sensor or the average of two.
+- Added curve-point add/remove controls for building curves with two to eight nodes, plus a themed reset action that restores the default curve shape without discarding source or safety choices.
+- Added fan-control capability information to the sensor host and existing enhanced diagnostic report so support bundles identify writable, protected, and unavailable channels.
+- Added fan-control configuration, interpolation, persistence, protocol, UI, and safety regression coverage.
+- Added a bundled, hash-pinned AMD ADLX fan-control backend for compatible Radeon RX 5000, 6000, and 7000 GPUs, it should work on older GPUs from both Nvidia, Intel and AMD via LibreHardwareMonitor.
+
+### Changed
+- Fan curves run in the persistent sensor host instead of the Electron renderer, so control continues while the dashboard is hidden or minimized.
+- Fan-control settings and per-channel curves are stored with the rest of the user's settings and are included in named profiles and JSON exports/imports.
+- Fan names, offsets, hidden/collapsed card choices, and Curve Studio state now travel with the same saved settings, named profiles, and JSON imports/exports.
+- Pump, AIO, and PSU channels remain protected under hardware or BIOS control in this first release.
+- Moved Fan Control from the Settings pane into a dedicated dashboard workspace opened from the top action row, with matching themed view transitions and a clearer responsive channel layout.
+- Reworked the dedicated workspace into original SiR Controls and Curve Studio boards, separating compact live fan cards from detailed curve editing while removing the redundant Temperature Sources board.
+- Added a large visual curve graph with draggable control points, precise numeric point fields, per-fan editor selection, and one-click curve assignment.
+- Aligned the live mode badge with the fan-name reset control and made the two Fan Control header actions equal in width and height.
+- Routed modern AMD GPU fan commands and automatic-mode restoration through ADLX while retaining LibreHardwareMonitor's NVAPI-backed NVIDIA path and existing motherboard/controller controls.
+
+### Fixed
+- Added a 15-second app-heartbeat fallback that returns every channel claimed by SiR to BIOS control if the renderer stops communicating.
+- Added missing-temperature and low-RPM stall failsafes that immediately request 100%, plus gradual ramp-up/ramp-down behavior during normal curve changes.
+- Ensured disabling fan control, restoring all channels, closing the app normally, or restarting the sensor host returns SiR-controlled channels to their default firmware mode.
+- Fixed the Fan Control master toggle reverting to off while its confirmation was open, which prevented accepted settings and subsequent channel changes from reaching the native host.
+- Fixed the dedicated Fan Control workspace being mounted inside the hidden Diagnostics modal, causing its header button to change state without displaying the workspace.
+- Fixed the dashboard grid remaining visible above the dedicated Fan Control workspace because its grid display rule overrode the view's hidden state.
+- Fixed the one-second telemetry refresh rebuilding Curve Studio while a graph node was being dragged, which released the grabbed node before the edit was complete.
+- Fixed collapsed fan cards stretching to the full height of an expanded card elsewhere in the same responsive row.
+- Fixed compatible modern AMD GPUs reporting a software fan command without changing the physical fan because the older Overdrive5 write path did not support the card.
+- Fixed normal window, tray, administrator-restart, and update-install exits not waiting for the native sensor host to restore every claimed fan channel to BIOS/automatic control before Electron closed.
+
 ## 1.3.6 - 2026-09-06
 
 ### Fixed
