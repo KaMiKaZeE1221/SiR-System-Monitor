@@ -31,7 +31,63 @@ namespace SiR.SensorHost
     {
         public long timestamp { get; set; }
         public List<SensorRecord> sensors { get; set; }
+        public List<FanControlCapability> fanControls { get; set; }
         public Dictionary<string, object> diagnostics { get; set; }
+    }
+
+    internal sealed class FanControlCapability
+    {
+        public string id { get; set; }
+        public string name { get; set; }
+        public string hardwareName { get; set; }
+        public string hardwareType { get; set; }
+        public string backend { get; set; }
+        public double minSoftwareValue { get; set; }
+        public double maxSoftwareValue { get; set; }
+        public double? softwareValue { get; set; }
+        public double? currentValue { get; set; }
+        public string controlMode { get; set; }
+        public string relatedFanSensorId { get; set; }
+        public double? relatedFanRpm { get; set; }
+        public bool protectedDevice { get; set; }
+        public bool available { get; set; }
+        public string status { get; set; }
+        public double? requestedPercent { get; set; }
+        public double? sourceTemperature { get; set; }
+    }
+
+    internal sealed class FanCurvePoint
+    {
+        public double temperature { get; set; }
+        public double percent { get; set; }
+    }
+
+    internal sealed class FanControlChannelConfiguration
+    {
+        public string controlId { get; set; }
+        public string mode { get; set; }
+        public double offsetPercent { get; set; }
+        public double manualPercent { get; set; }
+        public string primarySensorId { get; set; }
+        public string secondarySensorId { get; set; }
+        public string sensorMode { get; set; }
+        public double minimumPercent { get; set; }
+        public double hysteresis { get; set; }
+        public double emergencyTemperature { get; set; }
+        public List<FanCurvePoint> curvePoints { get; set; }
+    }
+
+    internal sealed class FanControlConfiguration
+    {
+        public bool enabled { get; set; }
+        public List<FanControlChannelConfiguration> channels { get; set; }
+    }
+
+    internal sealed class FanControlRuntimeState
+    {
+        public string Status;
+        public double? RequestedPercent;
+        public double? SourceTemperature;
     }
 
     internal sealed class UpdateVisitor : IVisitor
@@ -313,10 +369,18 @@ namespace SiR.SensorHost
         private readonly CorsairHidPsuReader _corsairPsu = new CorsairHidPsuReader();
         private readonly NzxtEPsuReader _nzxtEPsu = new NzxtEPsuReader();
         private readonly PresentMonFpsReader _presentMonFps = new PresentMonFpsReader();
+        private readonly AmdAdlxFanController _amdAdlxFanControl = new AmdAdlxFanController();
         private readonly object _directPsuSync = new object();
         private readonly Dictionary<string, NetworkSample> _networkSamples = new Dictionary<string, NetworkSample>();
         private readonly HashSet<string> _validatedCpuPowerSensorIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _unavailableCpuPowerDomains = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _claimedFanControlIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, double> _lastFanControlPercent = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, double> _lastFanControlOffsetPercent = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, double> _lastFanControlTemperature = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, DateTime> _lastFanControlAppliedAt = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, DateTime> _fanStallStartedAt = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, FanControlRuntimeState> _fanControlRuntime = new Dictionary<string, FanControlRuntimeState>(StringComparer.OrdinalIgnoreCase);
         private readonly UpdateVisitor _updateVisitor = new UpdateVisitor();
         private PerformanceCounter _memoryReadActivity;
         private PerformanceCounter _memoryWriteActivity;
@@ -346,6 +410,10 @@ namespace SiR.SensorHost
         private bool _remainingEnhancedPhasesQueued;
         private readonly bool _hardwareAccessDriverInstalled;
         private readonly string _hardwareAccessDriverVersion;
+        private FanControlConfiguration _fanControlConfiguration = new FanControlConfiguration { enabled = false, channels = new List<FanControlChannelConfiguration>() };
+        private DateTime _lastFanControlHeartbeat = DateTime.MinValue;
+        private DateTime _lastFanControlEvaluation = DateTime.MinValue;
+        private Timer _fanControlTimer;
         private volatile bool _disposed;
 
         public SensorCollector(bool enhancedRequested)
@@ -374,6 +442,7 @@ namespace SiR.SensorHost
                 _enhancedPeripheralInitializing = true;
                 ThreadPool.QueueUserWorkItem(delegate { InitializeEnhancedHardware("processor"); });
                 ThreadPool.QueueUserWorkItem(delegate { InitializeEnhancedHardware("peripheral"); });
+                _fanControlTimer = new Timer(FanControlTimerTick, null, 1000, 1000);
             }
             QueueDirectPsuPolls();
         }
@@ -419,6 +488,7 @@ namespace SiR.SensorHost
         public Snapshot ReadSnapshot()
         {
             List<SensorRecord> sensors = new List<SensorRecord>();
+            List<FanControlCapability> fanControls = new List<FanControlCapability>();
             AddCpuAndMemorySensors(sensors);
             PresentMonFpsSnapshot presentMonSnapshot = AddPresentMonFpsSensors(sensors);
             QueueDirectPsuPolls();
@@ -438,7 +508,7 @@ namespace SiR.SensorHost
             AddNetworkSensors(sensors);
 
             int standardCount = sensors.Count;
-            int enhancedCount = AddEnhancedSensors(sensors);
+            int enhancedCount = AddEnhancedSensors(sensors, fanControls);
             UpdateOverallCpuClockFromEnhancedSensors(sensors);
 
             Dictionary<string, object> diagnostics = new Dictionary<string, object>();
@@ -462,6 +532,15 @@ namespace SiR.SensorHost
             diagnostics["enhancedHardwareFamilies"] = HardwareDeviceCatalog.CommonEnhancedFamilies;
             diagnostics["hardwareAccessDriverInstalled"] = _hardwareAccessDriverInstalled;
             diagnostics["hardwareAccessDriverVersion"] = _hardwareAccessDriverVersion;
+            diagnostics["fanControlAvailable"] = fanControls.Any(control => control.available);
+            diagnostics["fanControlCount"] = fanControls.Count(control => control.available);
+            diagnostics["fanControlProtectedCount"] = fanControls.Count(control => control.protectedDevice);
+            diagnostics["fanControlActiveCount"] = fanControls.Count(control =>
+                String.Equals(control.controlMode, "Software", StringComparison.OrdinalIgnoreCase));
+            diagnostics["amdAdlxFanControlAvailable"] = fanControls.Any(control =>
+                String.Equals(control.backend, "AMD ADLX", StringComparison.OrdinalIgnoreCase) && control.available);
+            if (!String.IsNullOrWhiteSpace(_amdAdlxFanControl.LastError))
+                diagnostics["amdAdlxFanControlError"] = _amdAdlxFanControl.LastError;
             diagnostics["intelCpuDetected"] = sensors.Any(sensor =>
                 String.Equals(sensor.hardwareType, "Cpu", StringComparison.OrdinalIgnoreCase) &&
                 (sensor.name ?? "").IndexOf("intel", StringComparison.OrdinalIgnoreCase) >= 0);
@@ -489,8 +568,52 @@ namespace SiR.SensorHost
             {
                 timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 sensors = sensors,
+                fanControls = fanControls,
                 diagnostics = diagnostics
             };
+        }
+
+        public void UpdateFanControlConfiguration(FanControlConfiguration configuration)
+        {
+            lock (_enhancedSync)
+            {
+                _fanControlConfiguration = NormalizeFanControlConfiguration(configuration);
+                _lastFanControlHeartbeat = DateTime.UtcNow;
+            }
+        }
+
+        public bool RestoreFanControlsForShutdown(out string error)
+        {
+            lock (_enhancedSync)
+            {
+                Computer[] computers = new[] { _processorComputer, _graphicsComputer, _boardComputer, _peripheralComputer }
+                    .Where(computer => computer != null)
+                    .ToArray();
+                RestoreAllFanControlsLocked(
+                    BuildEnhancedSensorMap(computers),
+                    "Returned to BIOS: app is closing.");
+
+                string amdRestoreError;
+                bool amdRestored = _amdAdlxFanControl.TryResetAll(out amdRestoreError);
+                if (_claimedFanControlIds.Count > 0 || !amdRestored)
+                {
+                    List<string> failures = new List<string>();
+                    if (_claimedFanControlIds.Count > 0)
+                        failures.Add("Unable to release: " + String.Join(", ", _claimedFanControlIds));
+                    if (!amdRestored && !String.IsNullOrWhiteSpace(amdRestoreError))
+                        failures.Add(amdRestoreError);
+                    error = String.Join("; ", failures);
+                    return false;
+                }
+
+                _fanControlConfiguration = new FanControlConfiguration
+                {
+                    enabled = false,
+                    channels = new List<FanControlChannelConfiguration>()
+                };
+                error = "";
+                return true;
+            }
         }
 
         private void QueueDirectPsuPolls()
@@ -925,7 +1048,7 @@ namespace SiR.SensorHost
             return fallback;
         }
 
-        private int AddEnhancedSensors(List<SensorRecord> sensors)
+        private int AddEnhancedSensors(List<SensorRecord> sensors, List<FanControlCapability> fanControls)
         {
             lock (_enhancedSync)
             {
@@ -941,16 +1064,459 @@ namespace SiR.SensorHost
                     try
                     {
                         computer.Accept(_updateVisitor);
-                        foreach (IHardware hardware in computer.Hardware)
-                            AddHardwareTree(hardware, sensors);
                     }
                     catch (Exception error)
                     {
                         _enhancedWarning = error.GetType().Name + ": " + error.Message;
                     }
                 }
+
+                EvaluateFanControlsLocked(computers, false);
+                foreach (Computer computer in computers)
+                {
+                    foreach (IHardware hardware in computer.Hardware)
+                        AddHardwareTree(hardware, sensors, fanControls);
+                }
                 return sensors.Count - before;
             }
+        }
+
+        private static double Clamp(double value, double minimum, double maximum)
+        {
+            return Math.Max(minimum, Math.Min(maximum, value));
+        }
+
+        private static string SensorId(ISensor sensor)
+        {
+            return "builtin_lhm_" + Sanitize(sensor.Identifier.ToString());
+        }
+
+        private static bool IsAmdGpuFanControl(ISensor sensor)
+        {
+            return sensor != null && sensor.Hardware != null &&
+                sensor.Hardware.HardwareType.ToString().Equals("GpuAmd", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsProtectedFanControl(IHardware hardware, ISensor sensor)
+        {
+            string name = ((hardware == null ? "" : hardware.Name) + " " + (sensor == null ? "" : sensor.Name)).ToLowerInvariant();
+            string hardwareType = hardware == null ? "" : hardware.HardwareType.ToString();
+            return name.Contains("pump") || name.Contains("aio") || name.Contains("water") ||
+                name.Contains("power supply") || name.Contains("psu") ||
+                hardwareType.Equals("Psu", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static FanControlConfiguration NormalizeFanControlConfiguration(FanControlConfiguration configuration)
+        {
+            FanControlConfiguration normalized = new FanControlConfiguration
+            {
+                enabled = configuration != null && configuration.enabled,
+                channels = new List<FanControlChannelConfiguration>()
+            };
+            if (configuration == null || configuration.channels == null)
+                return normalized;
+
+            foreach (FanControlChannelConfiguration input in configuration.channels)
+            {
+                if (input == null || String.IsNullOrWhiteSpace(input.controlId))
+                    continue;
+                string mode = (input.mode ?? "default").Trim().ToLowerInvariant();
+                if (mode != "manual" && mode != "curve") mode = "default";
+                string sensorMode = String.Equals(input.sensorMode, "average", StringComparison.OrdinalIgnoreCase)
+                    ? "average"
+                    : "single";
+                List<FanCurvePoint> points = (input.curvePoints ?? new List<FanCurvePoint>())
+                    .Where(point => point != null)
+                    .Select(point => new FanCurvePoint
+                    {
+                        temperature = Clamp(point.temperature, 0, 120),
+                        percent = Clamp(point.percent, 20, 100)
+                    })
+                    .OrderBy(point => point.temperature)
+                    .Take(8)
+                    .ToList();
+                if (points.Count < 2)
+                {
+                    points = new List<FanCurvePoint>
+                    {
+                        new FanCurvePoint { temperature = 30, percent = 30 },
+                        new FanCurvePoint { temperature = 50, percent = 45 },
+                        new FanCurvePoint { temperature = 70, percent = 70 },
+                        new FanCurvePoint { temperature = 85, percent = 100 }
+                    };
+                }
+                normalized.channels.Add(new FanControlChannelConfiguration
+                {
+                    controlId = input.controlId.Trim(),
+                    mode = mode,
+                    offsetPercent = Clamp(input.offsetPercent, -50, 50),
+                    manualPercent = Clamp(input.manualPercent <= 0 ? 50 : input.manualPercent, 20, 100),
+                    primarySensorId = (input.primarySensorId ?? "").Trim(),
+                    secondarySensorId = sensorMode == "average" ? (input.secondarySensorId ?? "").Trim() : "",
+                    sensorMode = sensorMode,
+                    minimumPercent = Clamp(input.minimumPercent <= 0 ? 30 : input.minimumPercent, 20, 100),
+                    hysteresis = Clamp(input.hysteresis < 0 ? 2 : input.hysteresis, 0, 10),
+                    emergencyTemperature = Clamp(input.emergencyTemperature <= 0 ? 90 : input.emergencyTemperature, 50, 110),
+                    curvePoints = points
+                });
+            }
+            return normalized;
+        }
+
+        private static double InterpolateFanCurve(List<FanCurvePoint> points, double temperature)
+        {
+            if (points == null || points.Count == 0) return 100;
+            if (temperature <= points[0].temperature) return points[0].percent;
+            if (temperature >= points[points.Count - 1].temperature) return points[points.Count - 1].percent;
+            for (int index = 1; index < points.Count; index++)
+            {
+                FanCurvePoint upper = points[index];
+                FanCurvePoint lower = points[index - 1];
+                if (temperature > upper.temperature) continue;
+                double span = Math.Max(0.001, upper.temperature - lower.temperature);
+                double ratio = (temperature - lower.temperature) / span;
+                return lower.percent + ((upper.percent - lower.percent) * ratio);
+            }
+            return points[points.Count - 1].percent;
+        }
+
+        private static void AddHardwareSensorsToMap(IHardware hardware, Dictionary<string, ISensor> sensors)
+        {
+            foreach (ISensor sensor in hardware.Sensors)
+                sensors[SensorId(sensor)] = sensor;
+            foreach (IHardware subHardware in hardware.SubHardware)
+                AddHardwareSensorsToMap(subHardware, sensors);
+        }
+
+        private static Dictionary<string, ISensor> BuildEnhancedSensorMap(IEnumerable<Computer> computers)
+        {
+            Dictionary<string, ISensor> sensors = new Dictionary<string, ISensor>(StringComparer.OrdinalIgnoreCase);
+            foreach (Computer computer in computers)
+            {
+                if (computer == null) continue;
+                foreach (IHardware hardware in computer.Hardware)
+                    AddHardwareSensorsToMap(hardware, sensors);
+            }
+            return sensors;
+        }
+
+        private static ISensor FindRelatedFanSensor(ISensor controlSensor)
+        {
+            if (controlSensor == null || controlSensor.Hardware == null) return null;
+            ISensor sameIndex = controlSensor.Hardware.Sensors.FirstOrDefault(sensor =>
+                sensor.SensorType == SensorType.Fan && sensor.Index == controlSensor.Index);
+            if (sameIndex != null) return sameIndex;
+
+            string controlName = (controlSensor.Name ?? "").Replace("Control", "").Trim();
+            return controlSensor.Hardware.Sensors.FirstOrDefault(sensor =>
+                sensor.SensorType == SensorType.Fan &&
+                !String.IsNullOrWhiteSpace(controlName) &&
+                (sensor.Name ?? "").IndexOf(controlName, StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        private void RestoreFanControlLocked(string controlId, ISensor controlSensor, string status)
+        {
+            bool wasClaimed = _claimedFanControlIds.Contains(controlId);
+            if (wasClaimed && controlSensor != null && controlSensor.Control != null)
+            {
+                if (IsAmdGpuFanControl(controlSensor))
+                {
+                    string restoreError;
+                    if (!_amdAdlxFanControl.TryReset(controlSensor.Hardware.Name, out restoreError))
+                    {
+                        _fanControlRuntime[controlId] = new FanControlRuntimeState { Status = restoreError };
+                        return;
+                    }
+                }
+                else
+                {
+                    try
+                    {
+                        controlSensor.Control.SetDefault();
+                    }
+                    catch (Exception exception)
+                    {
+                        _fanControlRuntime[controlId] = new FanControlRuntimeState
+                        {
+                            Status = "Automatic-mode restore failed: " + exception.Message
+                        };
+                        return;
+                    }
+                }
+            }
+            _claimedFanControlIds.Remove(controlId);
+            _lastFanControlPercent.Remove(controlId);
+            _lastFanControlOffsetPercent.Remove(controlId);
+            _lastFanControlTemperature.Remove(controlId);
+            _lastFanControlAppliedAt.Remove(controlId);
+            _fanStallStartedAt.Remove(controlId);
+            _fanControlRuntime[controlId] = new FanControlRuntimeState { Status = status };
+        }
+
+        private void RestoreAllFanControlsLocked(Dictionary<string, ISensor> sensorMap, string status)
+        {
+            foreach (string controlId in _claimedFanControlIds.ToArray())
+            {
+                ISensor controlSensor;
+                sensorMap.TryGetValue(controlId, out controlSensor);
+                RestoreFanControlLocked(controlId, controlSensor, status);
+            }
+        }
+
+        private void EvaluateFanControlsLocked(Computer[] computers, bool forceHardwareUpdate)
+        {
+            DateTime now = DateTime.UtcNow;
+            if (forceHardwareUpdate && (now - _lastFanControlEvaluation).TotalMilliseconds < 750)
+                return;
+
+            if (forceHardwareUpdate)
+            {
+                foreach (Computer computer in computers)
+                {
+                    try { computer.Accept(_updateVisitor); } catch { }
+                }
+            }
+
+            Dictionary<string, ISensor> sensorMap = BuildEnhancedSensorMap(computers);
+            bool heartbeatStale = _fanControlConfiguration.enabled &&
+                _lastFanControlHeartbeat != DateTime.MinValue &&
+                (now - _lastFanControlHeartbeat).TotalSeconds > 15;
+            if (!_fanControlConfiguration.enabled || heartbeatStale)
+            {
+                RestoreAllFanControlsLocked(sensorMap, heartbeatStale ? "Returned to BIOS: app heartbeat expired." : "BIOS / automatic");
+                _lastFanControlEvaluation = now;
+                return;
+            }
+
+            HashSet<string> activeControlIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (FanControlChannelConfiguration channel in _fanControlConfiguration.channels)
+            {
+                string controlId = channel.controlId;
+                ISensor controlSensor;
+                if (!sensorMap.TryGetValue(controlId, out controlSensor) || controlSensor.Control == null)
+                {
+                    _fanControlRuntime[controlId] = new FanControlRuntimeState { Status = "Control is not currently available." };
+                    continue;
+                }
+
+                if (channel.mode == "default")
+                {
+                    RestoreFanControlLocked(controlId, controlSensor, "BIOS / automatic");
+                    continue;
+                }
+                if (IsProtectedFanControl(controlSensor.Hardware, controlSensor))
+                {
+                    RestoreFanControlLocked(controlId, controlSensor, "Protected pump/AIO/PSU control; left on hardware automatic.");
+                    continue;
+                }
+
+                activeControlIds.Add(controlId);
+                double requestedPercent = channel.manualPercent + channel.offsetPercent;
+                double? sourceTemperature = null;
+                bool immediateSafetyResponse = false;
+                string offsetLabel = Math.Abs(channel.offsetPercent) >= 0.05
+                    ? " · offset " + (channel.offsetPercent > 0 ? "+" : "") + channel.offsetPercent.ToString("0.#") + "%"
+                    : "";
+                string status = "Manual control" + offsetLabel;
+
+                if (channel.mode == "curve")
+                {
+                    ISensor primary;
+                    ISensor secondary = null;
+                    bool primaryAvailable = sensorMap.TryGetValue(channel.primarySensorId ?? "", out primary) &&
+                        primary.SensorType == SensorType.Temperature && primary.Value.HasValue;
+                    bool secondaryRequired = channel.sensorMode == "average";
+                    bool secondaryAvailable = !secondaryRequired ||
+                        (sensorMap.TryGetValue(channel.secondarySensorId ?? "", out secondary) &&
+                         secondary.SensorType == SensorType.Temperature && secondary.Value.HasValue);
+
+                    if (!primaryAvailable || !secondaryAvailable)
+                    {
+                        requestedPercent = 100;
+                        immediateSafetyResponse = true;
+                        status = "Failsafe 100%: selected temperature sensor is unavailable.";
+                    }
+                    else
+                    {
+                        double temperature = primary.Value.Value;
+                        if (secondaryRequired)
+                            temperature = (temperature + secondary.Value.Value) / 2.0;
+                        sourceTemperature = temperature;
+                        if (temperature >= channel.emergencyTemperature)
+                        {
+                            requestedPercent = 100;
+                            immediateSafetyResponse = true;
+                            status = "Emergency 100%: temperature limit reached.";
+                        }
+                        else
+                        {
+                            requestedPercent = InterpolateFanCurve(channel.curvePoints, temperature);
+                            double previousTemperature;
+                            double previousPercent;
+                            if (_lastFanControlTemperature.TryGetValue(controlId, out previousTemperature) &&
+                                _lastFanControlPercent.TryGetValue(controlId, out previousPercent) &&
+                                Math.Abs(temperature - previousTemperature) < channel.hysteresis)
+                            {
+                                double previousOffset;
+                                if (!_lastFanControlOffsetPercent.TryGetValue(controlId, out previousOffset))
+                                    previousOffset = 0;
+                                requestedPercent = previousPercent - previousOffset;
+                            }
+                            status = (channel.sensorMode == "average" ? "Curve · two-sensor average" : "Curve · single sensor") + offsetLabel;
+                            _lastFanControlTemperature[controlId] = temperature;
+                        }
+                    }
+                }
+
+                if (channel.mode == "curve" && !immediateSafetyResponse)
+                    requestedPercent += channel.offsetPercent;
+
+                bool useAmdAdlx = IsAmdGpuFanControl(controlSensor);
+                double backendMinimum = controlSensor.Control.MinSoftwareValue;
+                double backendMaximum = controlSensor.Control.MaxSoftwareValue;
+                if (useAmdAdlx)
+                {
+                    string availabilityError;
+                    if (!_amdAdlxFanControl.TryGetLimits(controlSensor.Hardware.Name, out backendMinimum, out backendMaximum, out availabilityError))
+                    {
+                        _fanControlRuntime[controlId] = new FanControlRuntimeState { Status = availabilityError };
+                        activeControlIds.Remove(controlId);
+                        continue;
+                    }
+                }
+
+                double minimum = Math.Max(channel.minimumPercent, backendMinimum);
+                double maximum = Math.Min(100, backendMaximum);
+                requestedPercent = Clamp(requestedPercent, minimum, Math.Max(minimum, maximum));
+
+                ISensor relatedFan = FindRelatedFanSensor(controlSensor);
+                if (relatedFan != null && requestedPercent >= 40 && relatedFan.Value.HasValue && relatedFan.Value.Value < 100)
+                {
+                    DateTime stallStarted;
+                    if (!_fanStallStartedAt.TryGetValue(controlId, out stallStarted))
+                        _fanStallStartedAt[controlId] = now;
+                    else if ((now - stallStarted).TotalSeconds >= 5)
+                    {
+                        requestedPercent = 100;
+                        immediateSafetyResponse = true;
+                        status = "Failsafe 100%: fan RPM remained below 100.";
+                    }
+                }
+                else
+                {
+                    _fanStallStartedAt.Remove(controlId);
+                }
+
+                double previousRequested;
+                DateTime previousAppliedAt;
+                if (!immediateSafetyResponse &&
+                    _lastFanControlPercent.TryGetValue(controlId, out previousRequested) &&
+                    _lastFanControlAppliedAt.TryGetValue(controlId, out previousAppliedAt))
+                {
+                    double elapsedSeconds = Clamp((now - previousAppliedAt).TotalSeconds, 0.1, 5);
+                    double maximumStep = requestedPercent >= previousRequested ? 25 * elapsedSeconds : 10 * elapsedSeconds;
+                    requestedPercent = previousRequested + Clamp(requestedPercent - previousRequested, -maximumStep, maximumStep);
+                }
+
+                try
+                {
+                    if (useAmdAdlx)
+                    {
+                        string writeError;
+                        if (!_amdAdlxFanControl.TrySet(controlSensor.Hardware.Name, requestedPercent, out writeError))
+                            throw new InvalidOperationException(writeError);
+                        status += " · AMD ADLX";
+                    }
+                    else if (!_claimedFanControlIds.Contains(controlId) ||
+                             controlSensor.Control.ControlMode != ControlMode.Software ||
+                             Math.Abs(controlSensor.Control.SoftwareValue - requestedPercent) >= 0.5)
+                    {
+                        controlSensor.Control.SetSoftware((float)requestedPercent);
+                    }
+                    _claimedFanControlIds.Add(controlId);
+                    _lastFanControlPercent[controlId] = requestedPercent;
+                    _lastFanControlOffsetPercent[controlId] = channel.offsetPercent;
+                    _lastFanControlAppliedAt[controlId] = now;
+                    _fanControlRuntime[controlId] = new FanControlRuntimeState
+                    {
+                        Status = status,
+                        RequestedPercent = requestedPercent,
+                        SourceTemperature = sourceTemperature
+                    };
+                }
+                catch (Exception error)
+                {
+                    try { controlSensor.Control.SetDefault(); } catch { }
+                    RestoreFanControlLocked(controlId, controlSensor, "Control failed and returned to BIOS: " + error.Message);
+                }
+            }
+
+            foreach (string controlId in _claimedFanControlIds.Where(id => !activeControlIds.Contains(id)).ToArray())
+            {
+                ISensor controlSensor;
+                sensorMap.TryGetValue(controlId, out controlSensor);
+                RestoreFanControlLocked(controlId, controlSensor, "BIOS / automatic");
+            }
+            _lastFanControlEvaluation = now;
+        }
+
+        private void FanControlTimerTick(object state)
+        {
+            lock (_enhancedSync)
+            {
+                if (_disposed) return;
+                if (!_fanControlConfiguration.enabled && _claimedFanControlIds.Count == 0) return;
+                Computer[] computers = new[] { _processorComputer, _graphicsComputer, _boardComputer, _peripheralComputer }
+                    .Where(computer => computer != null)
+                    .ToArray();
+                if (computers.Length == 0) return;
+                EvaluateFanControlsLocked(computers, true);
+            }
+        }
+
+        private FanControlCapability CreateFanControlCapability(IHardware hardware, ISensor sensor)
+        {
+            string controlId = SensorId(sensor);
+            ISensor relatedFan = FindRelatedFanSensor(sensor);
+            FanControlRuntimeState runtime;
+            _fanControlRuntime.TryGetValue(controlId, out runtime);
+            bool protectedDevice = IsProtectedFanControl(hardware, sensor);
+            bool useAmdAdlx = hardware.HardwareType.ToString().Equals("GpuAmd", StringComparison.OrdinalIgnoreCase);
+            double minimum = sensor.Control.MinSoftwareValue;
+            double maximum = sensor.Control.MaxSoftwareValue;
+            string backend = useAmdAdlx
+                ? "AMD ADLX"
+                : hardware.HardwareType.ToString().Equals("GpuNvidia", StringComparison.OrdinalIgnoreCase)
+                    ? "NVIDIA NVAPI"
+                    : "LibreHardwareMonitor";
+            string backendError = "";
+            bool backendAvailable = !useAmdAdlx || _amdAdlxFanControl.TryGetLimits(hardware.Name, out minimum, out maximum, out backendError);
+            bool claimed = _claimedFanControlIds.Contains(controlId);
+            string idleStatus = protectedDevice
+                ? "Protected pump/AIO/PSU control; left on hardware automatic."
+                : backendAvailable
+                    ? (useAmdAdlx ? "AMD ADLX · BIOS / automatic" : "BIOS / automatic")
+                    : backendError;
+            return new FanControlCapability
+            {
+                id = controlId,
+                name = sensor.Name ?? controlId,
+                hardwareName = hardware.Name ?? "",
+                hardwareType = hardware.HardwareType.ToString(),
+                backend = backend,
+                minSoftwareValue = minimum,
+                maxSoftwareValue = maximum,
+                softwareValue = useAmdAdlx ? _amdAdlxFanControl.GetLastPercent(hardware.Name) : sensor.Control.ControlMode == ControlMode.Software ? (double?)sensor.Control.SoftwareValue : null,
+                currentValue = sensor.Value.HasValue ? (double?)sensor.Value.Value : null,
+                controlMode = useAmdAdlx && claimed ? ControlMode.Software.ToString() : sensor.Control.ControlMode.ToString(),
+                relatedFanSensorId = relatedFan == null ? "" : SensorId(relatedFan),
+                relatedFanRpm = relatedFan != null && relatedFan.Value.HasValue ? (double?)relatedFan.Value.Value : null,
+                protectedDevice = protectedDevice,
+                available = !protectedDevice && backendAvailable,
+                status = runtime == null ? idleStatus : runtime.Status,
+                requestedPercent = runtime == null ? null : runtime.RequestedPercent,
+                sourceTemperature = runtime == null ? null : runtime.SourceTemperature
+            };
         }
 
         private static void UpdateOverallCpuClockFromEnhancedSensors(List<SensorRecord> sensors)
@@ -1022,13 +1588,15 @@ namespace SiR.SensorHost
             return snapshot;
         }
 
-        private void AddHardwareTree(IHardware hardware, List<SensorRecord> sensors)
+        private void AddHardwareTree(IHardware hardware, List<SensorRecord> sensors, List<FanControlCapability> fanControls)
         {
             string hardwareType = hardware.HardwareType.ToString();
             if (ShouldSkipEnhancedPsu(hardwareType, hardware.Name))
                 return;
             foreach (ISensor sensor in hardware.Sensors)
             {
+                if (sensor.Control != null)
+                    fanControls.Add(CreateFanControlCapability(hardware, sensor));
                 if (!sensor.Value.HasValue || Single.IsNaN(sensor.Value.Value) || Single.IsInfinity(sensor.Value.Value))
                     continue;
 
@@ -1066,7 +1634,7 @@ namespace SiR.SensorHost
             }
 
             foreach (IHardware subHardware in hardware.SubHardware)
-                AddHardwareTree(subHardware, sensors);
+                AddHardwareTree(subHardware, sensors, fanControls);
         }
 
         private bool ShouldSkipEnhancedPsu(string hardwareType, string hardwareName)
@@ -1235,13 +1803,20 @@ namespace SiR.SensorHost
             Computer peripheralComputer = null;
             PerformanceCounter memoryReadActivity = null;
             PerformanceCounter memoryWriteActivity = null;
+            Timer fanControlTimer = null;
             lock (_enhancedSync)
             {
                 _disposed = true;
+                fanControlTimer = _fanControlTimer;
+                _fanControlTimer = null;
                 processorComputer = _processorComputer;
                 graphicsComputer = _graphicsComputer;
                 boardComputer = _boardComputer;
                 peripheralComputer = _peripheralComputer;
+                Computer[] fanComputers = new[] { processorComputer, graphicsComputer, boardComputer, peripheralComputer }
+                    .Where(computer => computer != null)
+                    .ToArray();
+                RestoreAllFanControlsLocked(BuildEnhancedSensorMap(fanComputers), "Returned to BIOS: sensor host closed.");
                 _processorComputer = null;
                 _graphicsComputer = null;
                 _boardComputer = null;
@@ -1251,6 +1826,7 @@ namespace SiR.SensorHost
                 _memoryReadActivity = null;
                 _memoryWriteActivity = null;
             }
+            if (fanControlTimer != null) fanControlTimer.Dispose();
             lock (_directPsuSync)
             {
                 _thermaltakePsuSnapshot = null;
@@ -1282,6 +1858,7 @@ namespace SiR.SensorHost
             _corsairPsu.Dispose();
             _nzxtEPsu.Dispose();
             _presentMonFps.Dispose();
+            _amdAdlxFanControl.Dispose();
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -1356,8 +1933,17 @@ namespace SiR.SensorHost
                         string command = request.ContainsKey("command") ? Convert.ToString(request["command"]) : "snapshot";
                         if (command.Equals("shutdown", StringComparison.OrdinalIgnoreCase))
                         {
-                            WriteMessage(Response(requestId, true, null, null));
+                            string restoreError;
+                            bool restored = collector.RestoreFanControlsForShutdown(out restoreError);
+                            WriteMessage(Response(requestId, restored, null, restoreError));
                             break;
+                        }
+
+                        if (request.ContainsKey("fanControl") && request["fanControl"] != null)
+                        {
+                            string fanControlJson = Json.Serialize(request["fanControl"]);
+                            FanControlConfiguration fanControl = Json.Deserialize<FanControlConfiguration>(fanControlJson);
+                            collector.UpdateFanControlConfiguration(fanControl);
                         }
 
                         Snapshot snapshot = collector.ReadSnapshot();

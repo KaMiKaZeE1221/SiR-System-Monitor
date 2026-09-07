@@ -10,6 +10,15 @@ LibreHardwareMonitor includes components under additional licenses. The authorit
 
 https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/blob/master/THIRD-PARTY-LICENSES.txt
 
+Modern AMD GPU fan control uses the open ADLX integration originally published for FanControl. SiR bundles only the MIT-licensed `ADLXWrapper.dll` and `ADLXCSharpBind.dll` files from the pinned FanControl.ADLX source revision; the FanControl application is not bundled. The wrapper uses AMD's official ADLX interface supplied by a compatible Radeon driver and is loaded only when an AMD GPU exposes manual fan tuning.
+
+- Project: https://github.com/Rem0o/FanControl.ADLX
+- License: MIT, Copyright (c) 2023 Rem0o
+- Pinned revision: `2bb7729a935b7acc600dfce3a5b6340b6bddb9b1`
+- `ADLXWrapper.dll` SHA-256: `CE742DA3C57A68896D300A45F040906A68990B7B09C5B82FF3883CAF2C155644`
+- `ADLXCSharpBind.dll` SHA-256: `B7C39D1EB3E665826BA7121A3D74F952C8519C6AEE877EDF194E47AE625BC7CF`
+- AMD ADLX SDK: https://github.com/GPUOpen-LibrariesAndSDKs/ADLX
+
 The enhanced-hardware package also includes the official PawnIO 2.2 driver installer embedded by LibreHardwareMonitor 0.9.6. SiR only runs it after the user explicitly enables enhanced low-level access or selects the driver repair action.
 
 - Installer source: https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/blob/v0.9.6/LibreHardwareMonitor/Resources/PawnIO_setup.exe
