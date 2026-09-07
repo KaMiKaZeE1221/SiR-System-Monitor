@@ -2,7 +2,7 @@
   <h1>SiR System Monitor</h1>
   <p><strong>Real-time hardware monitoring for Windows, your desktop, your overlay, and your browser.</strong></p>
   <p>
-    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.3.6" src="https://img.shields.io/badge/version-1.3.6-f97316?style=for-the-badge"></a>
+    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.3.7" src="https://img.shields.io/badge/version-1.3.7-f97316?style=for-the-badge"></a>
     <a href="#requirements"><img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&amp;logo=windows"></a>
     <a href="./LICENSE.txt"><img alt="GNU GPL v3" src="https://img.shields.io/badge/license-GPL--3.0-3DA639?style=for-the-badge"></a>
   </p>
@@ -29,6 +29,7 @@ SiR System Monitor is an open-source Windows desktop app that combines live syst
 | **A dashboard that fits you** | Choose which sensors appear, search, rename, reorder, resize, group, and include them in the overlay. |
 | **Desktop and web layouts** | Give normal and Summary modes their own Compact, Balanced, Wide, Stacked, or freely resized Custom layout in both the app and Web Monitor. |
 | **Overlay and alerts** | Keep selected readings over other apps and highlight warning or critical threshold events. |
+| **Guarded fan control** | Opt-in manual levels and temperature curves for explicitly supported writable channels, including curves driven by one sensor or the average of two. |
 | **App telemetry** | Monitor SiR's own CPU/RAM use, uptime, process/window counts, refresh timing, sensor counts, active alerts, and Web Monitor connections. |
 | **Built-in diagnostics** | Run support-oriented checks, copy a combined report, or create a privacy-scrubbed ZIP support bundle directly from the app. |
 | **Configurable motion** | Independently control settings, dialog, Summary transition, and sensor-card icon animations, with matching Web Monitor behavior. |
@@ -36,15 +37,16 @@ SiR System Monitor is an open-source Windows desktop app that combines live syst
 
 Sensor groups include **FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, App, and Other**. FPS and frame-time values appear when an enabled source provides them.
 
-## What's new in 1.3.5
+Sensor groups include **FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, App, and Other**. FPS and frame-time values appear when an enabled source provides them.
 
-- Added **Light**, **Dark**, and **Follow Windows** appearance modes, with independent custom-color palettes saved for Light and Dark.
-- Expanded Summary Mode with running **Minimum**, **Average**, and **Maximum** values plus **Reset Stats** in both the desktop app and Web Monitor.
-- Made mouse-wheel and trackpad scrolling work across the full card surface when the desktop dashboard uses Stacked layout.
-- Replaced native card dragging with visual-grid placement, a precise drop marker, reliable edge scrolling, and predictable ordering in mixed-size Custom layouts.
-- Fixed the active **Exit Summary Mode** button contrast on bright accent themes.
-- Refined Discord Rich Presence so it reports a stable app session without invented player counts or placeholder game activity.
-- Added application and Discord integration [Terms of Service](./TERMS_OF_SERVICE.md) and [Privacy Policy](./PRIVACY_POLICY.md).
+## What's new in 1.3.7
+
+- Added experimental capability-based fan control for supported motherboard and GPU channels.
+- Added manual levels and editable temperature curves driven by one selected temperature sensor or the average of two.
+- Added fan renaming, a shared Global Curve for all writable fans, two-to-eight-point curve editing, and one-click curve reset.
+- Added collapsible and hideable fan cards, collapsible Curve Studio, and a signed output offset for tuning individual fans around a shared curve.
+- Added safe duty limits, hysteresis, gradual ramping, emergency/stall protection, heartbeat fallback, and automatic restoration to BIOS control.
+- Added fan-control capability details to enhanced diagnostics and support bundles.
 
 See the [full changelog](./CHANGELOG.md) for every change and fix.
 
@@ -74,7 +76,7 @@ Get the latest Windows installer or portable build from [GitHub Releases](https:
 4. Choose separate normal and Summary card presets under **Appearance → Layout**, or select **Custom** for either mode to resize its cards independently.
 5. Fine-tune interface motion under **Appearance → Animations**, including the effects mirrored to the Web Monitor.
 6. Enable **Enhanced Hardware Sensors** only if you want the additional readings supported by your hardware.
-7. Optionally configure the overlay, alerts, Web Monitor, startup behavior, and a settings profile. Use **Diagnostics → Create Support Bundle** when preparing a privacy-scrubbed support archive.
+7. Optionally configure the overlay, alerts, guarded fan control, Web Monitor, startup behavior, and a settings profile. Use **Diagnostics → Create Support Bundle** when preparing a privacy-scrubbed support archive.
 
 ## Sensor sources
 
@@ -103,6 +105,20 @@ Enabling Enhanced Hardware Sensors displays a themed confirmation before SiR:
 4. Installs or updates the bundled PawnIO driver when required for Intel CPU package power and other protected readings.
 
 Availability still depends on the hardware, firmware, driver, Windows permissions, and whether another application has exclusive access to the device.
+
+### Experimental fan control
+
+Open the dedicated **Fan Control** workspace from the dashboard's top action row after enabling Enhanced Hardware Sensors. SiR uses writable LibreHardwareMonitor controls for supported motherboard/controller channels, its NVAPI-backed path for NVIDIA GPUs, and a bundled ADLX path for compatible modern AMD Radeon GPUs. Unsupported hardware remains monitoring-only; the FanControl application itself is not required or bundled.
+
+Each eligible channel can remain on **BIOS / Automatic**, use a fixed **Manual Percentage**, follow its own **Temperature Curve**, or use the shared **Global Curve**. Both individual and global curves can use one built-in temperature sensor or average two selected sensors—for example CPU Package and GPU Core—before calculating fan duty. A signed per-fan offset can then tune the final software-controlled output for fans that respond differently. Fan names can be edited in place and reset to their detected names at any time.
+
+The workspace is divided into compact **Controls** and a dedicated **Curve Studio**. Each fan card can be minimized to its name, hardware, command/RPM meters, and duty bar, or hidden completely and restored through **Show hidden fans**. Curve Studio can also be minimized. Select the Global Curve or any writable fan, drag graph points or enter exact values, add or remove points for a two-to-eight-node response, choose one or two temperature inputs, and assign the result. Resetting a curve restores the default response shape while keeping its selected sources and safety limits. Names, offsets, visibility, collapse state, and curves are included in local settings, named profiles, and JSON imports/exports. The interface and implementation are original to SiR System Monitor and do not reuse third-party application code or visual assets.
+
+Fan policy runs inside the persistent sensor host, so it continues while the dashboard is minimized. Normal curve movement is rate-limited and respects a configurable safe minimum. A missing temperature source, emergency temperature, or detected low-RPM stall requests 100%. If SiR's heartbeat expires, fan control is disabled, the host restarts, or the app closes normally, claimed channels return to their default firmware mode. Pump, AIO, and PSU controls are deliberately protected in V1.3.7. AMD ADLX control targets compatible Radeon RX 5000/6000/7000 GPUs with Adrenalin 22.7.1 or newer.
+
+> [!WARNING]
+> Fan control is hardware-dependent and experimental. Verify the displayed header and RPM response before relying on a curve, avoid running competing fan-control utilities, and keep firmware fan protection configured.
+
 
 ## Diagnostics and support reports
 
