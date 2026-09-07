@@ -43,6 +43,14 @@ The bundled LibreHardwareMonitor 0.9.6 backend covers common Intel/AMD CPUs, NVI
 - Razer fan controllers
 - T-Balancer and Heatmaster
 
+## Experimental fan control
+
+Version 1.3.7 adds opt-in control for supported motherboard and GPU fan channels. Motherboard/controller channels use writable LibreHardwareMonitor controls, modern AMD Radeon channels use the bundled ADLX integration, and NVIDIA channels retain LibreHardwareMonitor's NVAPI-backed control path. A supported channel can remain under BIOS/firmware control, use a fixed manual percentage, or follow a temperature curve driven by one temperature sensor or the average of two.
+
+The curve loop runs in the sensor host so it continues while the dashboard is hidden or minimized. It applies a safe minimum, hysteresis, rate limiting, emergency full-speed fallback, missing-source fallback, and low-RPM stall detection when a related RPM sensor is available. A lost renderer heartbeat or normal shutdown returns channels claimed by SiR to their default firmware mode.
+
+Pump, AIO, and PSU controls are deliberately protected in this first release. Hardware that exposes readings but no supported writable control remains monitoring-only. AMD ADLX support targets compatible Radeon RX 5000, 6000, and 7000 hardware with AMD Software: Adrenalin Edition 22.7.1 or newer. Firmware fan control should remain configured as a safe fallback, and users should validate one channel at a time.
+
 Enhanced mode can require administrator privileges for low-level motherboard and controller access. Intel CPU package-power domains use LibreHardwareMonitor's RAPL implementation and the bundled PawnIO driver; SiR offers to install or update that driver only after the user enables Enhanced Hardware Sensors or explicitly presses the driver-install button. RAPL domains vary by processor and platform: SiR publishes Package, Cores, Memory/DRAM, and Platform/PSys power only after the corresponding energy counter produces a valid reading, rather than displaying unsupported domains as permanent `0 W` sensors. Direct PSU readers remain available in standard mode where Windows permits the HID interface to be opened.
 
 ## Vendor-neutral FPS and frame time
