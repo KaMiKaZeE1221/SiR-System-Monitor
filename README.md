@@ -2,7 +2,7 @@
   <h1>SiR System Monitor</h1>
   <p><strong>Real-time hardware monitoring for Windows, your desktop, your overlay, and your browser.</strong></p>
   <p>
-    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.3.7" src="https://img.shields.io/badge/version-1.3.7-f97316?style=for-the-badge"></a>
+    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.3.8" src="https://img.shields.io/badge/version-1.3.8-f97316?style=for-the-badge"></a>
     <a href="#requirements"><img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&amp;logo=windows"></a>
     <a href="./LICENSE.txt"><img alt="GNU GPL v3" src="https://img.shields.io/badge/license-GPL--3.0-3DA639?style=for-the-badge"></a>
   </p>
@@ -37,16 +37,15 @@ SiR System Monitor is an open-source Windows desktop app that combines live syst
 
 Sensor groups include **FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, App, and Other**. FPS and frame-time values appear when an enabled source provides them.
 
-Sensor groups include **FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, App, and Other**. FPS and frame-time values appear when an enabled source provides them.
+## What's new in 1.3.8
 
-## What's new in 1.3.7
-
-- Added experimental capability-based fan control for supported motherboard and GPU channels.
-- Added manual levels and editable temperature curves driven by one selected temperature sensor or the average of two.
-- Added fan renaming, a shared Global Curve for all writable fans, two-to-eight-point curve editing, and one-click curve reset.
-- Added collapsible and hideable fan cards, collapsible Curve Studio, and a signed output offset for tuning individual fans around a shared curve.
-- Added safe duty limits, hysteresis, gradual ramping, emergency/stall protection, heartbeat fallback, and automatic restoration to BIOS control.
-- Added fan-control capability details to enhanced diagnostics and support bundles.
+- Enabled Chromium hardware acceleration by default, with an environment-variable opt-out for troubleshooting.
+- Changed desktop and Web Monitor refreshes to batch DOM work once per animation frame.
+- Kept sensor rows and Summary statistics in place while their live text and alert state change.
+- Moved expanded graph drawing into a separate render pass so normal readings are not delayed by chart work.
+- Paused interface motion only when its page is actually hidden while sensor collection, alerts, the OSD, and Web Monitor publishing continue normally.
+- Reworked sensor-card hover feedback around compositor-friendly transforms and opacity, with stronger paint containment.
+- Added **App Behavior → Performance** controls for acceleration compatibility, live cache size, and safely clearing regenerable Chromium caches.
 
 See the [full changelog](./CHANGELOG.md) for every change and fix.
 
