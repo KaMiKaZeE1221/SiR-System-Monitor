@@ -35,7 +35,7 @@ SiR System Monitor is an open-source Windows desktop app that combines live syst
 | **Configurable motion** | Independently control settings, dialog, Summary transition, and sensor-card icon animations, with matching Web Monitor behavior. |
 | **Profiles and portability** | Save named profiles or export the complete setup to JSON for backup and transfer. |
 
-Sensor groups include **FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, App, and Other**. FPS and frame-time values appear when an enabled source provides them.
+Sensor groups include **FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, App, and Other**. FPS, generated-FPS, and frame-time values appear when an enabled source provides them. Generated FPS requires the game or display driver to expose an explicit generated-frame type to the bundled PresentMon collector; unsupported paths are left at zero rather than estimated.
 
 ## What's new in 1.3.9
 
