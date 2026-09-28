@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.3.9 - 2026-09-28
+
+### Added
+- Added a persisted **Graph history length** setting under **Monitoring → Refresh Rate**, configurable from 10 seconds to 60 minutes and included in named profiles and settings exports/imports.
+- Added a live Curve Studio operating-point marker with temperature and interpolated fan percentage, refreshed at the user's selected monitoring interval without rebuilding the curve editor.
+- Added a frame-generation FPS reading as an independent selectable sensor, plus frame-generation state, method, generated-rate, displayed-rate, and captured-frame diagnostics for support reports.
+
+### Changed
+- Changed frame capture to one adaptive PresentMon session: it keeps the proven v1 timing stream for base **FPS**, briefly probes v2 frame types for generated frames, and never runs competing trace sessions.
+- Renamed the visible PresentMon sensors to **FPS**, **Frame Time**, and a method-aware frame-generation name such as **AFMF FPS**, **XeSS-FG FPS**, or **DLSS Frame Generation FPS**.
+- Changed the frame-generation FPS sensor to report total displayed FPS (application-rendered plus generated frames) rather than generated frames alone.
+- Made the desktop overlay less disruptive to driver frame generation by using the normal floating topmost level, avoiding repeated topmost reassertion, and skipping unchanged window-bound updates on every refresh.
+- Downsampled long graph histories only for drawing and Web Monitor transfer, retaining the selected time window while keeping SVG and browser update costs bounded.
+- Made generated-frame recognition vendor-neutral for explicit PresentMon frame types. AMD AFMF is supported by the bundled PresentMon build; other methods appear when their driver or game instrumentation reports a distinct frame type.
+
+### Fixed
+- Fixed expanded graphs being permanently limited to the most recent 120 samples even when a longer time window was desired.
+- Fixed the Global Cooling Curve showing only a changing source-temperature label while the plotted curve itself gave no visual indication of the current operating position.
+- Fixed FPS, frame time, and generated FPS remaining at zero because simultaneous PresentMon sessions competed for ETW events and accumulated large event-loss counts. The collector now falls back automatically when frame-type mode emits no compatible rows and preserves the latest reading during mode changes.
+- Fixed orphaned legacy or diagnostic PresentMon trace sessions surviving an interrupted capture and starving later FPS collectors. Startup now identifies and closes those retired SiR-owned sessions before beginning the active capture.
+- Fixed ordinary overlay refreshes repeatedly changing the OSD window's z-order and bounds, which could force unnecessary Windows composition-path transitions.
+
 ## 1.3.8 - 2026-09-08
 
 ### Added
