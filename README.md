@@ -37,15 +37,13 @@ SiR System Monitor is an open-source Windows desktop app that combines live syst
 
 Sensor groups include **FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, App, and Other**. FPS and frame-time values appear when an enabled source provides them.
 
-## What's new in 1.3.8
+## What's new in 1.3.9
 
-- Enabled Chromium hardware acceleration by default, with an environment-variable opt-out for troubleshooting.
-- Changed desktop and Web Monitor refreshes to batch DOM work once per animation frame.
-- Kept sensor rows and Summary statistics in place while their live text and alert state change.
-- Moved expanded graph drawing into a separate render pass so normal readings are not delayed by chart work.
-- Paused interface motion only when its page is actually hidden while sensor collection, alerts, the OSD, and Web Monitor publishing continue normally.
-- Reworked sensor-card hover feedback around compositor-friendly transforms and opacity, with stronger paint containment.
-- Added **App Behavior → Performance** controls for acceleration compatibility, live cache size, and safely clearing regenerable Chromium caches.
+- Added a configurable **Graph history length** under **Monitoring → Refresh Rate**, from 10 seconds to 60 minutes, shared by desktop and Web Monitor graphs.
+- Added a live operating-point marker to Curve Studio so the current source temperature and interpolated fan command are visible on the curve.
+- Added a selectable, method-aware frame-generation sensor such as **AFMF FPS** while retaining **FPS** as the application-rendered/base rate. The frame-generation reading is the total displayed rate, including both application and generated frames.
+- Added adaptive PresentMon frame-type probing alongside the proven base-FPS capture and exposed frame-generation details in diagnostics and support bundles without opening competing trace sessions.
+- Kept long graph ranges lightweight by retaining the full selected duration while downsampling only the rendered/transferred points.
 
 See the [full changelog](./CHANGELOG.md) for every change and fix.
 
