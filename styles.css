@@ -737,6 +737,30 @@ body.display-light .color-picker-input {
   gap: 10px;
 }
 
+.graph-history-field {
+  margin-top: 14px;
+}
+
+.graph-history-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.graph-history-input > span {
+  color: var(--text-secondary);
+  font-size: calc(10px * var(--font-scale));
+  font-weight: var(--font-weight-bold);
+}
+
+.graph-history-field small {
+  color: var(--text-secondary);
+  font-size: calc(9px * var(--font-scale));
+  font-weight: 500;
+  line-height: 1.4;
+}
+
 .refresh-slider {
   width: 100%;
   height: 6px;
@@ -2081,13 +2105,13 @@ body.layout-custom .sensor-group {
   border: 1px solid var(--border-color);
   border-radius: 10px;
   padding: 14px;
-  transition: border-color 0.2s ease;
+  transition: transform 0.2s ease, opacity 0.2s ease;
   height: var(--layout-card-height);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   position: relative;
-  contain: layout style;
+  contain: layout style paint;
 }
 
 .sensor-group-title {
@@ -2141,7 +2165,7 @@ body.card-drag-active * {
 }
 
 .sensor-group:hover {
-  border-color: var(--accent);
+  transform: translateY(-1px);
 }
 
 body:not(.no-sensor-icon-animations) .sensor-group .group-icon {
@@ -2307,6 +2331,7 @@ body.layout-custom .sensor-resize-handle {
   display: block;
   cursor: pointer;
   user-select: none;
+  transition: transform 0.16s ease, opacity 0.16s ease;
 }
 
 .stat-clickable .stat-main {
@@ -2317,7 +2342,7 @@ body.layout-custom .sensor-resize-handle {
 }
 
 .stat-clickable:hover {
-  background: rgba(255, 255, 255, 0.02);
+  transform: translateX(1px);
 }
 
 .stat-clickable.is-expanded {
@@ -4481,6 +4506,35 @@ select.detection-select:hover {
 .fan-curve-line {
   stroke: var(--accent-light);
   stroke-width: 3;
+}
+
+.fan-curve-operating-point {
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.18s ease;
+}
+
+.fan-curve-operating-point.is-unavailable {
+  opacity: 0;
+}
+
+.fan-curve-live-guide {
+  stroke: color-mix(in srgb, var(--accent-light) 58%, transparent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+}
+
+.fan-curve-live-pulse {
+  fill: color-mix(in srgb, var(--accent) 18%, transparent);
+  stroke: color-mix(in srgb, var(--accent-light) 36%, transparent);
+  stroke-width: 2;
+}
+
+.fan-curve-live-dot {
+  fill: var(--accent-light);
+  stroke: var(--bg-primary);
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent-light) 72%, transparent));
 }
 
 .fan-curve-nodes circle {

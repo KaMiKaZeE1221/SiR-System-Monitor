@@ -29,6 +29,7 @@ const {
   normalizeFanChannel,
   normalizeFanCurve,
   normalizeFanControlSettings,
+  interpolateFanCurve,
   combineTemperatureValues
 } = require('./fanControl');
 const http = require('http');
@@ -167,6 +168,10 @@ const SUMMARY_WINDOW_SIZE_KEY = 'summaryWindowSize';
 const CUSTOM_LAYOUT_COLUMNS = 36;
 const CUSTOM_LAYOUT_ROW_HEIGHT = 8;
 const GRAPH_EXPANDED_KEY = 'graphExpandedSensors';
+const GRAPH_HISTORY_SECONDS_KEY = 'graphHistorySeconds';
+const DEFAULT_GRAPH_HISTORY_SECONDS = 60;
+const MIN_GRAPH_HISTORY_SECONDS = 10;
+const MAX_GRAPH_HISTORY_SECONDS = 3600;
 const WEB_MONITOR_SETTINGS_KEY = 'webMonitorSettings';
 const OVERLAY_ENABLED_KEY = 'overlayEnabled';
 const OVERLAY_FONT_SIZE_KEY = 'overlayFontSize';
@@ -227,6 +232,7 @@ const SETTINGS_SNAPSHOT_KEYS = [
   TEMPERATURE_UNIT_KEY,
   SUMMARY_MODE_KEY,
   'refreshRate',
+  GRAPH_HISTORY_SECONDS_KEY,
   OVERLAY_ENABLED_KEY,
   OVERLAY_FONT_SIZE_KEY,
   OVERLAY_FONT_FAMILY_KEY,
@@ -435,10 +441,11 @@ const GROUP_VISIBILITY_KEYS = {
   other: 'showExternal'
 };
 const CARD_GROUP_IDS = Object.fromEntries(Object.entries(GROUP_CARD_IDS).map(([group, cardId]) => [cardId, group]));
-const SENSOR_HISTORY_WINDOW_MS = 60000;
-const SENSOR_HISTORY_MAX_POINTS = 600;
+const SENSOR_HISTORY_MAX_POINTS = 3600;
+const SENSOR_GRAPH_RENDER_MAX_POINTS = 600;
 const sensorHistory = {};
 const sensorSessionStats = {};
+let graphHistorySeconds = DEFAULT_GRAPH_HISTORY_SECONDS;
 let expandedGraphSensors = new Set();
 let summaryModeEnabled = (function() {
   try {
@@ -482,6 +489,11 @@ let fanCurveDragState = null;
 let pendingVisibilityRefresh = false;
 let lastUiRenderAt = 0;
 let forceNextUiRender = true;
+let pendingDynamicGroupRenderFrame = null;
+let pendingDynamicGroupRenderSelection = null;
+let pendingDynamicGroupRenderForce = false;
+let pendingGraphRenderFrame = null;
+let pendingGraphRenderSelection = null;
 let motionVisibilityObserver = null;
 let ambientMotionTimer = null;
 let ambientMotionCursor = 0;
@@ -639,6 +651,7 @@ const DEFAULT_APP_BEHAVIOR_SETTINGS = {
   closeToTray: false,
   autoCheckForUpdates: true,
   startupDelaySeconds: 0,
+  disableGpuAcceleration: false,
   enableDiscordRichPresence: true
 };
 
@@ -723,6 +736,7 @@ function normalizeAppBehaviorSettings(input) {
     closeToTray: !!input?.closeToTray,
     autoCheckForUpdates: input?.autoCheckForUpdates !== false,
     startupDelaySeconds,
+    disableGpuAcceleration: input?.disableGpuAcceleration === true,
     enableDiscordRichPresence: typeof input?.enableDiscordRichPresence === 'boolean'
       ? input.enableDiscordRichPresence
       : true
@@ -916,7 +930,8 @@ function buildWebMonitorHtml(authToken = '') {
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--layout-card-min-width)), 1fr)); gap: var(--layout-card-gap); }
     body.layout-stacked .grid { grid-template-columns: minmax(0, 1fr); }
     body.layout-custom .grid { grid-template-columns: repeat(36, minmax(0, 1fr)); grid-auto-rows: 8px; grid-auto-flow: dense; }
-    .card { border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); padding: 14px; height: var(--layout-card-height); overflow: hidden; display: flex; flex-direction: column; contain: layout style; }
+    .card { border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); padding: 14px; height: var(--layout-card-height); overflow: hidden; display: flex; flex-direction: column; contain: layout style paint; transition: transform .2s ease, opacity .2s ease; }
+    .card:hover { transform: translateY(-1px); }
     body.layout-custom .card { height: auto; min-width: 0; }
     .card h3 { margin: 0 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--bg-tertiary); font-size: calc(13px * var(--font-scale)); letter-spacing: .08em; color: var(--block-header-color); text-transform: uppercase; font-weight: var(--font-weight-bold); display: flex; align-items: center; gap: 8px; }
     .group-icon { color: var(--icon-color); font-size: calc(14px * var(--font-scale)); line-height: 1; }
@@ -1097,7 +1112,12 @@ function buildWebMonitorHtml(authToken = '') {
       viewTransitionDurationMs: 340,
       ambientMotionTimer: null,
       ambientMotionCursor: 0,
-      ambientMotionDurationMs: 4800
+      ambientMotionDurationMs: 4800,
+      pendingPayload: null,
+      renderFrame: null,
+      graphFrame: null,
+      graphGroups: null,
+      graphOrder: null
     };
     const motionVisibilityObserver = typeof IntersectionObserver === 'function'
       ? new IntersectionObserver((entries) => {
@@ -1143,8 +1163,7 @@ function buildWebMonitorHtml(authToken = '') {
     }
 
     function syncWebActivityState() {
-      const active = !document.hidden &&
-        (typeof document.hasFocus !== 'function' || document.hasFocus());
+      const active = !document.hidden;
       document.body.classList.toggle('app-inactive', !active);
       if (active) scheduleWebAmbientIconMotion(100);
       else if (domState.ambientMotionTimer !== null) clearTimeout(domState.ambientMotionTimer);
@@ -1370,9 +1389,9 @@ function buildWebMonitorHtml(authToken = '') {
         const hasNumericValue = Number.isFinite(numericValue);
         if (isStaticSummaryValue || !hasNumericValue) {
           const staticText = String((sensor && sensor.formatted) || '--').trim() || '--';
-          return '<div class="summary-line"><span class="summary-part"><span class="summary-label">Value</span><span class="summary-value">' + escapeHtml(staticText) + '</span></span></div>';
+          return '<div class="summary-line" data-summary-kind="value"><span class="summary-part"><span class="summary-label">Value</span><span class="summary-value" data-summary-value="current">' + escapeHtml(staticText) + '</span></span></div>';
         }
-        return '<div class="summary-line">Collecting summary...</div>';
+        return '<div class="summary-line" data-summary-kind="collecting">Collecting summary...</div>';
       }
 
       const units = sensor.units || '';
@@ -1386,13 +1405,47 @@ function buildWebMonitorHtml(authToken = '') {
         ? escapeHtml(summary.maxFormatted)
         : formatSummaryMetric(summary.max, units, sensor.name);
 
-      return '<div class="summary-line">' +
-        '<span class="summary-part"><span class="summary-label">Min</span><span class="summary-value">' + minText + '</span></span>' +
+      return '<div class="summary-line" data-summary-kind="stats">' +
+        '<span class="summary-part"><span class="summary-label">Min</span><span class="summary-value" data-summary-value="min">' + minText + '</span></span>' +
         '<span class="summary-sep">•</span>' +
-        '<span class="summary-part"><span class="summary-label">Avg</span><span class="summary-value">' + averageText + '</span></span>' +
+        '<span class="summary-part"><span class="summary-label">Avg</span><span class="summary-value" data-summary-value="average">' + averageText + '</span></span>' +
         '<span class="summary-sep">•</span>' +
-        '<span class="summary-part"><span class="summary-label">Max</span><span class="summary-value">' + maxText + '</span></span>' +
+        '<span class="summary-part"><span class="summary-label">Max</span><span class="summary-value" data-summary-value="max">' + maxText + '</span></span>' +
       '</div>';
+    }
+
+    function getWebSummaryModel(sensor) {
+      const summary = sensor && sensor.summary;
+      if (summary && Number.isFinite(Number(summary.count)) && Number(summary.count) > 0) {
+        const units = sensor.units || '';
+        return {
+          kind: 'stats',
+          min: summary.minFormatted || formatSummaryMetric(summary.min, units, sensor.name),
+          average: summary.averageFormatted || formatSummaryMetric(summary.average, units, sensor.name),
+          max: summary.maxFormatted || formatSummaryMetric(summary.max, units, sensor.name)
+        };
+      }
+      const sensorName = String((sensor && sensor.name) || '').toLowerCase();
+      const isStaticSummaryValue = sensorName.includes('lan ip') || sensorName.includes('wan ip') || sensorName.includes('memory timing');
+      if (isStaticSummaryValue || !Number.isFinite(Number(sensor && sensor.value))) {
+        return { kind: 'value', current: String((sensor && sensor.formatted) || '--').trim() || '--' };
+      }
+      return { kind: 'collecting' };
+    }
+
+    function updateWebSummaryInPlace(holder, sensor) {
+      const line = holder && holder.querySelector('.summary-line');
+      const model = getWebSummaryModel(sensor);
+      if (!line || line.dataset.summaryKind !== model.kind) return false;
+      if (model.kind === 'collecting') return true;
+      const keys = model.kind === 'stats' ? ['min', 'average', 'max'] : ['current'];
+      for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        const value = line.querySelector('[data-summary-value="' + key + '"]');
+        if (!value) return false;
+        if (value.textContent !== model[key]) value.textContent = model[key];
+      }
+      return true;
     }
 
     function setSummaryMode(enabled, options) {
@@ -1497,7 +1550,7 @@ function buildWebMonitorHtml(authToken = '') {
       return new Date(ts).toLocaleTimeString();
     }
 
-    function renderGraphHtml(sensor) {
+    function buildWebGraphModel(sensor) {
       if (!sensor || !sensor.expanded || !Array.isArray(sensor.history) || sensor.history.length < 2) return '';
 
       const width = 280;
@@ -1507,13 +1560,64 @@ function buildWebMonitorHtml(authToken = '') {
       const numeric = sensor.history.map((p) => Number(p.value)).filter((v) => Number.isFinite(v));
       if (!path || !numeric.length) return '';
 
-      const min = Math.min.apply(null, numeric).toFixed(1);
-      const max = Math.max.apply(null, numeric).toFixed(1);
-      const now = numeric[numeric.length - 1].toFixed(1);
-      const unit = sensor.units ? ' ' + escapeHtml(sensor.units) : '';
+      const unit = sensor.units ? ' ' + sensor.units : '';
+      return {
+        path: path,
+        minText: 'Min ' + Math.min.apply(null, numeric).toFixed(1) + unit,
+        nowText: 'Now ' + numeric[numeric.length - 1].toFixed(1) + unit,
+        maxText: 'Max ' + Math.max.apply(null, numeric).toFixed(1) + unit
+      };
+    }
 
-      return '<svg class="graph" viewBox="0 0 ' + width + ' ' + height + '" preserveAspectRatio="none"><path class="graph-line" d="' + path + '"></path></svg>' +
-        '<div class="graph-meta"><span>Min ' + min + unit + '</span><span>Now ' + now + unit + '</span><span>Max ' + max + unit + '</span></div>';
+    function renderGraphHtml(sensor, graphModel) {
+      const model = graphModel || buildWebGraphModel(sensor);
+      if (!model) return '';
+
+      return '<svg class="graph" viewBox="0 0 280 58" preserveAspectRatio="none"><path class="graph-line" d="' + model.path + '"></path></svg>' +
+        '<div class="graph-meta"><span data-graph-value="min">' + escapeHtml(model.minText) + '</span><span data-graph-value="now">' + escapeHtml(model.nowText) + '</span><span data-graph-value="max">' + escapeHtml(model.maxText) + '</span></div>';
+    }
+
+    function updateWebGraphInPlace(refs, sensor) {
+      if (!refs || !refs.graphEl) return;
+      const model = buildWebGraphModel(sensor);
+      if (!model) {
+        if (refs.graphEl.childNodes.length) refs.graphEl.replaceChildren();
+        return;
+      }
+
+      const path = refs.graphEl.querySelector('.graph-line');
+      const min = refs.graphEl.querySelector('[data-graph-value="min"]');
+      const now = refs.graphEl.querySelector('[data-graph-value="now"]');
+      const max = refs.graphEl.querySelector('[data-graph-value="max"]');
+      if (!path || !min || !now || !max) {
+        refs.graphEl.innerHTML = renderGraphHtml(sensor, model);
+        return;
+      }
+      if (path.getAttribute('d') !== model.path) path.setAttribute('d', model.path);
+      if (min.textContent !== model.minText) min.textContent = model.minText;
+      if (now.textContent !== model.nowText) now.textContent = model.nowText;
+      if (max.textContent !== model.maxText) max.textContent = model.maxText;
+    }
+
+    function queueWebGraphRender(groups, orderedGroups) {
+      domState.graphGroups = groups;
+      domState.graphOrder = orderedGroups;
+      if (document.hidden || domState.summaryMode || domState.graphFrame !== null) return;
+      domState.graphFrame = requestAnimationFrame(() => {
+        domState.graphFrame = null;
+        if (document.hidden || domState.summaryMode) return;
+        const nextGroups = domState.graphGroups || {};
+        const nextOrder = domState.graphOrder || [];
+        domState.graphGroups = null;
+        domState.graphOrder = null;
+        nextOrder.forEach((group) => {
+          const sensors = Array.isArray(nextGroups[group]) ? nextGroups[group] : [];
+          sensors.forEach((sensor) => {
+            if (!sensor.expanded) return;
+            updateWebGraphInPlace(domState.rowsByKey.get(makeSensorKey(group, sensor.id)), sensor);
+          });
+        });
+      });
     }
 
     function rebuildGrid(groups, orderedGroups, layout, grid) {
@@ -1599,10 +1703,6 @@ function buildWebMonitorHtml(authToken = '') {
 
           if (domState.summaryMode) {
             summaryHolder.innerHTML = renderSummaryHtml(sensor);
-            graphHolder.innerHTML = '';
-          } else {
-            graphHolder.innerHTML = renderGraphHtml(sensor);
-            summaryHolder.innerHTML = '';
           }
 
           row.appendChild(summaryHolder);
@@ -1641,27 +1741,10 @@ function buildWebMonitorHtml(authToken = '') {
           if (!domState.summaryMode && refs.valueEl.textContent !== nextValue) refs.valueEl.textContent = nextValue;
 
           if (domState.summaryMode) {
-            const summaryHtml = renderSummaryHtml(sensor);
-            const existingSummary = refs.summaryEl.dataset.summaryHtml || '';
-            if (existingSummary !== summaryHtml) {
-              refs.summaryEl.dataset.summaryHtml = summaryHtml;
-              refs.summaryEl.innerHTML = summaryHtml;
-            }
-            if (refs.graphEl.innerHTML) {
-              refs.graphEl.innerHTML = '';
-              refs.graphEl.dataset.graphHtml = '';
-            }
+            if (!updateWebSummaryInPlace(refs.summaryEl, sensor)) refs.summaryEl.innerHTML = renderSummaryHtml(sensor);
+            if (refs.graphEl.childNodes.length) refs.graphEl.replaceChildren();
           } else {
-            const graphHtml = renderGraphHtml(sensor);
-            const existing = refs.graphEl.dataset.graphHtml || '';
-            if (existing !== graphHtml) {
-              refs.graphEl.dataset.graphHtml = graphHtml;
-              refs.graphEl.innerHTML = graphHtml;
-            }
-            if (refs.summaryEl.innerHTML) {
-              refs.summaryEl.innerHTML = '';
-              refs.summaryEl.dataset.summaryHtml = '';
-            }
+            if (refs.summaryEl.childNodes.length) refs.summaryEl.replaceChildren();
           }
         });
       });
@@ -1722,6 +1805,18 @@ function buildWebMonitorHtml(authToken = '') {
       }
 
       updateGridValues(groups, orderedGroups);
+      queueWebGraphRender(groups, orderedGroups);
+    }
+
+    function queueWebRender(payload) {
+      domState.pendingPayload = payload;
+      if (document.hidden || domState.renderFrame !== null) return;
+      domState.renderFrame = requestAnimationFrame(() => {
+        domState.renderFrame = null;
+        const nextPayload = domState.pendingPayload;
+        domState.pendingPayload = null;
+        render(nextPayload);
+      });
     }
 
     const authToken = "${embeddedToken}";
@@ -1738,7 +1833,7 @@ function buildWebMonitorHtml(authToken = '') {
         const response = await fetch('/api/monitor?summary=' + summaryParam + tokenSuffix, { cache: 'no-store' });
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const payload = await response.json();
-        render(payload);
+        queueWebRender(payload);
       } catch (err) {
         let msg = '' + (err && (err.message || err.toString()) || 'Unknown error');
         if (/networkerror|failed to fetch|network request failed|typeerror/i.test(msg)) {
@@ -1754,10 +1849,11 @@ function buildWebMonitorHtml(authToken = '') {
 
     document.addEventListener('visibilitychange', () => {
       syncWebActivityState();
-      if (!document.hidden) load();
+      if (!document.hidden) {
+        if (domState.pendingPayload) queueWebRender(domState.pendingPayload);
+        load();
+      }
     });
-    window.addEventListener('focus', syncWebActivityState);
-    window.addEventListener('blur', syncWebActivityState);
     syncWebActivityState();
     load();
     setInterval(load, 1000);
@@ -1856,7 +1952,7 @@ function publishWebMonitorPayload(mode, externalText) {
       const sensorForFormatting = { ...sensor, units: resolvedUnits };
       const normalizedCurrent = hasNumericValue ? normalizeValueForDisplay(sensorForFormatting, numericValue) : null;
       const history = expandedGraphSensors.has(sensor.id)
-        ? (sensorHistory[sensor.id] || []).slice(-120).map((point) => {
+        ? getGraphRenderPoints(sensorHistory[sensor.id] || []).map((point) => {
           const rawPointValue = Number(point.value);
           if (!Number.isFinite(rawPointValue)) {
             return { ts: point.ts, value: point.value };
@@ -2157,9 +2253,46 @@ function escapeHtml(text) {
     .replace(/'/g, '&#39;');
 }
 
+function normalizeGraphHistorySeconds(value) {
+  const numeric = Math.round(Number(value));
+  if (!Number.isFinite(numeric)) return DEFAULT_GRAPH_HISTORY_SECONDS;
+  return Math.max(MIN_GRAPH_HISTORY_SECONDS, Math.min(MAX_GRAPH_HISTORY_SECONDS, numeric));
+}
+
+function setGraphHistorySeconds(value, options = {}) {
+  graphHistorySeconds = normalizeGraphHistorySeconds(value);
+  if (options.persist !== false) {
+    localStorage.setItem(GRAPH_HISTORY_SECONDS_KEY, String(graphHistorySeconds));
+  }
+  const input = document.getElementById('graphHistorySeconds');
+  if (input && String(input.value) !== String(graphHistorySeconds)) {
+    input.value = String(graphHistorySeconds);
+  }
+  const cutoff = Date.now() - (graphHistorySeconds * 1000);
+  Object.keys(sensorHistory).forEach((sensorId) => {
+    const points = sensorHistory[sensorId];
+    if (!Array.isArray(points)) return;
+    let staleCount = 0;
+    while (staleCount < points.length && Number(points[staleCount]?.ts) < cutoff) staleCount += 1;
+    if (staleCount > 0) points.splice(0, staleCount);
+  });
+  queueExpandedGraphRender(latestSelectedGroupedSensors);
+  return graphHistorySeconds;
+}
+
+function getGraphRenderPoints(points, limit = SENSOR_GRAPH_RENDER_MAX_POINTS) {
+  if (!Array.isArray(points) || points.length <= limit) return Array.isArray(points) ? points : [];
+  const sampled = [];
+  const lastIndex = points.length - 1;
+  for (let index = 0; index < limit; index += 1) {
+    sampled.push(points[Math.round((index / (limit - 1)) * lastIndex)]);
+  }
+  return sampled;
+}
+
 function updateSensorHistory(selectedGroupedSensors) {
   const now = Date.now();
-  const cutoff = now - SENSOR_HISTORY_WINDOW_MS;
+  const cutoff = now - (graphHistorySeconds * 1000);
   const trackedSensorIds = new Set();
 
   const trimHistoryPoints = (points) => {
@@ -2233,11 +2366,9 @@ function buildSparklinePath(points, width, height, padding) {
     .join(' ');
 }
 
-function renderSensorGraph(sensor) {
-  const points = (sensorHistory[sensor.id] || []).slice(-120);
-  if (!points.length) {
-    return '<div class="stat-graph-empty">Collecting data...</div>';
-  }
+function buildSensorGraphModel(sensor) {
+  const points = getGraphRenderPoints(sensorHistory[sensor.id] || []);
+  if (!points.length) return null;
 
   const normalizedPoints = points
     .map((point) => {
@@ -2247,9 +2378,7 @@ function renderSensorGraph(sensor) {
     })
     .filter((point) => point && Number.isFinite(point.value));
 
-  if (!normalizedPoints.length) {
-    return '<div class="stat-graph-empty">Collecting data...</div>';
-  }
+  if (!normalizedPoints.length) return null;
 
   const width = 280;
   const height = 70;
@@ -2262,15 +2391,29 @@ function renderSensorGraph(sensor) {
   const latest = values[values.length - 1];
   const units = normalizedPoints[normalizedPoints.length - 1].units || sensor.units || inferUnitsFromSensor(sensor);
 
+  return {
+    path,
+    ariaLabel: `${sensor.name} history graph`,
+    minText: `Min ${min.toFixed(1)}${units ? ` ${units}` : ''}`,
+    nowText: `Now ${latest.toFixed(1)}${units ? ` ${units}` : ''}`,
+    maxText: `Max ${max.toFixed(1)}${units ? ` ${units}` : ''}`
+  };
+}
+
+function renderSensorGraph(sensor, graphModel = buildSensorGraphModel(sensor)) {
+  if (!graphModel) {
+    return '<div class="stat-graph-empty">Collecting data...</div>';
+  }
+
   return `
     <div class="stat-graph-wrap">
-      <svg class="stat-graph" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-label="${escapeHtml(sensor.name)} history graph">
-        <path class="stat-graph-line" d="${path}"></path>
+      <svg class="stat-graph" viewBox="0 0 280 70" preserveAspectRatio="none" aria-label="${escapeHtml(graphModel.ariaLabel)}">
+        <path class="stat-graph-line" d="${graphModel.path}"></path>
       </svg>
       <div class="stat-graph-meta">
-        <span>Min ${min.toFixed(1)}${units ? ` ${escapeHtml(units)}` : ''}</span>
-        <span>Now ${latest.toFixed(1)}${units ? ` ${escapeHtml(units)}` : ''}</span>
-        <span>Max ${max.toFixed(1)}${units ? ` ${escapeHtml(units)}` : ''}</span>
+        <span data-graph-value="min">${escapeHtml(graphModel.minText)}</span>
+        <span data-graph-value="now">${escapeHtml(graphModel.nowText)}</span>
+        <span data-graph-value="max">${escapeHtml(graphModel.maxText)}</span>
       </div>
     </div>
   `;
@@ -2735,6 +2878,17 @@ function fanCurvePointCoordinates(point) {
   return { x, y };
 }
 
+function getFanCurveOperatingPoint(channel) {
+  const temperature = getFanCurveSourceTemperature(channel);
+  const percent = interpolateFanCurve(channel?.curvePoints, temperature);
+  if (!Number.isFinite(temperature) || !Number.isFinite(percent)) return null;
+  return {
+    temperature,
+    percent,
+    ...fanCurvePointCoordinates({ temperature, percent })
+  };
+}
+
 function renderFanCurveChart(channel, controlId) {
   const xTicks = [0, 20, 40, 60, 80, 100];
   const yTicks = [20, 40, 60, 80, 100];
@@ -2751,12 +2905,55 @@ function renderFanCurveChart(channel, controlId) {
   const coordinates = channel.curvePoints.map(fanCurvePointCoordinates);
   const polyline = coordinates.map((point) => `${point.x},${point.y}`).join(' ');
   const nodes = coordinates.map((point, index) => `<circle cx="${point.x}" cy="${point.y}" r="7" tabindex="0" role="slider" aria-label="Curve point ${index + 1}" data-fan-curve-node data-point-index="${index}"></circle>`).join('');
+  const operatingPoint = getFanCurveOperatingPoint(channel);
+  const markerClass = operatingPoint ? '' : ' is-unavailable';
+  const markerX = operatingPoint?.x ?? 48;
+  const markerY = operatingPoint?.y ?? 236;
+  const markerLabel = operatingPoint
+    ? `Current curve position: ${operatingPoint.temperature.toFixed(1)} degrees Celsius, ${operatingPoint.percent.toFixed(0)} percent fan`
+    : 'Current curve position unavailable';
   return `<svg class="fan-curve-chart" viewBox="0 0 640 274" preserveAspectRatio="xMidYMid meet" data-fan-curve-chart data-control-id="${escapeHtml(controlId)}" aria-label="Temperature to fan-speed curve">
     <g class="fan-curve-grid">${grid}</g>
     <polyline class="fan-curve-line-shadow" points="${polyline}"></polyline>
     <polyline class="fan-curve-line" points="${polyline}"></polyline>
+    <g class="fan-curve-operating-point${markerClass}" data-fan-curve-operating-point role="img" aria-label="${escapeHtml(markerLabel)}">
+      <line class="fan-curve-live-guide fan-curve-live-guide-x" x1="${markerX}" y1="236" x2="${markerX}" y2="${markerY}"></line>
+      <line class="fan-curve-live-guide fan-curve-live-guide-y" x1="48" y1="${markerY}" x2="${markerX}" y2="${markerY}"></line>
+      <circle class="fan-curve-live-pulse" cx="${markerX}" cy="${markerY}" r="11"></circle>
+      <circle class="fan-curve-live-dot" cx="${markerX}" cy="${markerY}" r="5"></circle>
+      <title>${escapeHtml(markerLabel)}</title>
+    </g>
     <g class="fan-curve-nodes">${nodes}</g>
   </svg>`;
+}
+
+function updateFanCurveOperatingPoint(root, channel) {
+  const chart = root?.querySelector?.('[data-fan-curve-chart]');
+  const marker = chart?.querySelector?.('[data-fan-curve-operating-point]');
+  if (!chart || !marker) return;
+  const point = getFanCurveOperatingPoint(channel);
+  marker.classList.toggle('is-unavailable', !point);
+  const readout = root.querySelector?.('[data-fan-curve-source-readout]');
+  if (!point) {
+    marker.setAttribute('aria-label', 'Current curve position unavailable');
+    if (readout) readout.textContent = '—';
+    return;
+  }
+
+  const label = `Current curve position: ${point.temperature.toFixed(1)} degrees Celsius, ${point.percent.toFixed(0)} percent fan`;
+  marker.setAttribute('aria-label', label);
+  marker.querySelector('title').textContent = label;
+  marker.querySelector('.fan-curve-live-guide-x').setAttribute('x1', String(point.x));
+  marker.querySelector('.fan-curve-live-guide-x').setAttribute('x2', String(point.x));
+  marker.querySelector('.fan-curve-live-guide-x').setAttribute('y2', String(point.y));
+  marker.querySelector('.fan-curve-live-guide-y').setAttribute('y1', String(point.y));
+  marker.querySelector('.fan-curve-live-guide-y').setAttribute('y2', String(point.y));
+  marker.querySelector('.fan-curve-live-guide-y').setAttribute('x2', String(point.x));
+  marker.querySelectorAll('circle').forEach((circle) => {
+    circle.setAttribute('cx', String(point.x));
+    circle.setAttribute('cy', String(point.y));
+  });
+  if (readout) readout.textContent = `${point.temperature.toFixed(1)} °C → ${point.percent.toFixed(0)}%`;
 }
 
 function updateFanCurveChartVisual(root, channel) {
@@ -2771,6 +2968,7 @@ function updateFanCurveChartVisual(root, channel) {
     node.setAttribute('cx', String(point.x));
     node.setAttribute('cy', String(point.y));
   });
+  updateFanCurveOperatingPoint(root, channel);
 }
 
 function renderFanControlCard(control) {
@@ -2831,7 +3029,7 @@ function renderFanCurveStudio(control, isGlobal = false) {
   }
   const editorId = isGlobal ? GLOBAL_FAN_CURVE_EDITOR_ID : control.id;
   const channel = getFanCurveConfiguration(editorId);
-  const sourceTemperature = getFanCurveSourceTemperature(channel);
+  const operatingPoint = getFanCurveOperatingPoint(channel);
   const curveRows = channel.curvePoints.map((point, index) => `<div class="fan-curve-point">
     <span class="fan-curve-point-index">${index + 1}</span>
     <label><span>Temperature</span><input type="number" min="0" max="110" step="1" value="${point.temperature}" data-fan-field="curvePoint" data-point-field="temperature" data-point-index="${index}"></label>
@@ -2844,7 +3042,7 @@ function renderFanCurveStudio(control, isGlobal = false) {
     <div class="fan-curve-canvas-panel">
       <div class="fan-curve-canvas-heading">
         <div><strong>${escapeHtml(editorName)}</strong><span>${isGlobal ? 'Reusable response shared by every fan assigned to Global Curve.' : 'Independent response for this fan only.'} Drag a point or use the precise fields.</span></div>
-        <div class="fan-curve-source-readout"><span>Source</span><strong data-fan-curve-source-readout>${sourceTemperature === null ? '—' : `${sourceTemperature.toFixed(1)} °C`}</strong></div>
+        <div class="fan-curve-source-readout"><span>Live curve point</span><strong data-fan-curve-source-readout>${operatingPoint ? `${operatingPoint.temperature.toFixed(1)} °C → ${operatingPoint.percent.toFixed(0)}%` : '—'}</strong></div>
       </div>
       ${renderFanCurveChart(channel, editorId)}
     </div>
@@ -2912,9 +3110,9 @@ function updateFanControlRuntimeLabels() {
 
   const editorControl = latestFanControlCapabilities.find((control) => control.id === fanCurveEditorControlId);
   if (editorControl || fanCurveEditorControlId === GLOBAL_FAN_CURVE_EDITOR_ID) {
-    const source = getFanCurveSourceTemperature(getFanCurveConfiguration(fanCurveEditorControlId));
-    document.querySelectorAll('[data-fan-curve-source-readout]').forEach((value) => {
-      value.textContent = source === null ? '—' : `${source.toFixed(1)} °C`;
+    const channel = getFanCurveConfiguration(fanCurveEditorControlId);
+    document.querySelectorAll('.fan-curve-studio').forEach((studio) => {
+      updateFanCurveOperatingPoint(studio, channel);
     });
   }
 }
@@ -4292,6 +4490,11 @@ async function applyImportedSettingsNow() {
   } catch (e) {}
   try { if (parsed[TEMPERATURE_UNIT_KEY]) applyTemperatureUnit(String(parsed[TEMPERATURE_UNIT_KEY]).replace(/^"|"$/g, '')); } catch (e) {}
   try { const tempSelect = document.getElementById('temperatureUnitSelect'); if (tempSelect && parsed[TEMPERATURE_UNIT_KEY]) tempSelect.value = String(parsed[TEMPERATURE_UNIT_KEY]).replace(/^"|"$/g, ''); } catch (e) {}
+  try {
+    if (Object.prototype.hasOwnProperty.call(parsed, GRAPH_HISTORY_SECONDS_KEY)) {
+      setGraphHistorySeconds(parsed[GRAPH_HISTORY_SECONDS_KEY]);
+    }
+  } catch (e) {}
 
   // Apply sensor selections / categories / order immediately if present
   try {
@@ -6471,9 +6674,9 @@ function renderSensorSummary(sensor) {
     const rawValue = sensor ? sensor.value : null;
     if (typeof rawValue === 'string') {
       const staticText = rawValue.trim() || '--';
-      return `<div class="stat-summary-line is-empty"><span class="summary-metric"><span class="summary-metric-label">Value</span><span class="summary-metric-value">${escapeHtml(staticText)}</span></span></div>`;
+      return `<div class="stat-summary-line is-empty" data-summary-kind="value"><span class="summary-metric"><span class="summary-metric-label">Value</span><span class="summary-metric-value" data-summary-value="current">${escapeHtml(staticText)}</span></span></div>`;
     }
-    return '<div class="stat-summary-line is-empty">Collecting summary...</div>';
+    return '<div class="stat-summary-line is-empty" data-summary-kind="collecting">Collecting summary...</div>';
   }
 
   const minText = formatSensorNumericValue(sensor, stats.min);
@@ -6481,14 +6684,51 @@ function renderSensorSummary(sensor) {
   const maxText = formatSensorNumericValue(sensor, stats.max);
 
   return `
-    <div class="stat-summary-line" aria-label="Session summary">
-      <span class="summary-metric"><span class="summary-metric-label">Min</span><span class="summary-metric-value">${escapeHtml(minText)}</span></span>
+    <div class="stat-summary-line" data-summary-kind="stats" aria-label="Session summary">
+      <span class="summary-metric"><span class="summary-metric-label">Min</span><span class="summary-metric-value" data-summary-value="min">${escapeHtml(minText)}</span></span>
       <span class="summary-separator">•</span>
-      <span class="summary-metric"><span class="summary-metric-label">Avg</span><span class="summary-metric-value">${escapeHtml(averageText)}</span></span>
+      <span class="summary-metric"><span class="summary-metric-label">Avg</span><span class="summary-metric-value" data-summary-value="average">${escapeHtml(averageText)}</span></span>
       <span class="summary-separator">•</span>
-      <span class="summary-metric"><span class="summary-metric-label">Max</span><span class="summary-metric-value">${escapeHtml(maxText)}</span></span>
+      <span class="summary-metric"><span class="summary-metric-label">Max</span><span class="summary-metric-value" data-summary-value="max">${escapeHtml(maxText)}</span></span>
     </div>
   `;
+}
+
+function getSensorSummaryKind(sensor) {
+  const stats = summarizeSensorSessionStats(sensor && sensor.id ? sensorSessionStats[sensor.id] : null);
+  if (stats) return 'stats';
+  return sensor && typeof sensor.value === 'string' ? 'value' : 'collecting';
+}
+
+function updateSensorSummaryInPlace(row, sensor) {
+  const summary = row.querySelector('.stat-summary-line');
+  if (!summary) return false;
+
+  const summaryKind = getSensorSummaryKind(sensor);
+  if (summary.dataset.summaryKind !== summaryKind) return false;
+
+  if (summaryKind === 'collecting') return true;
+  if (summaryKind === 'value') {
+    const value = summary.querySelector('[data-summary-value="current"]');
+    if (!value) return false;
+    const nextValue = String(sensor.value || '').trim() || '--';
+    if (value.textContent !== nextValue) value.textContent = nextValue;
+    return true;
+  }
+
+  const stats = summarizeSensorSessionStats(sensorSessionStats[sensor.id]);
+  if (!stats) return false;
+  const nextValues = {
+    min: formatSensorNumericValue(sensor, stats.min),
+    average: formatSensorNumericValue(sensor, stats.average),
+    max: formatSensorNumericValue(sensor, stats.max)
+  };
+  for (const [key, nextValue] of Object.entries(nextValues)) {
+    const value = summary.querySelector(`[data-summary-value="${key}"]`);
+    if (!value) return false;
+    if (value.textContent !== nextValue) value.textContent = nextValue;
+  }
+  return true;
 }
 
 function normalizeValueForDisplay(sensor, numericValue) {
@@ -6830,19 +7070,10 @@ function buildGroupRenderSignature(sensors) {
   if (!sensors || !sensors.length) return 'empty';
   return sensors
     .map((sensor) => {
-      const value = Number(sensor.value);
-      const normalizedValue = Number.isFinite(value) ? value.toFixed(3) : String(sensor.value ?? '');
-      const expanded = expandedGraphSensors.has(sensor.id) ? '1' : '0';
-      let summarySignature = '';
-      if (summaryModeEnabled) {
-        const stats = sensorSessionStats[sensor.id];
-        summarySignature = stats
-          ? `${stats.min.toFixed(3)}|${(stats.sum / Math.max(1, stats.count)).toFixed(3)}|${stats.max.toFixed(3)}|${stats.count}`
-          : 'none';
-      }
+      const expanded = !summaryModeEnabled && expandedGraphSensors.has(sensor.id) ? '1' : '0';
+      const summaryKind = summaryModeEnabled ? getSensorSummaryKind(sensor) : '';
       const displayLabel = String(sensor && sensor.displayLabel ? sensor.displayLabel : getFinalDisplayLabel(sensor));
-      const alertSeverity = activeSensorAlertState[sensor.id]?.severity || '';
-      return `${sensor.id}|${displayLabel}|${normalizedValue}|${sensor.units || ''}|${expanded}|alert:${alertSeverity}|summary:${summaryModeEnabled ? '1' : '0'}|${summarySignature}`;
+      return `${sensor.id}|${displayLabel}|${expanded}|summary:${summaryModeEnabled ? summaryKind : '0'}`;
     })
     .join('||');
 }
@@ -6863,12 +7094,37 @@ function prepareSelectedSensorsForRender(selectedGroupedSensors) {
   });
 }
 
-function renderAllDynamicGroups(selected, options = {}) {
-  const forceRender = !!options.force;
+function queueExpandedGraphRender(selected) {
+  pendingGraphRenderSelection = selected;
+  if (summaryModeEnabled || document.hidden) return;
+  if (pendingGraphRenderFrame !== null) return;
+
+  pendingGraphRenderFrame = requestAnimationFrame(() => {
+    pendingGraphRenderFrame = null;
+    if (document.hidden || summaryModeEnabled) return;
+    const grouped = pendingGraphRenderSelection || createEmptyGroupedBuckets();
+    pendingGraphRenderSelection = null;
+    Object.values(grouped).forEach((sensors) => {
+      (Array.isArray(sensors) ? sensors : []).forEach((sensor) => {
+        if (!expandedGraphSensors.has(sensor.id)) return;
+        const row = document.querySelector(`.stat[data-sensor-id="${encodeURIComponent(sensor.id)}"]`);
+        if (row) updateSensorGraphInPlace(row, sensor);
+      });
+    });
+  });
+}
+
+function flushDynamicGroupRender() {
+  pendingDynamicGroupRenderFrame = null;
   if (document.hidden) {
     pendingVisibilityRefresh = true;
     return;
   }
+
+  const selected = pendingDynamicGroupRenderSelection || createEmptyGroupedBuckets();
+  const forceRender = pendingDynamicGroupRenderForce;
+  pendingDynamicGroupRenderSelection = null;
+  pendingDynamicGroupRenderForce = false;
 
   const now = Date.now();
   const effectiveMinRenderInterval = Math.max(250, Math.min(3000, Math.round(updateInterval * 0.75)));
@@ -6891,6 +7147,19 @@ function renderAllDynamicGroups(selected, options = {}) {
   renderDynamicGroup('drivesSensorsDynamic', selected.drives);
   renderDynamicGroup('appSensorsDynamic', selected.app);
   renderDynamicGroup('externalSensorsDynamic', selected.other);
+  queueExpandedGraphRender(selected);
+}
+
+function renderAllDynamicGroups(selected, options = {}) {
+  pendingDynamicGroupRenderSelection = selected;
+  pendingDynamicGroupRenderForce = pendingDynamicGroupRenderForce || !!options.force;
+  if (document.hidden) {
+    pendingVisibilityRefresh = true;
+    return;
+  }
+  if (pendingDynamicGroupRenderFrame === null) {
+    pendingDynamicGroupRenderFrame = requestAnimationFrame(flushDynamicGroupRender);
+  }
 }
 
 function refreshMotionVisibilityTargets(root = document) {
@@ -6951,13 +7220,11 @@ function initializeMotionVisibilityTracking() {
 }
 
 function syncDesktopActivityState() {
-  const active = !document.hidden &&
-    (typeof document.hasFocus !== 'function' || document.hasFocus());
+  const active = !document.hidden;
   document.body.classList.toggle('app-inactive', !active);
   if (active) scheduleAmbientIconMotion(100);
   else clearTimeout(ambientMotionTimer);
   if (active && pendingVisibilityRefresh) {
-    invalidateRenderGroupCache();
     renderAllDynamicGroups(latestSelectedGroupedSensors || createEmptyGroupedBuckets(), { force: true });
   }
 }
@@ -7544,16 +7811,10 @@ function enrichGroupedSensorsWithRealtime(groupedSensors, externalData) {
 }
 
 function updateDynamicGroupValuesInPlace(container, sensors) {
-  if (summaryModeEnabled || !Array.isArray(sensors) || !sensors.length) return false;
-  if (sensors.some((sensor) => expandedGraphSensors.has(sensor.id))) return false;
+  if (!Array.isArray(sensors) || !sensors.length) return false;
 
   const rows = Array.from(container.children);
   if (rows.length !== sensors.length || rows.some((row) => !row.classList.contains('stat'))) return false;
-  // A graph may have just been collapsed. Values can only be updated in place
-  // when the existing DOM already has the same non-expanded structure; otherwise
-  // the old graph wrapper and expanded styling would survive until another view
-  // change forced a complete render.
-  if (rows.some((row) => row.classList.contains('is-expanded') || row.querySelector('.stat-graph-wrap, .stat-graph-empty'))) return false;
 
   for (let index = 0; index < sensors.length; index += 1) {
     const sensor = sensors[index];
@@ -7561,13 +7822,23 @@ function updateDynamicGroupValuesInPlace(container, sensors) {
     if (row.dataset.sensorId !== encodeURIComponent(sensor.id)) return false;
 
     const label = row.querySelector('.stat-label');
-    const value = row.querySelector('.stat-value');
-    if (!label || !value) return false;
+    if (!label) return false;
+
+    const shouldBeExpanded = !summaryModeEnabled && expandedGraphSensors.has(sensor.id);
+    if (row.classList.contains('is-expanded') !== shouldBeExpanded) return false;
+    if (!!row.querySelector('.stat-graph-slot') !== shouldBeExpanded) return false;
 
     const nextLabel = String(sensor.displayLabel || getFinalDisplayLabel(sensor));
-    const nextValue = formatSensorValue(sensor);
     if (label.textContent !== nextLabel) label.textContent = nextLabel;
-    if (value.textContent !== nextValue) value.textContent = nextValue;
+
+    if (summaryModeEnabled) {
+      if (!updateSensorSummaryInPlace(row, sensor)) return false;
+    } else {
+      const value = row.querySelector('.stat-value');
+      if (!value) return false;
+      const nextValue = formatSensorValue(sensor);
+      if (value.textContent !== nextValue) value.textContent = nextValue;
+    }
 
     const alertSeverity = activeSensorAlertState[sensor.id]?.severity || '';
     row.classList.toggle('stat-alert-warning', alertSeverity === 'warning');
@@ -7577,15 +7848,45 @@ function updateDynamicGroupValuesInPlace(container, sensors) {
   return true;
 }
 
+function updateSensorGraphInPlace(row, sensor) {
+  const graphSlot = row.querySelector('.stat-graph-slot');
+  if (!graphSlot) return false;
+
+  const graphModel = buildSensorGraphModel(sensor);
+  if (!graphModel) {
+    if (!graphSlot.querySelector('.stat-graph-empty')) {
+      graphSlot.innerHTML = '<div class="stat-graph-empty">Collecting data...</div>';
+    }
+    return true;
+  }
+
+  const graph = graphSlot.querySelector('.stat-graph');
+  const path = graphSlot.querySelector('.stat-graph-line');
+  const min = graphSlot.querySelector('[data-graph-value="min"]');
+  const now = graphSlot.querySelector('[data-graph-value="now"]');
+  const max = graphSlot.querySelector('[data-graph-value="max"]');
+  if (!graph || !path || !min || !now || !max) {
+    graphSlot.innerHTML = renderSensorGraph(sensor, graphModel);
+    return true;
+  }
+
+  if (graph.getAttribute('aria-label') !== graphModel.ariaLabel) graph.setAttribute('aria-label', graphModel.ariaLabel);
+  if (path.getAttribute('d') !== graphModel.path) path.setAttribute('d', graphModel.path);
+  if (min.textContent !== graphModel.minText) min.textContent = graphModel.minText;
+  if (now.textContent !== graphModel.nowText) now.textContent = graphModel.nowText;
+  if (max.textContent !== graphModel.maxText) max.textContent = graphModel.maxText;
+  return true;
+}
+
 function renderDynamicGroup(containerId, sensors) {
   const container = document.getElementById(containerId);
   if (!container) return;
 
   const nextSignature = buildGroupRenderSignature(sensors);
-  if (renderGroupSignatureCache[containerId] === nextSignature) return;
-  if (updateDynamicGroupValuesInPlace(container, sensors)) {
-    renderGroupSignatureCache[containerId] = nextSignature;
-    return;
+  const structureMatches = renderGroupSignatureCache[containerId] === nextSignature;
+  if (structureMatches) {
+    if (!sensors || !sensors.length) return;
+    if (updateDynamicGroupValuesInPlace(container, sensors)) return;
   }
   renderGroupSignatureCache[containerId] = nextSignature;
 
@@ -7596,11 +7897,11 @@ function renderDynamicGroup(containerId, sensors) {
 
   container.innerHTML = sensors
     .map((sensor) => {
-      const isExpanded = expandedGraphSensors.has(sensor.id);
+      const isExpanded = !summaryModeEnabled && expandedGraphSensors.has(sensor.id);
       const alertSeverity = activeSensorAlertState[sensor.id]?.severity || '';
       const alertClass = alertSeverity === 'critical' ? ' stat-alert-critical' : (alertSeverity === 'warning' ? ' stat-alert-warning' : '');
       const encodedId = encodeURIComponent(sensor.id);
-      const graphHtml = summaryModeEnabled ? renderSensorSummary(sensor) : (isExpanded ? renderSensorGraph(sensor) : '');
+      const graphHtml = summaryModeEnabled ? renderSensorSummary(sensor) : (isExpanded ? '<div class="stat-graph-slot"></div>' : '');
       const expandedClass = isExpanded ? ' is-expanded' : '';
       const clickableClass = summaryModeEnabled ? '' : ' stat-clickable';
       const roleAttr = summaryModeEnabled ? '' : ' role="button" tabindex="0"';
@@ -8168,6 +8469,16 @@ const SettingsManager = {
       localStorage.setItem('refreshRate', updateInterval);
       restartUpdateTimer();
     });
+
+    const graphHistoryInput = document.getElementById('graphHistorySeconds');
+    if (graphHistoryInput) {
+      graphHistoryInput.addEventListener('change', (event) => {
+        setGraphHistorySeconds(event.target.value);
+      });
+      graphHistoryInput.addEventListener('blur', (event) => {
+        event.target.value = String(setGraphHistorySeconds(event.target.value));
+      });
+    }
 
     const layoutPresetSelect = document.getElementById('layoutPresetSelect');
     if (layoutPresetSelect) {
@@ -9390,7 +9701,45 @@ const SettingsManager = {
       minimizeToTray: document.getElementById('minimizeToTray'),
       closeToTray: document.getElementById('closeToTray'),
       autoCheckForUpdates: document.getElementById('autoCheckForUpdates'),
-      startupDelaySeconds: document.getElementById('startupDelaySeconds')
+      startupDelaySeconds: document.getElementById('startupDelaySeconds'),
+      disableGpuAcceleration: document.getElementById('disableGpuAcceleration')
+    };
+
+    const hardwareAccelerationStatus = document.getElementById('hardwareAccelerationStatus');
+    const appCacheStatus = document.getElementById('appCacheStatus');
+    const clearAppCacheBtn = document.getElementById('clearAppCacheBtn');
+
+    const formatCacheSize = (bytes) => {
+      const numeric = Number(bytes);
+      if (!Number.isFinite(numeric) || numeric < 0) return 'Unavailable';
+      if (numeric < 1024) return `${Math.round(numeric)} B`;
+      if (numeric < (1024 * 1024)) return `${(numeric / 1024).toFixed(1)} KB`;
+      if (numeric < (1024 * 1024 * 1024)) return `${(numeric / (1024 * 1024)).toFixed(1)} MB`;
+      return `${(numeric / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+    };
+
+    const refreshPerformanceStatus = async () => {
+      try {
+        const status = await ipcRenderer.invoke('performance:get-status');
+        if (!status || status.ok !== true) throw new Error(status?.error || 'Performance status is unavailable.');
+        const desiredDisabled = !!appBehaviorControls.disableGpuAcceleration?.checked;
+        const currentlyDisabled = status.hardwareAccelerationEnabled !== true;
+        const restartRequired = desiredDisabled !== currentlyDisabled;
+        if (hardwareAccelerationStatus) {
+          const activeText = currentlyDisabled ? 'disabled' : 'enabled';
+          const sourceText = status.disabledByEnvironment
+            ? ' An environment variable is forcing the disabled state.'
+            : '';
+          const restartText = restartRequired ? ' Restart SiR to apply the selected setting.' : '';
+          hardwareAccelerationStatus.textContent = `Hardware acceleration is currently ${activeText}.${sourceText}${restartText}`;
+        }
+        if (appCacheStatus) appCacheStatus.textContent = `Cache size: ${formatCacheSize(status.cacheSizeBytes)}`;
+        return status;
+      } catch (error) {
+        if (hardwareAccelerationStatus) hardwareAccelerationStatus.textContent = `Hardware acceleration status unavailable: ${error.message}`;
+        if (appCacheStatus) appCacheStatus.textContent = 'Cache size: Unavailable';
+        return null;
+      }
     };
 
     const discordPresenceSelect = document.getElementById('discordPresenceSelect');
@@ -9461,6 +9810,7 @@ const SettingsManager = {
         closeToTray: !!appBehaviorControls.closeToTray?.checked,
         autoCheckForUpdates: !!appBehaviorControls.autoCheckForUpdates?.checked,
         startupDelaySeconds: appBehaviorControls.startupDelaySeconds?.value,
+        disableGpuAcceleration: !!appBehaviorControls.disableGpuAcceleration?.checked,
         enableDiscordRichPresence: discordPresenceSelect ? (discordPresenceSelect.value === 'enabled') : true
       });
     };
@@ -9472,8 +9822,67 @@ const SettingsManager = {
       element.addEventListener('change', async () => {
         const saved = await setAppBehaviorSettings(readAppBehaviorFromUi());
         applyAppBehaviorToUi(saved);
+        if (key === 'disableGpuAcceleration') {
+          await refreshPerformanceStatus();
+          await showThemedMessage(
+            'Restart Required',
+            'The hardware acceleration preference has been saved and will take effect the next time SiR System Monitor starts.',
+            {
+              icon: 'bi-speedometer2',
+              tone: 'info',
+              detailIcon: 'bi-info-circle',
+              detail: 'Keep acceleration enabled for best performance. Disable it only when diagnosing GPU-driver or rendering problems.'
+            }
+          );
+        }
       });
     });
+
+    if (clearAppCacheBtn) {
+      clearAppCacheBtn.addEventListener('click', async () => {
+        const accepted = await showThemedConfirmation(
+          'Clear App Cache?',
+          'This clears Chromium web-resource and compiled-code caches. SiR will recreate anything it needs automatically.',
+          {
+            icon: 'bi-trash3',
+            tone: 'warning',
+            confirmLabel: 'Clear Cache',
+            cancelLabel: 'Cancel',
+            detailIcon: 'bi-shield-check',
+            detail: 'Profiles, layouts, sensor selections, custom names, alerts, and other saved settings will not be removed.'
+          }
+        );
+        if (!accepted) return;
+        clearAppCacheBtn.disabled = true;
+        if (appCacheStatus) appCacheStatus.textContent = 'Clearing cache...';
+        try {
+          const result = await ipcRenderer.invoke('performance:clear-cache');
+          if (!result || result.ok !== true) throw new Error(result?.error || 'Unable to clear the application cache.');
+          const clearedBytes = Number.isFinite(Number(result.beforeBytes)) && Number.isFinite(Number(result.afterBytes))
+            ? Math.max(0, Number(result.beforeBytes) - Number(result.afterBytes))
+            : null;
+          if (appCacheStatus) {
+            appCacheStatus.textContent = clearedBytes === null
+              ? 'App cache cleared successfully.'
+              : `App cache cleared: ${formatCacheSize(clearedBytes)} removed.`;
+          }
+          await showThemedMessage(
+            'App Cache Cleared',
+            'The regenerable application cache was cleared successfully.',
+            { icon: 'bi-check-circle-fill', tone: 'success' }
+          );
+        } catch (error) {
+          if (appCacheStatus) appCacheStatus.textContent = `Cache clear failed: ${error.message}`;
+          await showThemedMessage(
+            'Unable to Clear Cache',
+            error.message,
+            { icon: 'bi-exclamation-triangle-fill', tone: 'error' }
+          );
+        } finally {
+          clearAppCacheBtn.disabled = false;
+        }
+      });
+    }
 
     if (discordPresenceSelect) {
       discordPresenceSelect.addEventListener('change', async () => {
@@ -9553,6 +9962,7 @@ const SettingsManager = {
       }
 
       applyAppBehaviorToUi(effectiveSettings);
+      await refreshPerformanceStatus();
       updateDiscordPresenceStatusUi({ enabled: effectiveSettings.enableDiscordRichPresence, connected: effectiveSettings.enableDiscordRichPresence ? null : false });
       if (effectiveSettings.autoCheckForUpdates) {
         setTimeout(() => {
@@ -10347,6 +10757,7 @@ const SettingsManager = {
     // Restore saved settings
     const savedTheme = ThemeManager.getTheme();
     const savedRefreshRate = localStorage.getItem('refreshRate');
+    const savedGraphHistorySeconds = localStorage.getItem(GRAPH_HISTORY_SECONDS_KEY);
 
     ThemeManager.setTheme(savedTheme, { persist: false, updatePalettes: false });
     DisplayModeManager.apply(getDisplayModePreference(), { persist: false });
@@ -10357,6 +10768,7 @@ const SettingsManager = {
       refreshValue.textContent = String(updateInterval);
       localStorage.setItem('refreshRate', String(updateInterval));
     }
+    setGraphHistorySeconds(savedGraphHistorySeconds ?? DEFAULT_GRAPH_HISTORY_SECONDS, { persist: true });
 
     applyOverlaySettings();
     initializeFanControlSettings();
@@ -10451,22 +10863,26 @@ async function updateStats(forceRender = false) {
       const recoveryDetail = recoveredSessions > 0
         ? ` Recovered ${recoveredSessions} abandoned capture session${recoveredSessions === 1 ? '' : 's'}.`
         : '';
+      const frameGenerationMethod = String(diagnostics && diagnostics.nativeFrameGenerationMethod || '').trim();
+      const frameGenerationDetail = diagnostics?.nativeFrameGenerationActive === true
+        ? ` Frame generation: ${frameGenerationMethod || 'detected'} (${Number(diagnostics.nativeDisplayedFps || 0).toFixed(1)} total FPS; ${Number(diagnostics.nativeGeneratedFps || 0).toFixed(1)} generated).`
+        : '';
       if (providerSelection.builtin === false) {
-        nativeFpsStatus.textContent = 'Native FPS collector is disabled with Built-in Sensors.';
+        nativeFpsStatus.textContent = 'FPS collector is disabled with Built-in Sensors.';
       } else if (!diagnostics || diagnostics.nativeFpsAvailable !== true) {
-        nativeFpsStatus.textContent = 'Native FPS collector is unavailable. Reinstall SiR System Monitor to restore the bundled component.';
+        nativeFpsStatus.textContent = 'FPS collector is unavailable. Reinstall SiR System Monitor to restore the bundled component.';
         nativeFpsStatus.classList.add('web-status-error');
       } else if (String(diagnostics.nativeFpsError || '').trim()) {
-        nativeFpsStatus.textContent = `Native FPS collector error${methodDetail}: ${String(diagnostics.nativeFpsError).trim()}${recoveryDetail}`;
+        nativeFpsStatus.textContent = `FPS collector error${methodDetail}: ${String(diagnostics.nativeFpsError).trim()}${recoveryDetail}`;
         nativeFpsStatus.classList.add('web-status-error');
       } else if (String(diagnostics.nativeFpsApplication || '').trim()) {
-        nativeFpsStatus.textContent = `Native FPS active${methodDetail}: ${String(diagnostics.nativeFpsApplication).trim()} (PID ${Number(diagnostics.nativeFpsProcessId) || 0}).${recoveryDetail}`;
+        nativeFpsStatus.textContent = `FPS capture active${methodDetail}: ${String(diagnostics.nativeFpsApplication).trim()} (PID ${Number(diagnostics.nativeFpsProcessId) || 0}).${frameGenerationDetail}${recoveryDetail}`;
       } else if (diagnostics.nativeFpsRunning === true) {
         nativeFpsStatus.textContent = String(diagnostics.nativeFpsWarning || '').trim()
-          ? `Native FPS ready${methodDetail}; focus a running game to begin reading frames. Administrator mode improves process detection.${recoveryDetail}`
-          : `Native FPS ready${methodDetail}; focus a running game to begin reading frames.${recoveryDetail}`;
+          ? `FPS capture ready${methodDetail}; focus a running game to begin reading frames. Administrator mode improves process detection.${recoveryDetail}`
+          : `FPS capture ready${methodDetail}; focus a running game to begin reading frames.${recoveryDetail}`;
       } else {
-        nativeFpsStatus.textContent = `Native FPS collector is starting${methodDetail}...${recoveryDetail}`;
+        nativeFpsStatus.textContent = `FPS collector is starting${methodDetail}...${recoveryDetail}`;
       }
     }
 
@@ -10661,6 +11077,7 @@ function applyUiTooltips() {
     setupGuideHeaderBtn: 'Open setup and provider guidance.',
     monitoringModeBtn: 'Open or close the settings sidebar.',
     refreshRate: 'Set how often sensor data refreshes (milliseconds).',
+    graphHistorySeconds: 'Choose how much recent history each expanded graph keeps, from 10 seconds to 60 minutes.',
     layoutPresetSelect: 'Choose the sensor-card layout used in normal mode.',
     summaryLayoutPresetSelect: 'Choose the independent sensor-card layout used in Summary Mode.',
     groupLineLimit: 'Legacy control (kept for compatibility if present).',
@@ -10759,6 +11176,10 @@ function applyUiTooltips() {
     closeToTray: 'Close button hides to tray instead of exiting.',
     autoCheckForUpdates: 'Automatically check for updates when the app starts.',
     startupDelaySeconds: 'Delay app window startup by 0 to 60 seconds.',
+    disableGpuAcceleration: 'Disable Chromium GPU acceleration after the next restart. Use only to troubleshoot GPU-driver or rendering compatibility problems.',
+    hardwareAccelerationStatus: 'Shows the acceleration mode used for the current app session and whether a restart is required.',
+    clearAppCacheBtn: 'Clear regenerable Chromium web-resource and compiled-code caches without removing settings, profiles, or sensor data.',
+    appCacheStatus: 'Shows the current Chromium HTTP cache size or the result of the latest cache-clear action.',
     checkForUpdatesBtn: 'Check GitHub releases for updates.',
     openLatestReleaseBtn: 'Open latest release page in browser.'
   };
@@ -10803,8 +11224,6 @@ document.addEventListener('DOMContentLoaded', () => {
   applyUiTooltips();
   initializeMotionVisibilityTracking();
   document.addEventListener('visibilitychange', syncDesktopActivityState);
-  window.addEventListener('focus', syncDesktopActivityState);
-  window.addEventListener('blur', syncDesktopActivityState);
   syncDesktopActivityState();
   updateStats();
   restartUpdateTimer();
@@ -10814,6 +11233,8 @@ window.addEventListener('beforeunload', () => {
   updateLoopActive = false;
   clearTimeout(updateTimer);
   clearTimeout(ambientMotionTimer);
+  if (pendingDynamicGroupRenderFrame !== null) cancelAnimationFrame(pendingDynamicGroupRenderFrame);
+  if (pendingGraphRenderFrame !== null) cancelAnimationFrame(pendingGraphRenderFrame);
   stopWebMonitorServer();
   prepareSensorCollectorForShutdown();
 });

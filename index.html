@@ -308,7 +308,7 @@
               </div>
             </div>
 
-            <div class="settings-note overlay-footer-note"><i class="bi bi-lightning-charge-fill" aria-hidden="true"></i><span>Changes apply immediately. Choose overlay readings from Monitoring → Sensor Selection.</span></div>
+            <div class="settings-note overlay-footer-note"><i class="bi bi-lightning-charge-fill" aria-hidden="true"></i><span>Changes apply immediately. Choose overlay readings from Monitoring → Sensor Selection. Driver-level frame generation that requires exclusive fullscreen, including AFMF on Radeon RX 6000 hardware, can still be suspended by any desktop overlay.</span></div>
         </div>
       </div>
 
@@ -397,6 +397,14 @@
           <input type="range" id="refreshRate" class="refresh-slider" min="1000" max="5000" value="1000" step="100">
           <div class="refresh-value"><span id="refreshValue">1000</span>ms</div>
         </div>
+        <label class="settings-field graph-history-field settings-inline-gap-sm">
+          <span>Graph history length</span>
+          <div class="graph-history-input">
+            <input id="graphHistorySeconds" class="detection-select" type="number" min="10" max="3600" step="10" value="60" inputmode="numeric">
+            <span>seconds</span>
+          </div>
+          <small>Expanded desktop and Web Monitor graphs retain this duration. Longer ranges are downsampled for smooth rendering.</small>
+        </label>
       </div>
 
       <div class="settings-section" data-section-key="monitoring_sensor_sources">
@@ -425,7 +433,7 @@
           </label>
         </div>
         <div id="builtinSensorStatus" class="settings-note" aria-live="polite">Built-in collector starts with monitoring.</div>
-        <div id="nativeFpsStatus" class="settings-note" aria-live="polite">Native FPS collector starts with Built-in Sensors.</div>
+        <div id="nativeFpsStatus" class="settings-note" aria-live="polite">FPS collector starts with Built-in Sensors.</div>
         <div id="hardwareAccessDriverStatus" class="settings-note" aria-live="polite">Low-level hardware access driver: Checking...</div>
         <div class="web-monitor-actions settings-inline-gap-sm">
           <button id="hardwareAccessDriverInstallBtn" class="test-btn" type="button" hidden>Install Hardware Access Driver</button>
@@ -657,6 +665,20 @@
         </div>
         <div class="settings-note">Delay app window startup by this many seconds (0-60). Administrator launch takes effect on the next start and displays a Windows UAC prompt.</div>
         <div class="settings-note">When close to tray is enabled, use the tray icon menu to quit the app.</div>
+      </div>
+
+      <div class="settings-section" data-section-key="app_behavior_performance">
+        <label class="settings-label"><i class="bi bi-speedometer2 settings-label-icon" aria-hidden="true"></i><span>Performance</span></label>
+        <label class="checkbox-label settings-switch-row settings-inline-gap-sm">
+          <input type="checkbox" id="disableGpuAcceleration">
+          <span>Disable hardware acceleration</span>
+        </label>
+        <div id="hardwareAccelerationStatus" class="settings-note" aria-live="polite">Hardware acceleration status: Checking...</div>
+        <div class="web-monitor-actions settings-inline-gap-sm">
+          <button id="clearAppCacheBtn" class="test-btn" type="button"><i class="bi bi-trash3" aria-hidden="true"></i><span>Clear App Cache</span></button>
+        </div>
+        <div id="appCacheStatus" class="settings-note" aria-live="polite">Cache size: Checking...</div>
+        <div class="settings-note">Disabling hardware acceleration is intended for GPU-driver or rendering compatibility problems and takes effect after restarting SiR. Clearing the cache removes regenerable Chromium web and compiled-code data only; profiles, layouts, sensor choices, and custom names are preserved.</div>
       </div>
 
       <div class="settings-section">

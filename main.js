@@ -23,17 +23,36 @@ try {
   console.warn('discord-ipc helper not available — Discord Rich Presence disabled.');
 }
 
-const enableGpuAcceleration = process.env.SIR_ENABLE_GPU_ACCELERATION === '1';
-if (!enableGpuAcceleration) {
-  app.disableHardwareAcceleration();
-}
-
 app.setName('SiR System Monitor');
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.sir.systemmonitor');
 }
 
 const APP_BEHAVIOR_SETTINGS_FILE = 'appBehaviorSettings.json';
+
+function readEarlyGpuAccelerationPreference() {
+  try {
+    const settingsPath = path.join(app.getPath('userData'), APP_BEHAVIOR_SETTINGS_FILE);
+    if (!fs.existsSync(settingsPath)) return false;
+    const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    return parsed && parsed.disableGpuAcceleration === true;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Chromium's compositor is the most efficient path for the transform/opacity
+// based interface. Keep acceleration enabled unless a troubleshooting launch
+// explicitly opts out through the environment or the persisted UI setting.
+const gpuAccelerationDisabledByEnvironment = process.env.SIR_DISABLE_GPU_ACCELERATION === '1' ||
+  process.env.SIR_ENABLE_GPU_ACCELERATION === '0';
+const gpuAccelerationDisabledBySetting = readEarlyGpuAccelerationPreference();
+const disableGpuAcceleration = gpuAccelerationDisabledByEnvironment || gpuAccelerationDisabledBySetting;
+const enableGpuAcceleration = !disableGpuAcceleration;
+if (disableGpuAcceleration) {
+  app.disableHardwareAcceleration();
+}
+
 const FORCE_ADMIN_ARGUMENT = '--sir-require-admin';
 const ELEVATION_RELAUNCH_ARGUMENT = '--sir-elevation-relaunch-attempted';
 const INSTALL_HARDWARE_ACCESS_DRIVER_ARGUMENT = '--sir-install-hardware-access-driver';
@@ -45,6 +64,7 @@ const DEFAULT_APP_BEHAVIOR_SETTINGS = {
   closeToTray: false,
   autoCheckForUpdates: true,
   startupDelaySeconds: 0,
+  disableGpuAcceleration: false,
   enableDiscordRichPresence: true
 };
 const AUTO_UPDATE_PROVIDER = Object.freeze({
@@ -891,6 +911,7 @@ function normalizeBehaviorSettings(settings) {
     closeToTray: !!settings?.closeToTray,
     autoCheckForUpdates: settings?.autoCheckForUpdates !== false,
     startupDelaySeconds,
+    disableGpuAcceleration: settings?.disableGpuAcceleration === true,
     enableDiscordRichPresence: typeof settings?.enableDiscordRichPresence === 'boolean'
       ? settings.enableDiscordRichPresence
       : true
@@ -1179,8 +1200,10 @@ const OVERLAY_DRAG_SNAP_PX = 8;
 
 function applyOverlayCompatibility() {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  // Apply the stronger level only when the overlay window is created/ready. Repeating
+  // this during sensor refreshes causes needless DWM z-order work and visible flicker.
   overlayWindow.setAlwaysOnTop(true, 'screen-saver');
-  if (typeof overlayWindow.setVisibleOnAllWorkspaces === 'function') {
+  if (process.platform !== 'win32' && typeof overlayWindow.setVisibleOnAllWorkspaces === 'function') {
     overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   }
 }
@@ -1212,6 +1235,7 @@ function createOverlayWindow() {
     movable: false,
     focusable: false,
     hasShadow: false,
+    backgroundColor: '#00000000',
     autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: true,
@@ -1223,10 +1247,8 @@ function createOverlayWindow() {
   overlayWindow.loadFile('overlay.html');
   overlayWindow.setMenuBarVisibility(false);
   applyOverlayInteractionMode();
-  overlayWindow.setAlwaysOnTop(true, 'screen-saver');
-  if (typeof overlayWindow.setVisibleOnAllWorkspaces === 'function') {
-    overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  }
+  applyOverlayCompatibility();
+  overlayWindow.once('ready-to-show', applyOverlayCompatibility);
 
   overlayWindow.on('closed', () => {
     overlayWindow = null;
@@ -1241,6 +1263,23 @@ function getOverlayDisplay(displayId) {
   }
   const display = screen.getAllDisplays().find((entry) => String(entry.id) === String(displayId));
   return display || screen.getPrimaryDisplay();
+}
+
+function setOverlayBoundsIfChanged(nextBounds) {
+  if (!overlayWindow || overlayWindow.isDestroyed() || !nextBounds) return false;
+  const current = overlayWindow.getBounds();
+  const normalized = {
+    x: Math.round(Number(nextBounds.x)),
+    y: Math.round(Number(nextBounds.y)),
+    width: Math.round(Number(nextBounds.width)),
+    height: Math.round(Number(nextBounds.height))
+  };
+  if (current.x === normalized.x && current.y === normalized.y &&
+      current.width === normalized.width && current.height === normalized.height) {
+    return false;
+  }
+  overlayWindow.setBounds(normalized);
+  return true;
 }
 
 function destroyOverlayWindow() {
@@ -1434,7 +1473,6 @@ ipcMain.on('overlay:update', (_event, payload) => {
 ipcMain.on('overlay:resize', (_event, payload) => {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
   try {
-    applyOverlayCompatibility();
     const bounds = overlayWindow.getBounds();
     const requestedWidth = Number(payload && payload.width);
     const requestedHeight = Number(payload && payload.height);
@@ -1450,8 +1488,7 @@ ipcMain.on('overlay:resize', (_event, payload) => {
     if (hasCustomPosition) {
       const x = Math.round(Number(settings.customX));
       const y = Math.round(Number(settings.customY));
-      overlayWindow.setBounds({ x, y, width: targetWidth, height: targetHeight });
-      applyOverlayCompatibility();
+      setOverlayBoundsIfChanged({ x, y, width: targetWidth, height: targetHeight });
     } else if (payload.position) {
       const display = targetDisplay;
       const margin = 1;
@@ -1480,8 +1517,7 @@ ipcMain.on('overlay:resize', (_event, payload) => {
           break;
       }
 
-      overlayWindow.setBounds({ x, y, width: targetWidth, height: targetHeight });
-      applyOverlayCompatibility();
+      setOverlayBoundsIfChanged({ x, y, width: targetWidth, height: targetHeight });
     } else if (targetWidth !== bounds.width || targetHeight !== bounds.height) {
       overlayWindow.setSize(targetWidth, targetHeight);
     }
@@ -1776,6 +1812,47 @@ ipcMain.handle('app-behavior:get', () => {
 ipcMain.handle('app:is-elevated', () => isRunningAsAdministrator());
 
 ipcMain.handle('hardware-access:get-status', () => getHardwareAccessDriverStatus());
+
+function getPerformanceSettingsSession(event) {
+  if (!event || !event.sender || !mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+    return null;
+  }
+  return event.sender.session || null;
+}
+
+ipcMain.handle('performance:get-status', async (event) => {
+  const activeSession = getPerformanceSettingsSession(event);
+  if (!activeSession) return { ok: false, error: 'The application session is unavailable.' };
+  let cacheSizeBytes = null;
+  try {
+    cacheSizeBytes = await activeSession.getCacheSize();
+  } catch (error) {}
+  return {
+    ok: true,
+    hardwareAccelerationEnabled: enableGpuAcceleration,
+    disabledByEnvironment: gpuAccelerationDisabledByEnvironment,
+    disabledBySetting: gpuAccelerationDisabledBySetting,
+    configuredToDisable: appBehaviorSettings.disableGpuAcceleration === true,
+    cacheSizeBytes,
+    gpuFeatureStatus: app.getGPUFeatureStatus()
+  };
+});
+
+ipcMain.handle('performance:clear-cache', async (event) => {
+  const activeSession = getPerformanceSettingsSession(event);
+  if (!activeSession) return { ok: false, error: 'The application session is unavailable.' };
+  try {
+    const beforeBytes = await activeSession.getCacheSize().catch(() => null);
+    await activeSession.clearCache();
+    if (typeof activeSession.clearCodeCaches === 'function') {
+      await activeSession.clearCodeCaches({});
+    }
+    const afterBytes = await activeSession.getCacheSize().catch(() => null);
+    return { ok: true, beforeBytes, afterBytes };
+  } catch (error) {
+    return { ok: false, error: `Unable to clear the application cache: ${error.message}` };
+  }
+});
 
 ipcMain.handle('app-behavior:set', (_event, nextSettings) => {
   const merged = {
