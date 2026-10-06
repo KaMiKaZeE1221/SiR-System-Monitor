@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.4.0 - 2026-10-06
+
+### Added
+- Added an always-on external crash watchdog that restarts SiR after an unrecoverable main-process crash or prolonged application hang, with sleep/resume protection and a three-restarts-per-five-minutes crash-loop limit.
+- Added renderer health checks and automatic dashboard recovery after renderer crashes, GPU-process failures, or a window that remains unresponsive.
+- Added **App Behavior → Recovery & Logging** with opt-in readable, rotating text logs, the exact active path, Open Logs Folder, Clear Current Log, explanatory tooltips, and profile/export/import persistence.
+- Added sanitized readable logs to support bundles when readable logging is enabled, plus recovery and logging state to the System & App diagnostic report.
+
+### Changed
+- Readable logs use `Logs\\logs.txt` beside the installed or portable executable when writable, rotate at 5 MB, retain three older files, and transparently report a per-user app-data fallback when Windows denies writes to the install directory.
+- Crash recovery now works in layers: the native collector is restarted independently, renderer/GPU failures reload the dashboard, and the external watcher restarts the complete application only when in-process recovery is no longer possible.
+
+### Fixed
+- Fixed a timed-out native sensor-host request leaving the stalled process alive, causing later refreshes to remain wedged with blank cards, zero detected sensors, and an unresponsive interface after high CPU load or a GPU-driver timeout.
+- Fixed repeated failed sensor reads targeting the same hung collector instead of terminating it, retaining the last valid snapshot with an explicit recovery diagnostic, and starting a clean collector on the next retry.
+
 ## 1.3.9 - 2026-09-28
 
 ### Added
