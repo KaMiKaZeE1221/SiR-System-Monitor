@@ -2,7 +2,7 @@
   <h1>SiR System Monitor</h1>
   <p><strong>Real-time hardware monitoring for Windows, your desktop, your overlay, and your browser.</strong></p>
   <p>
-    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.3.9" src="https://img.shields.io/badge/version-1.3.8-f97316?style=for-the-badge"></a>
+    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.4.0" src="https://img.shields.io/badge/version-1.4.0-f97316?style=for-the-badge"></a>
     <a href="#requirements"><img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&amp;logo=windows"></a>
     <a href="./LICENSE.txt"><img alt="GNU GPL v3" src="https://img.shields.io/badge/license-GPL--3.0-3DA639?style=for-the-badge"></a>
   </p>
@@ -32,18 +32,19 @@ SiR System Monitor is an open-source Windows desktop app that combines live syst
 | **Guarded fan control** | Opt-in manual levels and temperature curves for explicitly supported writable channels, including curves driven by one sensor or the average of two. |
 | **App telemetry** | Monitor SiR's own CPU/RAM use, uptime, process/window counts, refresh timing, sensor counts, active alerts, and Web Monitor connections. |
 | **Built-in diagnostics** | Run support-oriented checks, copy a combined report, or create a privacy-scrubbed ZIP support bundle directly from the app. |
+| **Layered crash recovery** | Automatically restarts a stalled sensor collector, reloads a failed dashboard/GPU renderer, or relaunches the full app after an unrecoverable crash. |																																													 
 | **Configurable motion** | Independently control settings, dialog, Summary transition, and sensor-card icon animations, with matching Web Monitor behavior. |
 | **Profiles and portability** | Save named profiles or export the complete setup to JSON for backup and transfer. |
 
 Sensor groups include **FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, App, and Other**. FPS, generated-FPS, and frame-time values appear when an enabled source provides them. Generated FPS requires the game or display driver to expose an explicit generated-frame type to the bundled PresentMon collector; unsupported paths are left at zero rather than estimated.
 
-## What's new in 1.3.9
+## What's new in 1.4.0
 
-- Added a configurable **Graph history length** under **Monitoring → Refresh Rate**, from 10 seconds to 60 minutes, shared by desktop and Web Monitor graphs.
-- Added a live operating-point marker to Curve Studio so the current source temperature and interpolated fan command are visible on the curve.
-- Added a selectable, method-aware frame-generation sensor such as **AFMF FPS** while retaining **FPS** as the application-rendered/base rate. The frame-generation reading is the total displayed rate, including both application and generated frames.
-- Added adaptive PresentMon frame-type probing alongside the proven base-FPS capture and exposed frame-generation details in diagnostics and support bundles without opening competing trace sessions.
-- Kept long graph ranges lightweight by retaining the full selected duration while downsampling only the rendered/transferred points.
+- Added an external watchdog with sleep/resume and crash-loop protection so an unrecoverable crash or long application hang can relaunch SiR automatically.
+- Added renderer and Chromium GPU-process recovery, while keeping sensor-host recovery independent so the smallest failed component is restarted first.
+- Added **App Behavior → Recovery & Logging** with optional rotating `Logs\\logs.txt`, exact-path feedback, Open Logs Folder, Clear Current Log, and profile/export/import support.
+- Added sanitized readable logs to support bundles when logging is enabled, and recovery state to the built-in System & App report.
+- Fixed a timed-out native collector remaining alive and leaving every later sensor request wedged after high CPU load or a GPU-driver timeout.
 
 See the [full changelog](./CHANGELOG.md) for every change and fix.
 
@@ -81,7 +82,7 @@ SiR uses an isolated, persistent collector so standard sensor refreshes do not r
 
 | Source | External app required? | Typical use |
 |---|:---:|---|
-| **Built-in Sensors** | No | CPU utilization and overall clock, vendor-neutral FPS/frame time, memory capacity and activity, storage, network, latency, system data, and supported direct digital PSU telemetry. |
+| **Built-in Sensors** | No | CPU utilization and overall clock, vendor-neutral base FPS/generated FPS/frame time, memory capacity and activity, storage, network, latency, system data, and supported direct digital PSU telemetry. |
 | **Enhanced Hardware Sensors** | No | Supported CPU/GPU temperatures and clocks, power, voltage, fans, motherboard controllers, storage SMART data, and additional hardware telemetry. Administrator access may be required. |
 | **App telemetry** | No | SiR private working-set memory (comparable to Task Manager), optional private commit and full working set, CPU, uptime, windows/processes, refresh performance, sensor/alert counts, and Web Monitor connections. Uses the existing refresh cycle and does not start another collector. |
 | **RTSS / MSI** | Yes, optional | Additional FPS, frame-time, and compatible shared-memory telemetry. |
@@ -90,7 +91,9 @@ SiR uses an isolated, persistent collector so standard sensor refreshes do not r
 
 Only enable compatibility providers you use. This keeps the sensor catalogue cleaner and avoids duplicate readings from overlapping sources.
 
-Native FPS and frame time use the signed PresentMon component bundled inside the sensor host. It reads Windows presentation events across AMD, NVIDIA, and Intel GPUs without installing a separate application or service. SiR follows the foreground rendering process, retains the last active game while you view the dashboard, and disables unused GPU-duration, input, and display-duration tracing to keep overhead low.
+FPS and frame time use the signed PresentMon component bundled inside the sensor host. It reads Windows presentation events across AMD, NVIDIA, and Intel GPUs without installing a separate application or service. SiR follows the foreground rendering process, retains the last active game while you view the dashboard, and disables unused GPU-duration and input tracing to keep overhead low. One adaptive trace session normally uses the proven base-FPS path and briefly probes PresentMon's frame-type mode; this avoids ETW event loss caused by competing captures while still detecting explicit generated frames. Explicit frame types provide the total displayed FPS when available. PresentMon 2.4.1 identifies AMD AFMF and Intel XeSS-FG directly; the label is prepared for NVIDIA/DLSS frame types when the driver or a later bundled collector exposes one. SiR does not fabricate a generated rate for unreported paths.
+
+The collector also removes retired SiR-owned trace sessions left behind by an interrupted older build or diagnostic capture before starting its active session. This prevents stale Windows ETW sessions from starving FPS capture after an update or crash. Frame-type probes are strictly time-bounded so the stable base capture always resumes, while detected frame-generation state is carried between probes. If the capture process exits or stops producing frames while the game or SiR dashboard is foreground, SiR retries quickly and keeps the last valid reading visible during the short recovery window; held readings are cleared immediately when the game closes.
 
 ### Enhanced Hardware Sensors
 
@@ -130,7 +133,9 @@ Open **Diagnostics** from the dashboard's top row. The page contains six allowli
 
 Only one check runs at a time. Longer checks can be cancelled, and every result is appended to one resizable text box that can be copied into a bug report. Diagnostic execution is restricted to fixed bundled scripts and arguments; the page cannot run arbitrary commands.
 
-**Create Support Bundle** first shows a theme-aware warning, then clears the results box and runs all six checks sequentially. Passes, failures, and timeouts are all retained in the report; an explicit cancellation stops the suite and does not create a ZIP. After all checks finish, the app asks where to save a privacy-scrubbed bundle containing the diagnostic results, a fresh system report, settings, sensor catalogue, and runtime state.
+**Create Support Bundle** first shows a theme-aware warning, then clears the results box and runs all six checks sequentially. Passes, failures, and timeouts are all retained in the report; an explicit cancellation stops the suite and does not create a ZIP. After all checks finish, the app asks where to save a privacy-scrubbed bundle containing the diagnostic results, a fresh system report, settings, sensor catalogue, runtime state, and the sanitized tail of the readable log when logging is enabled.
+
+Crash recovery itself is always active. Optional readable logging is available under **App Behavior → Recovery & Logging**. It writes a rotating `Logs\logs.txt` beside the installed or portable executable when that location is writable, displays the exact active path, and falls back to the current user's SiR app-data directory when Windows protects the installation folder. Logs rotate at 5 MB with three older files retained.
 
 ## Dashboard and appearance
 
@@ -243,6 +248,13 @@ Open **Settings → App Behavior → App Updates** to:
 
 Automatic startup checks can be disabled. If a release does not include the metadata needed for an in-app download, **Open Latest Release** provides a browser fallback.
 
+## Performance controls
+
+Open **Settings → App Behavior → Performance** to inspect the current hardware-acceleration state and Chromium cache size. **Disable hardware acceleration** is a restart-required compatibility option for GPU-driver or rendering problems; acceleration should normally remain enabled for the best interface performance. The same preference is retained in profiles and settings exports.
+
+**Clear App Cache** removes regenerable web-resource and compiled-code caches. It does not remove profiles, layouts, sensor selections, custom names, alerts, or other saved settings.
+																																										  
+
 ## Troubleshooting
 
 <details>
@@ -283,12 +295,18 @@ Automatic startup checks can be disabled. If a release does not include the meta
 - Disable compatibility providers you are not actively using.
 - Reduce visible sensor groups or overlay entries if rendering is the bottleneck.
 - Use Built-in Sensors alone when low-level enhanced telemetry is not needed.
+- Check **App Behavior → Performance** for acceleration and cache status. Leave hardware acceleration enabled unless diagnosing a GPU-driver or rendering issue.
 
 </details>
 
 ## Screenshots
 
 <table>
+  <tr>
+    <td width="50%"><img src="./Screenshots/SiR_System_Monitor_Settings_Layout_1.3.0.png" alt="Independent normal and Summary Mode layout settings"><br><sub><strong>Independent layouts</strong> — choose or customize normal and Summary cards separately</sub></td>
+    <td width="50%"><img src="./Screenshots/SiR_System_Monitor_Settings_Overlay_1.3.0.png" alt="Redesigned on-screen overlay settings"><br><sub><strong>Overlay editor</strong> — placement, sizing, content, ordering, and colors in one workspace</sub></td>
+  </tr>
+  <tr>
     <td width="50%"><img src="./Screenshots/SiR_System_Monitor_SummaryView.png" alt="Summary Mode"><br><sub><strong>Summary Mode</strong> — live minimum and maximum values</sub></td>
     <td width="50%"><img src="./Screenshots/SiR_System_Monitor_SensorSelection.png" alt="Sensor Selection settings"><br><sub><strong>Sensor Selection</strong> — choose, rename, and arrange readings</sub></td>
   </tr>
@@ -318,54 +336,6 @@ Automatic startup checks can be disabled. If a release does not include the meta
 </details>
 
 More screenshots are available in the [Imgur album](https://imgur.com/a/pkG1Cyb).
-
-## Build from source
-
-### Prerequisites
-
-- Windows 10 or 11, 64-bit
-- A current Node.js LTS release and npm
-- Windows PowerShell
-- The 64-bit .NET Framework C# compiler at `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe`
-- Internet access on the first sensor-host build to download the pinned LibreHardwareMonitor 0.9.6 archive
-
-### Run locally
-
-```powershell
-git clone https://github.com/KaMiKaZeE1221/SiR-System-Monitor.git
-Set-Location SiR-System-Monitor
-npm ci
-npm start
-```
-
-`npm start` builds the bundled sensor host before launching Electron.
-
-### Useful commands
-
-| Command | Purpose |
-|---|---|
-| `npm start` | Build the sensor host and run the app. |
-| `npm run test:sensors` | Build and run the hardware catalogue and sensor-host integration tests. |
-| `npm run test:sensors:enhanced` | Exercise the enhanced sensor path. |
-| `npm run test:sensors:startup` | Measure staged sensor startup behavior. |
-| `npm run test:layout` | Verify desktop and Web Monitor layout presets. |
-| `npm run test:diagnostics-ui` | Verify the end-user diagnostics allowlist, runner, and UI. |
-| `npm run test:version` | Verify version consistency across release files. |
-| `npm run dist:win` | Build the Windows installer and portable package. |
-
-### Project map
-
-```text
-main.js           Electron main process, windows, tray, updates, and web server
-app.js            Dashboard behavior, settings, profiles, and sensor rendering
-diagnosticsCatalog.js  Allowlisted end-user diagnostic checks and fixed arguments
-sensorReader.js   Built-in collector and optional provider aggregation
-rtssReader.js     RTSS, AIDA64, HWiNFO, and LHM shared-memory compatibility
-sensor-host/      Bundled native sensor collector source and hardware registry
-overlay.*         On-screen overlay window, behavior, and styling
-scripts/          Build, test, benchmark, and release helpers
-Screenshots/      README and project screenshots
-```
 
 ## License
 
