@@ -70,5 +70,10 @@ assert(appSource.includes('function setupStackedDashboardWheelScroll()'), 'Stack
 assert(appSource.includes("document.body.classList.contains('layout-stacked')"), 'Wheel routing is not limited to Stacked layout');
 assert(appSource.includes("eventTarget.closest('.sensor-group')"), 'Stacked wheel routing does not work while hovering sensor cards');
 assert(appSource.includes('container.scrollTop += delta;'), 'Stacked wheel input is not applied to the dashboard scroller');
+assert(appSource.includes("if (!container || container.hidden || container.clientWidth < 1) return;"), 'Hidden dashboard geometry must not overwrite saved card sizes');
+assert(appSource.includes('const resizeLayoutMode = getCurrentLayoutMode();'), 'Card resize must bind persistence to the layout mode active when resizing begins');
+assert(appSource.includes('saveWindowSizes(sizeMap, resizeLayoutMode);'), 'Card resize must save to its captured normal or Summary layout');
+assert(appSource.includes('applyWindowOrder(activeLayoutMode);'), 'View transitions must explicitly restore the active layout order');
+assert(appSource.includes('applyWindowSizes(mode);'), 'Layout presets must restore sizes for their explicit normal or Summary mode');
 
 console.log('Display modes, Summary Mode statistics, and card dragging checks passed.');

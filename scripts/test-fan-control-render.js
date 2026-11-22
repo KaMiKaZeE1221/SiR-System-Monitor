@@ -8,6 +8,10 @@ ipcMain.handle('overlay:get-displays', () => []);
 ipcMain.handle('app:get-runtime-stats', () => ({}));
 ipcMain.handle('hardware-access:get-status', () => ({}));
 ipcMain.handle('app-behavior:get', () => ({}));
+ipcMain.handle('discord-presence:get-status', () => ({ enabled: false, connected: false, connecting: false }));
+ipcMain.handle('logging:get-status', () => ({ enabled: false, path: '', directory: '' }));
+ipcMain.handle('performance:get-status', () => ({ ok: true, hardwareAccelerationEnabled: true, cacheSizeBytes: 0 }));
+ipcMain.handle('performance:clear-cache', () => ({ ok: true, beforeBytes: 0, afterBytes: 0 }));
 ipcMain.handle('monitoring:set-refresh-interval', () => ({ ok: true }));
 
 app.whenReady().then(async () => {
@@ -50,6 +54,13 @@ app.whenReady().then(async () => {
     applyFanControlView(true, { animate: false });
     renderFanControlSettings(true);
     const view = document.getElementById('fanControlView');
+    const liveMarker = view.querySelector('[data-fan-curve-operating-point]');
+    const markerStartX = Number(liveMarker?.querySelector('.fan-curve-live-dot')?.getAttribute('cx'));
+    const markerStartLabel = liveMarker?.getAttribute('aria-label') || '';
+    latestFanControlTemperatureSensors.find((sensor) => sensor.id === 'temp_cpu').value = 81.4;
+    updateFanControlRuntimeLabels();
+    const markerUpdatedX = Number(liveMarker?.querySelector('.fan-curve-live-dot')?.getAttribute('cx'));
+    const markerUpdatedLabel = liveMarker?.getAttribute('aria-label') || '';
     const initialControls = view.querySelectorAll('.fan-control-tile').length;
     const collapsedContentDisplay = getComputedStyle(view.querySelector('[data-fan-control-card="fan_gpu"] .fan-control-expanded-content')).display;
     const collapsedCardHeight = Math.round(view.querySelector('[data-fan-control-card="fan_gpu"]').getBoundingClientRect().height);
@@ -102,7 +113,12 @@ app.whenReady().then(async () => {
       headerActionWidthDelta: Math.abs(masterWidth - restoreWidth),
       allGlobal: Object.values(fanControlSettings.channels).every((channel) => channel.mode === 'global'),
       globalStudio: view.querySelector('.fan-curve-studio')?.classList.contains('is-global'),
-      resetButtons: view.querySelectorAll('[data-fan-action="reset-curve"]').length
+      resetButtons: view.querySelectorAll('[data-fan-action="reset-curve"]').length,
+      markerAvailable: !liveMarker?.classList.contains('is-unavailable'),
+      markerStartX,
+      markerUpdatedX,
+      markerStartLabel,
+      markerUpdatedLabel
     };
   })()`);
 
@@ -129,6 +145,9 @@ app.whenReady().then(async () => {
   assert.strictEqual(result.allGlobal, true);
   assert.strictEqual(result.globalStudio, true);
   assert.strictEqual(result.resetButtons, 1);
+  assert.strictEqual(result.markerAvailable, true);
+  assert(result.markerUpdatedX > result.markerStartX, 'The live fan-curve marker did not move with its source temperature.');
+  assert.notStrictEqual(result.markerUpdatedLabel, result.markerStartLabel, 'The live fan-curve marker label did not refresh.');
   console.log(JSON.stringify(result, null, 2));
   window.destroy();
   app.quit();

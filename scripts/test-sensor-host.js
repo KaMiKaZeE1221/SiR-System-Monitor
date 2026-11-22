@@ -51,20 +51,50 @@ async function main() {
     assert(ids.includes('builtin_os_cpu_clock_speed'), 'Overall CPU clock-speed sensor is missing.');
     assert(ids.includes('builtin_presentmon_fps'), 'Vendor-neutral native FPS sensor is missing.');
     assert(ids.includes('builtin_presentmon_frametime'), 'Vendor-neutral native frame-time sensor is missing.');
+    assert(ids.includes('builtin_presentmon_generated_fps'), 'Generated-frame FPS sensor is missing.');
     assert.strictEqual(typeof data.diagnostics.nativeFpsAvailable, 'boolean', 'Native FPS availability diagnostics are missing.');
     assert.strictEqual(typeof data.diagnostics.nativeFpsRunning, 'boolean', 'Native FPS runtime diagnostics are missing.');
     assert.strictEqual(typeof data.diagnostics.nativeFpsGpuVendor, 'string', 'Native FPS GPU-vendor diagnostics are missing.');
-    assert(['displayed frames', 'presented frames'].includes(data.diagnostics.nativeFpsCaptureMethod), 'Native FPS capture-method diagnostics are invalid.');
+    assert(
+      data.diagnostics.nativeFpsCaptureMethod === 'PresentMon v1 base FPS capture' ||
+        data.diagnostics.nativeFpsCaptureMethod === 'PresentMon adaptive v2 frame-type capture',
+      'Native FPS capture-method diagnostics are invalid.'
+    );
+    assert.strictEqual(typeof data.diagnostics.nativeFrameGenerationActive, 'boolean', 'Frame-generation state diagnostics are missing.');
+    assert.strictEqual(typeof data.diagnostics.nativeFrameGenerationMethod, 'string', 'Frame-generation method diagnostics are missing.');
+    assert.strictEqual(typeof data.diagnostics.nativeFrameGenerationTrackingRunning, 'boolean', 'Adaptive frame-generation probe diagnostics are missing.');
     assert(Number.isFinite(Number(data.diagnostics.nativeFpsRecoveredTraceSessions)), 'Native FPS trace-session recovery diagnostics are missing.');
     const cpuClock = sensors.find((sensor) => sensor.id === 'builtin_os_cpu_clock_speed');
     assert.strictEqual(cpuClock.units, 'MHz', 'Overall CPU clock-speed units are incorrect.');
     assert(Number(cpuClock.value) > 0, 'Overall CPU clock-speed value is unavailable.');
+    const nonEffectiveCoreClocks = (data.groupedSensors.cpu || []).filter((sensor) =>
+      sensor.id !== cpuClock.id &&
+      sensor.sensorType === 'Clock' &&
+      /core #\d+/i.test(sensor.name || '') &&
+      !/effective|average/i.test(sensor.name || '') &&
+      Number(sensor.value) > 0
+    );
+    if (nonEffectiveCoreClocks.length > 0) {
+      const fastestCoreClock = Math.max(...nonEffectiveCoreClocks.map((sensor) => Number(sensor.value)));
+      assert(
+        Math.abs(Number(cpuClock.value) - fastestCoreClock) < 0.1,
+        'Overall CPU clock speed must follow the fastest current non-effective core clock.'
+      );
+    }
     const memoryRates = sensors.filter((sensor) => sensor.id === 'builtin_os_memory_read_rate' || sensor.id === 'builtin_os_memory_write_rate');
     assert(memoryRates.every((sensor) => sensor.units === 'B/s'), 'Memory activity rates must originate as bytes per second.');
     const nativeFps = sensors.find((sensor) => sensor.id === 'builtin_presentmon_fps');
     const nativeFrameTime = sensors.find((sensor) => sensor.id === 'builtin_presentmon_frametime');
+    const nativeGeneratedFps = sensors.find((sensor) => sensor.id === 'builtin_presentmon_generated_fps');
+    assert.strictEqual(nativeFps.name, 'FPS', 'FPS sensor display name is incorrect.');
+    assert.strictEqual(nativeFrameTime.name, 'Frame Time', 'Frame-time sensor display name is incorrect.');
+    assert(
+      ['AFMF FPS', 'DLSS Frame Generation FPS', 'XeSS-FG FPS', 'Frame Generation FPS'].includes(nativeGeneratedFps.name),
+      'Frame-generation FPS sensor display name is incorrect.'
+    );
     assert.strictEqual(nativeFps.units, 'FPS', 'Native FPS units are incorrect.');
     assert.strictEqual(nativeFrameTime.units, 'ms', 'Native frame-time units are incorrect.');
+    assert.strictEqual(nativeGeneratedFps.units, 'FPS', 'Generated FPS units are incorrect.');
     assert.strictEqual(nativeFps.defaultEnabled, true, 'Native FPS should be selected by default.');
     assert.strictEqual(nativeFrameTime.defaultEnabled, true, 'Native frame time should be selected by default.');
     const thermaltakePsuSensors = sensors.filter((sensor) => sensor.id.startsWith('builtin_thermaltake_psu_'));

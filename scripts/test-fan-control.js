@@ -24,6 +24,7 @@ const styles = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
 
 const normalized = normalizeFanControlSettings({
   enabled: true,
+  lowRpmSafetyEnabled: false,
   curveStudioCollapsed: true,
   channels: {
     fan_1: {
@@ -50,6 +51,8 @@ const normalized = normalizeFanControlSettings({
 });
 
 assert.strictEqual(normalized.enabled, true);
+assert.strictEqual(normalized.lowRpmSafetyEnabled, false, 'Low-RPM safety preference must persist when disabled.');
+assert.strictEqual(normalizeFanControlSettings({}).lowRpmSafetyEnabled, true, 'Low-RPM safety must remain enabled by default.');
 assert.strictEqual(normalized.curveStudioCollapsed, true);
 assert.strictEqual(normalized.channels.fan_1.sensorMode, 'average');
 assert.strictEqual(normalized.channels.fan_1.displayName, 'Rear radiator');
@@ -72,6 +75,7 @@ const manual = normalizeFanChannel({ mode: 'manual', manualPercent: 5 });
 assert.strictEqual(manual.manualPercent, 20);
 
 assert(html.includes('id="fanControlEnabled"'), 'Fan Control master toggle is missing.');
+assert(html.includes('id="fanControlLowRpmSafetyEnabled"'), 'Low-RPM recovery-pulse toggle is missing.');
 assert(html.includes('id="fanControlChannels"'), 'Fan Control channel editor is missing.');
 assert(html.includes('id="fanControlViewBtn"'), 'Dedicated Fan Control header button is missing.');
 assert(html.includes('id="fanControlView"'), 'Dedicated Fan Control workspace is missing.');
@@ -115,6 +119,7 @@ assert(appSource.includes("const FAN_CONTROL_SETTINGS_KEY = 'fanControlSettingsV
 assert(appSource.includes('FAN_CONTROL_SETTINGS_KEY,'), 'Fan Control settings are not included in profiles/exports.');
 assert(readerSource.includes("command: 'snapshot'"), 'Sensor host snapshot protocol is missing.');
 assert(readerSource.includes('fanControl: this.fanControlConfiguration'), 'Fan Control configuration is not sent to the sensor host.');
+assert(readerSource.includes('lowRpmSafetyEnabled: input.lowRpmSafetyEnabled !== false'), 'The low-RPM safety preference is not forwarded to the sensor host.');
 assert(readerSource.includes("command: 'shutdown'"), 'Closing the sensor client must explicitly request native fan restoration.');
 assert(readerSource.includes('options.graceful !== false'), 'Sensor-host shutdown must prefer the acknowledged graceful path.');
 assert(readerSource.includes('if (exitTimer) clearTimeout(exitTimer)'), 'A successful host exit must cancel the forced-shutdown timer.');
@@ -127,8 +132,18 @@ assert(mainSource.includes('if (!rendererShutdownPrepared) event.preventDefault(
 assert(hostSource.includes('controlSensor.Control.SetSoftware'), 'Writable LibreHardwareMonitor controls are not used.');
 assert(hostSource.includes('controlSensor.Control.SetDefault'), 'BIOS/default restoration is missing.');
 assert(hostSource.includes('app heartbeat expired'), 'Fan Control heartbeat safety fallback is missing.');
+assert(hostSource.includes('sensor refresh stalled'), 'Fan Control must return to BIOS when native sensor refresh stalls.');
+assert(hostSource.includes('FanControlHeartbeatTimeoutSeconds = 7'), 'Fan heartbeat expiry must beat the renderer host-kill timeout.');
+assert(hostSource.includes('FanSensorRefreshTimeoutSeconds = 7'), 'Fan controls need a bounded stale-sensor lease.');
+assert(hostSource.includes('lock (_fanControlSync)'), 'Fan safety evaluation must not share the potentially blocked hardware-refresh lock.');
+assert(!/private void FanControlTimerTick[\s\S]*?computer\.Accept\(_updateVisitor\)/.test(hostSource), 'The fan safety timer must never perform a blocking hardware refresh.');
+assert(hostSource.includes('_claimedFanControlSensors.TryGetValue'), 'Claimed control handles must remain recoverable when enumeration disappears.');
+assert(hostSource.includes('Returned to BIOS: control is not currently available.'), 'Disappearing controls must not leave their previous software command latched.');
 assert(hostSource.includes('selected temperature sensor is unavailable'), 'Missing-temperature failsafe is missing.');
+assert(hostSource.includes('selected temperature sensor remained unavailable'), 'A prolonged missing temperature must hand control back to BIOS.');
 assert(hostSource.includes('fan RPM remained below 100'), 'Fan-stall failsafe is missing.');
+assert(hostSource.includes('_fanControlConfiguration.lowRpmSafetyEnabled != false'), 'The fan-stall recovery pulse cannot be disabled.');
+assert(hostSource.includes('after the 100% safety attempt'), 'A prolonged RPM fault must hand control back to BIOS after the safety attempt.');
 assert(hostSource.includes('IsProtectedFanControl'), 'Pump/AIO protection is missing.');
 assert(hostSource.includes('offsetPercent = Clamp(input.offsetPercent, -50, 50)'), 'Native fan offsets must be bounded.');
 assert(hostSource.includes('if (channel.mode == "curve" && !immediateSafetyResponse)'), 'Curve offsets must not reduce emergency failsafe output.');
@@ -145,6 +160,9 @@ assert(amdAdlxSource.includes('Invoke(binding.FanTuning, "Reset")'), 'AMD automa
 assert(hostBuildSource.includes('2bb7729a935b7acc600dfce3a5b6340b6bddb9b1'), 'The open ADLX integration must be pinned to an audited commit.');
 assert(hostBuildSource.includes('CE742DA3C57A68896D300A45F040906A68990B7B09C5B82FF3883CAF2C155644'), 'ADLXWrapper.dll integrity pin is missing.');
 assert(hostBuildSource.includes('B7C39D1EB3E665826BA7121A3D74F952C8519C6AEE877EDF194E47AE625BC7CF'), 'ADLXCSharpBind.dll integrity pin is missing.');
+assert(readerSource.includes('Last native activity:'), 'Sensor-host timeout logging must identify the hardware phase that stalled.');
+assert(readerSource.includes('ENHANCED_WARM_SNAPSHOT_TIMEOUT_MS = 9000'), 'A warm enhanced collector stall must recover before the old 12-second timeout.');
+assert(readerSource.includes('currentHostSnapshotCount > 0'), 'Initial enhanced discovery must retain its longer startup allowance.');
 assert(styles.includes('.fan-control-tile.is-collapsed'), 'Collapsed fan-card styling is missing.');
 assert(styles.includes('.fan-curves-board.is-collapsed'), 'Collapsed Curve Studio styling is missing.');
 assert(/\.fan-control-grid\s*\{[\s\S]*?align-items:\s*start/.test(styles), 'Collapsed fan cards must not stretch to the height of an expanded neighbour.');

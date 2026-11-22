@@ -8,6 +8,10 @@ const terms = fs.readFileSync(path.join(root, 'TERMS_OF_SERVICE.md'), 'utf8');
 const privacy = fs.readFileSync(path.join(root, 'PRIVACY_POLICY.md'), 'utf8');
 
 assert.match(mainSource, /let discordSessionStartedAt = 0;/, 'Discord session start should be stable for one presence session');
+assert.match(mainSource, /let discordConnectPromise = null;/, 'Discord connection attempts should be single-flight');
+assert.match(mainSource, /connected: null, connecting: true/, 'Discord should publish an immediate connecting state');
+assert.match(mainSource, /ipcMain\.handle\('discord-presence:get-status'/, 'The renderer should be able to request Discord status immediately');
+assert.match(mainSource, /if \(discordConnectPromise\)/, 'Repeated status updates must reuse the active Discord connection attempt');
 assert.match(mainSource, /timestamps:\s*\{\s*start: discordSessionStartedAt\s*\}/s, 'Presence should use Discord RPC timestamp fields');
 assert.match(mainSource, /assets:\s*\{[\s\S]*large_image:\s*'sir_sm_circle'/, 'Presence should use Discord RPC asset fields');
 assert.match(mainSource, /large_text:\s*'SiR System Monitor'/, 'Presence artwork should use the product name');
