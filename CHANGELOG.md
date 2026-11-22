@@ -7,9 +7,10 @@
 - Discord Rich Presence now publishes an immediate **Connecting** state, reuses one in-progress IPC connection attempt, and exposes its current status to a newly loaded dashboard instead of remaining visually stale while Discord responds.
 - Separated the native fan-safety timer from the low-level enhanced-hardware refresh lock, allowing heartbeat and stale-sensor protection to run even while a hardware polling call is blocked.
 - Added a seven-second sensor-refresh and application-heartbeat lease for software-controlled fans. Expired leases now return every claimed channel to BIOS/automatic control before the renderer terminates an unresponsive sensor host.
-- Changed missing-temperature failsafes to request 100% for up to five seconds, then release the affected channel to firmware control until its selected source recovers.
+- Changed missing selected-temperature handling to return the affected channel directly to BIOS/automatic control, with no temporary 100% command, and automatically resume its saved curve when every required source is readable again.
+- Added a bounded grace period for an enhanced snapshot already in progress. Active fan channels retain their last valid command through brief network-adapter, high-CPU, or other whole-snapshot delays; genuinely stalled reads still hand control to BIOS before collector termination.
 - Changed low-RPM stall handling to retain the existing five-second 100% safety attempt, then return the channel to BIOS control after ten seconds if the RPM reading remains below 100.
-- Reduced the timeout for an already-running enhanced collector from twelve to nine seconds while retaining the full twelve-second allowance for initial enhanced-hardware discovery and recovery startup.
+- Reduced the normal timeout for an already-running enhanced collector from twelve to nine seconds while retaining the full twelve-second startup allowance; active non-default fan control now receives a separate thirty-second ceiling so brief host delays do not force a restart.
 
 ### Fixed
 - Fixed GPU and motherboard fan control falling into a 100% safety response when display power saving throttled the monitoring renderer even though Windows itself remained awake.
@@ -21,6 +22,7 @@
 - Fixed a stalled enhanced sensor refresh blocking the fan-control heartbeat behind the same native lock and leaving the last software fan command latched.
 - Fixed a fan-control sensor disappearing from enumeration without releasing its previously claimed control, including channels left at the 100% failsafe duty.
 - Fixed persistent missing temperature or RPM readings holding fans at 100% indefinitely instead of handing control back to the motherboard, GPU firmware, or BIOS.
+- Fixed a roughly nine-second standard or enhanced sensor delay being mistaken for a dead fan-control heartbeat, which could restart the collector and briefly send controlled fans to 100% during partial hardware rediscovery.
 - Improved sensor-host recovery logs with the last native hardware-refresh phase, making intermittent device-family stalls identifiable in readable logs and support reports.
 
 ## 1.4.0 - 2026-10-06
