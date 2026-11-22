@@ -6,6 +6,7 @@
     <a href="#requirements"><img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&amp;logo=windows"></a>
     <a href="./LICENSE.txt"><img alt="GNU GPL v3" src="https://img.shields.io/badge/license-GPL--3.0-3DA639?style=for-the-badge"></a>
   </p>
+	<p>Please Note, Images might not exactly reflect the current version...</p>
   <p>
     <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest">Download</a> ·
     <a href="./CHANGELOG.md">What's new</a> ·
