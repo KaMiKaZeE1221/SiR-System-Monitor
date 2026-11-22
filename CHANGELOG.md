@@ -3,6 +3,8 @@
 1.4.1 - 2026-11-22
 
 ### Changed
+- Kept the monitoring renderer scheduled when Windows powers off the display so sensor refreshes and fan-control safety leases continue without preventing normal interface animations from pausing when hidden.
+- Discord Rich Presence now publishes an immediate **Connecting** state, reuses one in-progress IPC connection attempt, and exposes its current status to a newly loaded dashboard instead of remaining visually stale while Discord responds.
 - Separated the native fan-safety timer from the low-level enhanced-hardware refresh lock, allowing heartbeat and stale-sensor protection to run even while a hardware polling call is blocked.
 - Added a seven-second sensor-refresh and application-heartbeat lease for software-controlled fans. Expired leases now return every claimed channel to BIOS/automatic control before the renderer terminates an unresponsive sensor host.
 - Changed missing-temperature failsafes to request 100% for up to five seconds, then release the affected channel to firmware control until its selected source recovers.
@@ -10,6 +12,9 @@
 - Reduced the timeout for an already-running enhanced collector from twelve to nine seconds while retaining the full twelve-second allowance for initial enhanced-hardware discovery and recovery startup.
 
 ### Fixed
+- Fixed GPU and motherboard fan control falling into a 100% safety response when display power saving throttled the monitoring renderer even though Windows itself remained awake.
+- Fixed normal and Summary sensor-card positions or sizes occasionally being overwritten after visiting Fan Control. Hidden dashboard geometry is no longer persisted, resize gestures remain bound to the mode in which they began, and the active layout is restored explicitly when returning.
+- Fixed Discord status taking several seconds to visibly react after enabling the integration and prevented overlapping connection attempts during retries or rapid toggles.
 - Fixed enhanced AMD core-clock readings that could remain normalized to a fixed 100 MHz reference after a BCLK overclock. The native host now rebuilds affected clocks directly from the current core multiplier and measured bus clock, producing approximately 4.09 GHz for a 40.5x multiplier at 101 MHz BCLK, while avoiding double-correction when the source is already accurate.
 - Added a persisted **Low-RPM 100% recovery pulse** option to Fan Control. It remains enabled by default but can be disabled for intentional zero-RPM fans or unreliable tachometer readings without disabling missing-temperature, emergency-temperature, stale-data, heartbeat, shutdown, or BIOS-handoff protections.
 - Fixed the overall **CPU Clock Speed** row using the all-core average even when individual enhanced core clocks were available. It now follows the fastest corrected current non-effective core reading, while the separate average and effective-clock sensors remain available.
@@ -17,10 +22,6 @@
 - Fixed a fan-control sensor disappearing from enumeration without releasing its previously claimed control, including channels left at the 100% failsafe duty.
 - Fixed persistent missing temperature or RPM readings holding fans at 100% indefinitely instead of handing control back to the motherboard, GPU firmware, or BIOS.
 - Improved sensor-host recovery logs with the last native hardware-refresh phase, making intermittent device-family stalls identifiable in readable logs and support reports.
-
-### Known Issues (will be fixed next release...)
-- GPU fans when using the Fan Control may not act correctly, often going to 100% fan speed when they shouldn't.
-- When going to the Fan Control or Summary Modes the main tab sensor blocks may not resolve back to the correct saved positions, a small work around for now is to just minimize and maximize the app.
 
 ## 1.4.0 - 2026-10-06
 
