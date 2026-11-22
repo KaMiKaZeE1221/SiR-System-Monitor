@@ -304,10 +304,6 @@ Open **Settings → App Behavior → Performance** to inspect the current hardwa
 
 <table>
   <tr>
-    <td width="50%"><img src="./Screenshots/SiR_System_Monitor_Settings_Layout_1.3.0.png" alt="Independent normal and Summary Mode layout settings"><br><sub><strong>Independent layouts</strong> — choose or customize normal and Summary cards separately</sub></td>
-    <td width="50%"><img src="./Screenshots/SiR_System_Monitor_Settings_Overlay_1.3.0.png" alt="Redesigned on-screen overlay settings"><br><sub><strong>Overlay editor</strong> — placement, sizing, content, ordering, and colors in one workspace</sub></td>
-  </tr>
-  <tr>
     <td width="50%"><img src="./Screenshots/SiR_System_Monitor_SummaryView.png" alt="Summary Mode"><br><sub><strong>Summary Mode</strong> — live minimum and maximum values</sub></td>
     <td width="50%"><img src="./Screenshots/SiR_System_Monitor_SensorSelection.png" alt="Sensor Selection settings"><br><sub><strong>Sensor Selection</strong> — choose, rename, and arrange readings</sub></td>
   </tr>
