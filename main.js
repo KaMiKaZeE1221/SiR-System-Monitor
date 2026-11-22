@@ -9,6 +9,7 @@ const { summarizeElectronAppMetrics } = require('./appTelemetry');
 const { sampleWindowsPrivateWorkingSets } = require('./windowsProcessMemory');
 const { getDiagnosticDefinition, listPublicDiagnostics } = require('./diagnosticsCatalog');
 const { createSupportZip, sanitizeSupportText, sanitizeSupportValue } = require('./supportBundle');
+const { AppLogger, stringifyError } = require('./appLogger');
 // Discord Rich Presence (in-repo IPC helper)
 const DISCORD_CLIENT_ID = '1479994487215227094';
 let discordIpc = null;
@@ -65,6 +66,7 @@ const DEFAULT_APP_BEHAVIOR_SETTINGS = {
   autoCheckForUpdates: true,
   startupDelaySeconds: 0,
   disableGpuAcceleration: false,
+  enableFileLogging: false,
   enableDiscordRichPresence: true
 };
 const AUTO_UPDATE_PROVIDER = Object.freeze({
@@ -88,6 +90,8 @@ let autoUpdaterInitialized = false;
 let updateDownloadedInfo = null;
 let discordActivityInterval = null;
 let discordReconnectInterval = null;
+let discordConnectPromise = null;
+let discordConnectionGeneration = 0;
 let discordSessionStartedAt = 0;
 const DISCORD_ACTIVITY_INTERVAL_MS = 30_000;
 const DISCORD_RECONNECT_INTERVAL_MS = 5_000;
@@ -103,6 +107,18 @@ let rendererShutdownPrepared = false;
 let rendererShutdownPromise = null;
 let rendererShutdownRequestId = 0;
 let gracefulQuitPromise = null;
+const appLogger = new AppLogger();
+let watchdogProcess = null;
+let watchdogHeartbeatInterval = null;
+let watchdogHeartbeatPath = '';
+let watchdogShutdownPath = '';
+let rendererHealthInterval = null;
+let rendererLastHealthAckAt = 0;
+let rendererLastHealthCheckAt = 0;
+let rendererRecoveryInProgress = false;
+let rendererUnresponsiveTimer = null;
+let rendererRecoveryTimer = null;
+let rendererRecoveryHistory = [];
 
 const DIAGNOSTIC_OUTPUT_LIMIT_BYTES = 1024 * 1024;
 const APP_RUNTIME_SAMPLE_INTERVAL_MS = 1000;
@@ -111,6 +127,12 @@ const MONITORING_REFRESH_MAX_MS = 5000;
 let cachedAppRuntimeSample = null;
 let monitoringTickInterval = null;
 let monitoringRefreshIntervalMs = MONITORING_REFRESH_MIN_MS;
+const WATCHDOG_HEARTBEAT_INTERVAL_MS = 5000;
+const WATCHDOG_TIMEOUT_SECONDS = 75;
+const RENDERER_HEALTH_INTERVAL_MS = 5000;
+const RENDERER_HEALTH_TIMEOUT_MS = 30000;
+const RECOVERY_WINDOW_MS = 5 * 60 * 1000;
+const MAX_RENDERER_RECOVERIES = 3;
 
 function stopMonitoringClock() {
   if (monitoringTickInterval) {
@@ -134,6 +156,226 @@ function restartMonitoringClock(intervalMs) {
   }, monitoringRefreshIntervalMs);
   return monitoringRefreshIntervalMs;
 }
+
+function configureAppLogger(options = {}) {
+  const executablePath = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+  const preferredDirectory = path.join(app.isPackaged ? path.dirname(executablePath) : __dirname, 'Logs');
+  const fallbackDirectory = path.join(app.getPath('userData'), 'Logs');
+  appLogger.configure({ preferredDirectory, fallbackDirectory, fileName: 'logs.txt' });
+  const status = appLogger.setEnabled(appBehaviorSettings.enableFileLogging === true);
+  if (status.enabled) {
+    const message = options.startup === false
+      ? `Readable logging enabled for SiR System Monitor ${app.getVersion()} (PID ${process.pid}).`
+      : `SiR System Monitor ${app.getVersion()} started (PID ${process.pid}).`;
+    appLogger.log('INFO', 'Main', message);
+    if (status.usingFallback) {
+      appLogger.log('WARN', 'Logger', `The install directory is not writable; logging is using ${status.filePath}. ${status.fallbackReason}`);
+    }
+  }
+  return status;
+}
+
+function logRuntimeEnvironment() {
+  if (!appLogger.getStatus().enabled) return;
+  const cpu = os.cpus()[0];
+  appLogger.log('INFO', 'Environment', `Windows ${os.release()} (${os.arch()}); CPU ${cpu?.model?.trim() || 'unavailable'}; logical processors ${os.cpus().length}; memory ${(os.totalmem() / 1024 / 1024 / 1024).toFixed(2)} GB.`);
+  appLogger.log('INFO', 'Environment', `Packaged ${app.isPackaged ? 'yes' : 'no'}; administrator ${isRunningAsAdministrator() ? 'yes' : 'no'}; hardware acceleration ${enableGpuAcceleration ? 'enabled' : 'disabled'}; executable ${process.env.PORTABLE_EXECUTABLE_FILE || process.execPath}; user data ${app.getPath('userData')}.`);
+  appLogger.log('INFO', 'Settings', `Startup configuration: Windows startup ${appBehaviorSettings.launchAtStartup ? 'on' : 'off'}, administrator launch ${appBehaviorSettings.launchAsAdministrator ? 'on' : 'off'}, start minimized ${appBehaviorSettings.startMinimized ? 'on' : 'off'}, minimize to tray ${appBehaviorSettings.minimizeToTray ? 'on' : 'off'}, close to tray ${appBehaviorSettings.closeToTray ? 'on' : 'off'}, update checks ${appBehaviorSettings.autoCheckForUpdates ? 'on' : 'off'}, Discord ${appBehaviorSettings.enableDiscordRichPresence ? 'on' : 'off'}.`);
+  Promise.resolve(app.getGPUInfo('basic')).then((gpuInfo) => {
+    const devices = Array.isArray(gpuInfo?.gpuDevice) ? gpuInfo.gpuDevice : [];
+    const summary = devices.length
+      ? devices.map((device) => `vendor ${formatGpuIdentifier(device.vendorId)}, device ${formatGpuIdentifier(device.deviceId)}, driver ${device.driverVendor || 'unknown'} ${device.driverVersion || ''}`.trim()).join(' | ')
+      : 'No GPU devices reported';
+    appLogger.log('INFO', 'GPU', `${summary}. Feature status: ${JSON.stringify(app.getGPUFeatureStatus())}`);
+  }).catch((error) => {
+    appLogger.log('WARN', 'GPU', 'GPU startup information was unavailable.', error);
+  });
+}
+
+function getWatchdogExecutablePath() {
+  const candidates = app.isPackaged
+    ? [path.join(process.resourcesPath, 'sensor-host', 'SiR.Watchdog.exe')]
+    : [
+      path.join(__dirname, 'sensor-host', 'bin', 'SiR.Watchdog.exe'),
+      path.join(process.resourcesPath || '', 'sensor-host', 'SiR.Watchdog.exe')
+    ];
+  return candidates.find((candidate) => candidate && fs.existsSync(candidate)) || '';
+}
+
+function touchWatchdogHeartbeat() {
+  if (!watchdogHeartbeatPath) return;
+  try {
+    fs.writeFileSync(watchdogHeartbeatPath, `${Date.now()}\n`, 'utf8');
+  } catch (error) {
+    appLogger.log('ERROR', 'Watchdog', 'Unable to update the application heartbeat.', error);
+  }
+}
+
+function startCrashWatchdog() {
+  const watchdogPath = getWatchdogExecutablePath();
+  if (!watchdogPath) {
+    appLogger.log('WARN', 'Watchdog', 'SiR.Watchdog.exe was not found; full-process crash recovery is unavailable.');
+    return false;
+  }
+
+  const recoveryDirectory = path.join(app.getPath('userData'), 'Recovery');
+  fs.mkdirSync(recoveryDirectory, { recursive: true });
+  watchdogHeartbeatPath = path.join(recoveryDirectory, `heartbeat-${process.pid}.txt`);
+  watchdogShutdownPath = path.join(recoveryDirectory, `shutdown-${process.pid}.signal`);
+  const recoveryStatePath = path.join(recoveryDirectory, 'recovery-history.txt');
+  try { if (fs.existsSync(watchdogShutdownPath)) fs.unlinkSync(watchdogShutdownPath); } catch (error) {}
+  touchWatchdogHeartbeat();
+
+  const executablePath = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+  const restartArguments = app.isPackaged ? [] : [__dirname];
+  const loggerStatus = appLogger.getStatus();
+  const args = [
+    '--parent', String(process.pid),
+    '--executable', executablePath,
+    '--working-directory', path.dirname(executablePath),
+    '--heartbeat', watchdogHeartbeatPath,
+    '--shutdown', watchdogShutdownPath,
+    '--state', recoveryStatePath,
+    '--timeout', String(WATCHDOG_TIMEOUT_SECONDS),
+    '--log', loggerStatus.enabled ? loggerStatus.filePath : ''
+  ];
+  restartArguments.forEach((argument) => args.push('--argument', argument));
+
+  try {
+    watchdogProcess = spawn(watchdogPath, args, {
+      detached: true,
+      windowsHide: true,
+      stdio: 'ignore'
+    });
+    watchdogProcess.on('error', (error) => {
+      appLogger.log('ERROR', 'Watchdog', 'The crash watchdog process failed.', error);
+    });
+    const activeWatchdog = watchdogProcess;
+    watchdogProcess.on('exit', (code) => {
+      if (watchdogProcess !== activeWatchdog) return;
+      watchdogProcess = null;
+      if (watchdogHeartbeatInterval) {
+        clearInterval(watchdogHeartbeatInterval);
+        watchdogHeartbeatInterval = null;
+      }
+      if (isQuitting) return;
+      appLogger.log('ERROR', 'Watchdog', `The crash watchdog exited unexpectedly with code ${code ?? 'unknown'}; restarting it.`);
+      setTimeout(() => {
+        if (!isQuitting && !watchdogProcess) startCrashWatchdog();
+      }, 5000);
+    });
+    watchdogProcess.unref();
+    watchdogHeartbeatInterval = setInterval(touchWatchdogHeartbeat, WATCHDOG_HEARTBEAT_INTERVAL_MS);
+    appLogger.log('INFO', 'Watchdog', `Crash watchdog started (PID ${watchdogProcess.pid || 'pending'}).`);
+    return true;
+  } catch (error) {
+    watchdogProcess = null;
+    appLogger.log('ERROR', 'Watchdog', 'Unable to start the crash watchdog.', error);
+    return false;
+  }
+}
+
+function stopCrashWatchdog() {
+  if (watchdogHeartbeatInterval) {
+    clearInterval(watchdogHeartbeatInterval);
+    watchdogHeartbeatInterval = null;
+  }
+  if (watchdogShutdownPath) {
+    try {
+      fs.mkdirSync(path.dirname(watchdogShutdownPath), { recursive: true });
+      fs.writeFileSync(watchdogShutdownPath, `${Date.now()}\n`, 'utf8');
+    } catch (error) {}
+  }
+  watchdogProcess = null;
+}
+
+function stopRendererHealthMonitoring() {
+  if (rendererHealthInterval) {
+    clearInterval(rendererHealthInterval);
+    rendererHealthInterval = null;
+  }
+  if (rendererUnresponsiveTimer) {
+    clearTimeout(rendererUnresponsiveTimer);
+    rendererUnresponsiveTimer = null;
+  }
+  if (rendererRecoveryTimer) {
+    clearTimeout(rendererRecoveryTimer);
+    rendererRecoveryTimer = null;
+  }
+}
+
+function restartEntireApplication(reason) {
+  appLogger.log('ERROR', 'Recovery', `${reason} Renderer recovery reached the loop-protection limit; restarting the application.`);
+  stopRendererHealthMonitoring();
+  stopCrashWatchdog();
+  isQuitting = true;
+  try {
+    app.relaunch();
+  } catch (error) {
+    appLogger.log('ERROR', 'Recovery', 'Unable to schedule a full application restart.', error);
+  }
+  app.exit(1);
+}
+
+function recoverRenderer(reason) {
+  if (isQuitting || rendererRecoveryInProgress || !mainWindow || mainWindow.isDestroyed()) return;
+  const now = Date.now();
+  rendererRecoveryHistory = rendererRecoveryHistory.filter((timestamp) => (now - timestamp) < RECOVERY_WINDOW_MS);
+  if (rendererRecoveryHistory.length >= MAX_RENDERER_RECOVERIES) {
+    restartEntireApplication(reason);
+    return;
+  }
+
+  rendererRecoveryHistory.push(now);
+  rendererRecoveryInProgress = true;
+  rendererLastHealthAckAt = now;
+  appLogger.log('WARN', 'Recovery', `${reason} Reloading the dashboard renderer (${rendererRecoveryHistory.length}/${MAX_RENDERER_RECOVERIES}).`);
+  try {
+    mainWindow.webContents.reloadIgnoringCache();
+    rendererRecoveryTimer = setTimeout(() => {
+      rendererRecoveryTimer = null;
+      if (!rendererRecoveryInProgress || isQuitting) return;
+      rendererRecoveryInProgress = false;
+      recoverRenderer('The dashboard recovery reload did not finish within 20 seconds.');
+    }, 20000);
+  } catch (error) {
+    rendererRecoveryInProgress = false;
+    restartEntireApplication(`${reason} Renderer reload failed: ${error.message}`);
+  }
+}
+
+function startRendererHealthMonitoring() {
+  stopRendererHealthMonitoring();
+  rendererLastHealthAckAt = Date.now();
+  rendererLastHealthCheckAt = rendererLastHealthAckAt;
+  rendererHealthInterval = setInterval(() => {
+    if (isQuitting || !mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
+    const now = Date.now();
+    const timerGap = now - rendererLastHealthCheckAt;
+    rendererLastHealthCheckAt = now;
+    if (timerGap > (RENDERER_HEALTH_INTERVAL_MS * 3)) {
+      rendererLastHealthAckAt = now;
+      appLogger.log('INFO', 'Recovery', 'A sleep/resume or heavily delayed main-loop interval was detected; renderer recovery received a fresh grace period.');
+    }
+    if (!mainWindow.webContents.isLoading() && (now - rendererLastHealthAckAt) > RENDERER_HEALTH_TIMEOUT_MS) {
+      recoverRenderer(`The dashboard did not answer health checks for ${Math.round((now - rendererLastHealthAckAt) / 1000)} seconds.`);
+      return;
+    }
+    try {
+      mainWindow.webContents.send('app:health-check', { timestamp: now });
+    } catch (error) {
+      appLogger.log('ERROR', 'Recovery', 'Unable to send the renderer health check.', error);
+    }
+  }, RENDERER_HEALTH_INTERVAL_MS);
+}
+
+process.on('uncaughtExceptionMonitor', (error, origin) => {
+  appLogger.log('FATAL', 'Main', `Uncaught exception (${origin || 'unknown origin'}).`, error);
+});
+
+process.on('unhandledRejection', (reason) => {
+  appLogger.log('ERROR', 'Main', 'Unhandled promise rejection.', reason);
+});
 
 function prepareRendererForShutdown() {
   if (rendererShutdownPrepared) return Promise.resolve({ ok: true, alreadyPrepared: true });
@@ -255,6 +497,7 @@ async function buildSystemDiagnosticReport() {
   const runtime = runtimeSample.runtime;
   const cpus = os.cpus();
   const displays = screen.getAllDisplays();
+  const loggingStatus = appLogger.getStatus();
   let gpuInfo = {};
   try {
     gpuInfo = await app.getGPUInfo('basic');
@@ -271,6 +514,10 @@ async function buildSystemDiagnosticReport() {
     `Packaged build: ${app.isPackaged ? 'Yes' : 'No'}`,
     `Running as administrator: ${isRunningAsAdministrator() ? 'Yes' : 'No'}`,
     `Hardware acceleration enabled: ${enableGpuAcceleration ? 'Yes' : 'No'}`,
+    `External crash watchdog active: ${watchdogProcess ? 'Yes' : 'No'}`,
+    `Renderer health watcher active: ${rendererHealthInterval ? 'Yes' : 'No'}`,
+    `Readable file logging enabled: ${loggingStatus.enabled ? 'Yes' : 'No'}`,
+    `Readable log path: ${loggingStatus.filePath || 'Disabled'}`,
     `Uptime: ${runtime.uptimeSeconds.toFixed(1)} seconds`,
     `Electron processes: ${runtime.processCount}`,
     `Renderer processes: ${runtime.rendererProcessCount}`,
@@ -358,6 +605,7 @@ function runDiagnosticScript(sender, definition) {
     timeout: null
   };
   activeDiagnosticRun = state;
+  appLogger.log('INFO', 'Diagnostics', `Started diagnostic: ${definition.label}.`);
 
   const emitOutput = (stream, rawChunk) => {
     if (state.outputTruncated) return;
@@ -385,6 +633,7 @@ function runDiagnosticScript(sender, definition) {
     if (activeDiagnosticRun === state) activeDiagnosticRun = null;
     const cancelled = state.cancelRequested;
     const success = !cancelled && !state.timedOut && !errorMessage && Number(exitCode) === 0;
+    appLogger.log(success ? 'INFO' : 'WARN', 'Diagnostics', `Diagnostic finished: ${definition.label}; success ${success ? 'yes' : 'no'}; cancelled ${cancelled ? 'yes' : 'no'}; timed out ${state.timedOut ? 'yes' : 'no'}; exit code ${Number.isFinite(Number(exitCode)) ? Number(exitCode) : 'unavailable'}${errorMessage ? `; error ${errorMessage}` : ''}.`);
     sendDiagnosticEvent(sender, 'diagnostics:complete', {
       runId,
       id: definition.id,
@@ -607,6 +856,17 @@ function sendDiscordPresenceStatus(payload) {
   } catch (error) {
     console.error('Failed to send Discord status to renderer:', error);
   }
+}
+
+function getDiscordPresenceStatus() {
+  const enabled = appBehaviorSettings.enableDiscordRichPresence === true;
+  const connected = enabled && discordIpc?.connected === true;
+  const connecting = enabled && !connected && discordConnectPromise !== null;
+  return {
+    enabled,
+    connected: connecting ? null : connected,
+    connecting
+  };
 }
 
 function setupAutoUpdater() {
@@ -912,6 +1172,7 @@ function normalizeBehaviorSettings(settings) {
     autoCheckForUpdates: settings?.autoCheckForUpdates !== false,
     startupDelaySeconds,
     disableGpuAcceleration: settings?.disableGpuAcceleration === true,
+    enableFileLogging: settings?.enableFileLogging === true,
     enableDiscordRichPresence: typeof settings?.enableDiscordRichPresence === 'boolean'
       ? settings.enableDiscordRichPresence
       : true
@@ -1022,8 +1283,14 @@ function scheduleDiscordReconnect() {
 }
 
 function initDiscordRPC() {
-  if (!discordIpc || typeof discordIpc.connect !== 'function') return;
-  if (!appBehaviorSettings.enableDiscordRichPresence) return;
+  if (!discordIpc || typeof discordIpc.connect !== 'function') {
+    sendDiscordPresenceStatus({ enabled: appBehaviorSettings.enableDiscordRichPresence === true, connected: false, connecting: false });
+    return Promise.resolve(false);
+  }
+  if (!appBehaviorSettings.enableDiscordRichPresence) {
+    sendDiscordPresenceStatus({ enabled: false, connected: false, connecting: false });
+    return Promise.resolve(false);
+  }
   if (discordIpc.connected) {
     if (!discordSessionStartedAt) {
       discordSessionStartedAt = Math.floor(Date.now() / 1000);
@@ -1032,16 +1299,27 @@ function initDiscordRPC() {
     if (!discordActivityInterval) {
       discordActivityInterval = setInterval(setDiscordActivity, DISCORD_ACTIVITY_INTERVAL_MS);
     }
-    return;
+    sendDiscordPresenceStatus({ enabled: true, connected: true, connecting: false });
+    return Promise.resolve(true);
   }
 
-  try {
-    discordIpc.connect(DISCORD_CLIENT_ID).then(() => {
-      if (!appBehaviorSettings.enableDiscordRichPresence) return;
+  if (discordConnectPromise) {
+    sendDiscordPresenceStatus({ enabled: true, connected: null, connecting: true });
+    return discordConnectPromise;
+  }
+
+  const connectionGeneration = ++discordConnectionGeneration;
+  sendDiscordPresenceStatus({ enabled: true, connected: null, connecting: true });
+  const connectPromise = Promise.resolve()
+    .then(() => discordIpc.connect(DISCORD_CLIENT_ID))
+    .then(() => {
+      if (connectionGeneration !== discordConnectionGeneration || !appBehaviorSettings.enableDiscordRichPresence) {
+        return false;
+      }
       if (!discordSessionStartedAt) {
         discordSessionStartedAt = Math.floor(Date.now() / 1000);
       }
-      sendDiscordPresenceStatus({ enabled: true, connected: true });
+      sendDiscordPresenceStatus({ enabled: true, connected: true, connecting: false });
       setDiscordActivity();
       if (!discordActivityInterval) {
         discordActivityInterval = setInterval(setDiscordActivity, DISCORD_ACTIVITY_INTERVAL_MS);
@@ -1050,13 +1328,22 @@ function initDiscordRPC() {
         clearInterval(discordReconnectInterval);
         discordReconnectInterval = null;
       }
-    }).catch(() => {
-      sendDiscordPresenceStatus({ enabled: appBehaviorSettings.enableDiscordRichPresence, connected: false });
-      scheduleDiscordReconnect();
+      return true;
+    })
+    .catch(() => {
+      if (connectionGeneration === discordConnectionGeneration) {
+        sendDiscordPresenceStatus({ enabled: appBehaviorSettings.enableDiscordRichPresence, connected: false, connecting: false });
+        scheduleDiscordReconnect();
+      }
+      return false;
+    })
+    .finally(() => {
+      if (connectionGeneration === discordConnectionGeneration) {
+        discordConnectPromise = null;
+      }
     });
-  } catch (error) {
-    scheduleDiscordReconnect();
-  }
+  discordConnectPromise = connectPromise;
+  return connectPromise;
 }
 
 function setDiscordActivity() {
@@ -1118,7 +1405,10 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      backgroundThrottling: true
+      // Sensor collection and fan-control leases must continue when Windows
+      // powers off the display. Renderer animation work still pauses through
+      // document visibility handling in app.js.
+      backgroundThrottling: false
     }
   });
 
@@ -1127,13 +1417,50 @@ function createWindow() {
 
   // Send initial Discord presence status once the window has loaded
   mainWindow.webContents.on('did-finish-load', () => {
-    if (appBehaviorSettings.enableDiscordRichPresence && discordIpc?.connected) {
-      sendDiscordPresenceStatus({ enabled: true, connected: true });
-    } else if (appBehaviorSettings.enableDiscordRichPresence) {
-      sendDiscordPresenceStatus({ enabled: true, connected: false });
-    } else {
-      sendDiscordPresenceStatus({ enabled: false, connected: false });
+    if (rendererRecoveryTimer) {
+      clearTimeout(rendererRecoveryTimer);
+      rendererRecoveryTimer = null;
     }
+    rendererRecoveryInProgress = false;
+    rendererLastHealthAckAt = Date.now();
+    startRendererHealthMonitoring();
+    appLogger.log('INFO', 'Renderer', 'Dashboard renderer finished loading.');
+    sendDiscordPresenceStatus(getDiscordPresenceStatus());
+  });
+
+  mainWindow.webContents.on('console-message', (_event, detailsOrLevel, legacyMessage, legacyLine, legacySourceId) => {
+    if (!appLogger.getStatus().enabled) return;
+    const details = detailsOrLevel && typeof detailsOrLevel === 'object'
+      ? detailsOrLevel
+      : { level: detailsOrLevel, message: legacyMessage, lineNumber: legacyLine, sourceId: legacySourceId };
+    const levels = ['DEBUG', 'INFO', 'WARN', 'ERROR'];
+    const level = levels[Math.max(0, Math.min(levels.length - 1, Number(details.level) || 0))];
+    const location = details.sourceId ? ` (${details.sourceId}:${details.lineNumber || 0})` : '';
+    appLogger.log(level, 'Renderer', `${String(details.message || '')}${location}`);
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_event, details = {}) => {
+    if (isQuitting || details.reason === 'clean-exit') return;
+    appLogger.log('ERROR', 'Renderer', `Renderer process exited unexpectedly (${details.reason || 'unknown'}, code ${details.exitCode ?? 'unknown'}).`);
+    setTimeout(() => recoverRenderer('The dashboard renderer process crashed.'), 750);
+  });
+
+  mainWindow.on('unresponsive', () => {
+    appLogger.log('WARN', 'Renderer', 'The dashboard window became unresponsive.');
+    if (rendererUnresponsiveTimer) clearTimeout(rendererUnresponsiveTimer);
+    rendererUnresponsiveTimer = setTimeout(() => {
+      rendererUnresponsiveTimer = null;
+      recoverRenderer('The dashboard window remained unresponsive for 10 seconds.');
+    }, 10000);
+  });
+
+  mainWindow.on('responsive', () => {
+    if (rendererUnresponsiveTimer) {
+      clearTimeout(rendererUnresponsiveTimer);
+      rendererUnresponsiveTimer = null;
+    }
+    rendererLastHealthAckAt = Date.now();
+    appLogger.log('INFO', 'Renderer', 'The dashboard window became responsive again.');
   });
 
   mainWindow.on('minimize', (event) => {
@@ -1161,6 +1488,7 @@ function createWindow() {
       startupRevealTimer = null;
     }
     stopMonitoringClock();
+    stopRendererHealthMonitoring();
     shutdownOverlaySubsystem();
     mainWindow = null;
   });
@@ -1614,6 +1942,9 @@ app.whenReady().then(async () => {
       console.warn('Unable to install the hardware access driver:', hardwareAccessLastError);
     }
   }
+  configureAppLogger({ startup: true });
+  logRuntimeEnvironment();
+  startCrashWatchdog();
   applyLoginItemSettings();
   syncTrayState();
   createWindow();
@@ -1625,6 +1956,8 @@ app.whenReady().then(async () => {
 app.on('before-quit', (event) => {
   isQuitting = true;
   stopMonitoringClock();
+  stopRendererHealthMonitoring();
+  stopCrashWatchdog();
   shutdownOverlaySubsystem();
   if (!rendererShutdownPrepared && mainWindow && !mainWindow.isDestroyed()) {
     event.preventDefault();
@@ -1649,7 +1982,17 @@ app.on('activate', () => {
   }
 });
 
+app.on('child-process-gone', (_event, details = {}) => {
+  const processType = String(details.type || '').toLowerCase();
+  appLogger.log('ERROR', 'Electron', `${details.type || 'Child'} process exited (${details.reason || 'unknown'}, code ${details.exitCode ?? 'unknown'}).`);
+  if (!isQuitting && processType === 'gpu' && details.reason !== 'clean-exit') {
+    setTimeout(() => recoverRenderer('The Chromium GPU process stopped unexpectedly.'), 1500);
+  }
+});
+
 app.on('will-quit', () => {
+  stopRendererHealthMonitoring();
+  stopCrashWatchdog();
   shutdownOverlaySubsystem();
   if (activeDiagnosticRun && activeDiagnosticRun.child) {
     activeDiagnosticRun.cancelRequested = true;
@@ -1660,6 +2003,7 @@ app.on('will-quit', () => {
     try { discordIpc.clearActivity(); } catch (e) { /* ignore */ }
     try { discordIpc.disconnect(); } catch (e) { /* ignore */ }
   }
+  appLogger.log('INFO', 'Main', 'SiR System Monitor completed a normal shutdown.');
 });
 
 ipcMain.handle('app:restart-elevated', async (_event, options = {}) => {
@@ -1723,15 +2067,19 @@ ipcMain.handle('diagnostics:run', async (event, diagnosticId) => {
     return { ok: false, error: `A diagnostic is already running: ${activeDiagnosticRun.label}` };
   }
   if (definition.kind === 'system') {
+    appLogger.log('INFO', 'Diagnostics', `Started diagnostic: ${definition.label}.`);
     try {
+      const output = await buildSystemDiagnosticReport();
+      appLogger.log('INFO', 'Diagnostics', `Diagnostic finished: ${definition.label}; success yes.`);
       return {
         ok: true,
         immediate: true,
         id: definition.id,
         label: definition.label,
-        output: await buildSystemDiagnosticReport()
+        output
       };
     } catch (error) {
+      appLogger.log('ERROR', 'Diagnostics', `Diagnostic failed: ${definition.label}.`, error);
       return { ok: false, error: `Unable to build the system report: ${error.message}` };
     }
   }
@@ -1753,6 +2101,7 @@ ipcMain.handle('diagnostics:cancel', (_event, runId) => {
 
 ipcMain.handle('diagnostics:create-support-bundle', async (_event, rendererPayload = {}) => {
   try {
+    appLogger.log('INFO', 'Support Bundle', 'Preparing a privacy-scrubbed support bundle.');
     const rawPayload = JSON.stringify(rendererPayload || {});
     if (Buffer.byteLength(rawPayload, 'utf8') > 4 * 1024 * 1024) {
       return { ok: false, error: 'The support bundle data exceeds the 4 MB safety limit.' };
@@ -1764,6 +2113,9 @@ ipcMain.handle('diagnostics:create-support-bundle', async (_event, rendererPaylo
     };
     const generatedAt = new Date();
     const systemReport = sanitizeSupportText(await buildSystemDiagnosticReport(), identity);
+    const readableLog = appLogger.getStatus().enabled
+      ? sanitizeSupportText(appLogger.readTail(512 * 1024), identity)
+      : '';
     const sanitizedPayload = sanitizeSupportValue(JSON.parse(rawPayload), identity);
     const manifest = {
       formatVersion: 1,
@@ -1776,6 +2128,7 @@ ipcMain.handle('diagnostics:create-support-bundle', async (_event, rendererPaylo
       },
       files: ['manifest.json', 'system-report.txt', 'diagnostics.txt', 'settings.json', 'sensor-catalog.json', 'runtime.json']
     };
+    if (readableLog.trim()) manifest.files.push('logs.txt');
     const files = {
       'manifest.json': `${JSON.stringify(manifest, null, 2)}\n`,
       'system-report.txt': `${systemReport.trim()}\n`,
@@ -1784,6 +2137,7 @@ ipcMain.handle('diagnostics:create-support-bundle', async (_event, rendererPaylo
       'sensor-catalog.json': `${JSON.stringify(sanitizedPayload.sensorCatalog || {}, null, 2)}\n`,
       'runtime.json': `${JSON.stringify(sanitizedPayload.runtime || {}, null, 2)}\n`
     };
+    if (readableLog.trim()) files['logs.txt'] = `${readableLog.trim()}\n`;
     const archive = createSupportZip(files, generatedAt);
     const stamp = generatedAt.toISOString().replace(/[:.]/g, '-');
     const saveOptions = {
@@ -1797,16 +2151,69 @@ ipcMain.handle('diagnostics:create-support-bundle', async (_event, rendererPaylo
     const saveResult = ownerWindow
       ? await dialog.showSaveDialog(ownerWindow, saveOptions)
       : await dialog.showSaveDialog(saveOptions);
-    if (saveResult.canceled || !saveResult.filePath) return { ok: false, canceled: true };
+    if (saveResult.canceled || !saveResult.filePath) {
+      appLogger.log('INFO', 'Support Bundle', 'Support bundle save was cancelled.');
+      return { ok: false, canceled: true };
+    }
     await fs.promises.writeFile(saveResult.filePath, archive);
+    appLogger.log('INFO', 'Support Bundle', `Support bundle created (${archive.length} bytes): ${saveResult.filePath}`);
     return { ok: true, filePath: saveResult.filePath, bytes: archive.length };
   } catch (error) {
+    appLogger.log('ERROR', 'Support Bundle', 'Unable to create the support bundle.', error);
     return { ok: false, error: `Unable to create the support bundle: ${error.message}` };
   }
 });
 
 ipcMain.handle('app-behavior:get', () => {
   return appBehaviorSettings;
+});
+
+ipcMain.handle('discord-presence:get-status', () => getDiscordPresenceStatus());
+
+ipcMain.on('app:health-ack', (event) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return;
+  rendererLastHealthAckAt = Date.now();
+});
+
+ipcMain.on('logging:renderer-event', (event, payload = {}) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return;
+  const level = String(payload.level || 'ERROR').toUpperCase();
+  const message = String(payload.message || '').slice(0, 8000);
+  const detail = String(payload.detail || '').slice(0, 16000);
+  appLogger.log(level, 'Renderer', message, detail || null);
+});
+
+ipcMain.on('logging:activity', (event, payload = {}) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return;
+  const allowedLevels = new Set(['DEBUG', 'INFO', 'WARN', 'ERROR']);
+  const requestedLevel = String(payload.level || 'INFO').toUpperCase();
+  const level = allowedLevels.has(requestedLevel) ? requestedLevel : 'INFO';
+  const source = String(payload.source || 'Renderer').replace(/[^A-Za-z0-9 ._-]/g, '').trim().slice(0, 48) || 'Renderer';
+  const message = String(payload.message || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 6000);
+  if (message) appLogger.log(level, source, message);
+});
+
+ipcMain.handle('logging:get-status', () => appLogger.getStatus());
+
+ipcMain.handle('logging:open-folder', async () => {
+  const status = appLogger.getStatus();
+  if (!status.enabled || !status.directory) return { ok: false, error: 'Enable readable file logging first.' };
+  try {
+    fs.mkdirSync(status.directory, { recursive: true });
+    const error = await shell.openPath(status.directory);
+    return error ? { ok: false, error } : { ok: true, ...status };
+  } catch (error) {
+    return { ok: false, error: `Unable to open the log folder: ${error.message}` };
+  }
+});
+
+ipcMain.handle('logging:clear', () => {
+  try {
+    const cleared = appLogger.clear();
+    return cleared ? { ok: true, ...appLogger.getStatus() } : { ok: false, error: 'Enable readable file logging first.' };
+  } catch (error) {
+    return { ok: false, error: `Unable to clear the log file: ${error.message}` };
+  }
 });
 
 ipcMain.handle('app:is-elevated', () => isRunningAsAdministrator());
@@ -1855,11 +2262,28 @@ ipcMain.handle('performance:clear-cache', async (event) => {
 });
 
 ipcMain.handle('app-behavior:set', (_event, nextSettings) => {
+  const loggingWasEnabled = appBehaviorSettings.enableFileLogging === true;
+  const previousSettings = { ...appBehaviorSettings };
   const merged = {
     ...appBehaviorSettings,
     ...normalizeBehaviorSettings(nextSettings)
   };
   const saved = saveBehaviorSettings(merged);
+  if (saved.enableFileLogging !== loggingWasEnabled) {
+    if (saved.enableFileLogging) {
+      configureAppLogger({ startup: false });
+      logRuntimeEnvironment();
+    } else {
+      appLogger.log('INFO', 'Logger', 'Readable file logging disabled by the user.');
+      appLogger.setEnabled(false);
+    }
+  }
+  const changedSettings = Object.keys(DEFAULT_APP_BEHAVIOR_SETTINGS)
+    .filter((key) => previousSettings[key] !== saved[key])
+    .map((key) => `${key}=${JSON.stringify(saved[key])}`);
+  if (changedSettings.length) {
+    appLogger.log('INFO', 'Settings', `Application behavior changed: ${changedSettings.join(', ')}.`);
+  }
   applyLoginItemSettings();
   syncTrayState();
   // Start/stop Discord Rich Presence based on the saved setting
@@ -1868,8 +2292,10 @@ ipcMain.handle('app-behavior:set', (_event, nextSettings) => {
       initDiscordRPC();
     } else {
       clearDiscordIntervals();
+      discordConnectionGeneration += 1;
+      discordConnectPromise = null;
       discordSessionStartedAt = 0;
-      sendDiscordPresenceStatus({ enabled: false, connected: false });
+      sendDiscordPresenceStatus({ enabled: false, connected: false, connecting: false });
       if (discordIpc) {
         try { discordIpc.clearActivity(); } catch (e) { /* ignore */ }
         try { discordIpc.disconnect(); } catch (e) { /* ignore */ }

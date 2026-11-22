@@ -295,6 +295,102 @@ const SENSOR_GROUP_LABELS = {
   app: 'App',
   other: 'Other'
 };
+const readableActivityState = new Map();
+
+function logReadableActivity(source, message, options = {}) {
+  if (!ipcRenderer || typeof ipcRenderer.send !== 'function') return;
+  const normalizedSource = String(source || 'Renderer').trim().slice(0, 48) || 'Renderer';
+  const normalizedMessage = String(message || '').replace(/\s+/g, ' ').trim().slice(0, 6000);
+  if (!normalizedMessage) return;
+  const level = ['DEBUG', 'INFO', 'WARN', 'ERROR'].includes(String(options.level || '').toUpperCase())
+    ? String(options.level).toUpperCase()
+    : 'INFO';
+  const key = String(options.key || `${normalizedSource}:${normalizedMessage}`).slice(0, 256);
+  const signature = `${level}:${normalizedMessage}`;
+  const now = Date.now();
+  const previous = readableActivityState.get(key);
+  const minimumIntervalMs = Math.max(0, Number(options.minimumIntervalMs) || 0);
+  if (options.force !== true && previous?.signature === signature) return;
+  if (options.force !== true && previous && minimumIntervalMs > 0 && (now - previous.at) < minimumIntervalMs) return;
+  readableActivityState.set(key, { signature, at: now });
+  ipcRenderer.send('logging:activity', { level, source: normalizedSource, message: normalizedMessage });
+}
+
+function resetReadableActivityState() {
+  readableActivityState.clear();
+}
+
+function logSensorRuntimeStatus(data, providerSelection, readDurationMs) {
+  const diagnostics = data?.external?.diagnostics || null;
+  const groupedSensors = data?.external?.groupedSensors || {};
+  const providerNames = Object.entries(providerSelection || {})
+    .filter(([, enabled]) => enabled === true)
+    .map(([name]) => name)
+    .join(', ') || 'none';
+
+  if (!data) {
+    logReadableActivity('Sensors', `No sensor snapshot was returned. Enabled providers: ${providerNames}.`, {
+      level: 'WARN',
+      key: 'sensor-runtime-state'
+    });
+    return;
+  }
+
+  const counts = SENSOR_GROUP_ORDER
+    .filter((group) => group !== 'app')
+    .map((group) => [SENSOR_GROUP_LABELS[group] || group, Array.isArray(groupedSensors[group]) ? groupedSensors[group].length : 0]);
+  const total = counts.reduce((sum, entry) => sum + entry[1], 0);
+  const nonEmptyCounts = counts.filter((entry) => entry[1] > 0).map((entry) => `${entry[0]} ${entry[1]}`).join(', ') || 'none';
+  const standardCount = Number(diagnostics?.standardSensorCount) || 0;
+  const enhancedCount = Number(diagnostics?.enhancedSensorCount) || 0;
+  const enhancedState = diagnostics?.enhancedInitializing === true
+    ? 'discovering'
+    : diagnostics?.enhancedAvailable === true
+      ? 'ready'
+      : providerSelection?.enhanced === true
+        ? 'unavailable'
+        : 'disabled';
+  const phaseState = providerSelection?.enhanced === true
+    ? ` Phases: processor ${diagnostics?.enhancedProcessorAvailable === true ? 'ready' : 'pending'}, graphics ${diagnostics?.enhancedGraphicsAvailable === true ? 'ready' : 'pending'}, board ${diagnostics?.enhancedBoardAvailable === true ? 'ready' : 'pending'}, peripherals ${diagnostics?.enhancedPeripheralAvailable === true ? 'ready' : 'pending'}.`
+    : '';
+  const recoveryState = diagnostics?.recovering === true
+    ? ' The last valid snapshot is being retained while the collector recovers.'
+    : '';
+  const warning = String(diagnostics?.warning || '').trim();
+  const message = `Collector ${enhancedState}; providers ${providerNames}; ${standardCount} standard + ${enhancedCount} enhanced; ${total} grouped sensors (${nonEmptyCounts}).${phaseState}${recoveryState}${warning ? ` Warning: ${warning}` : ''}`;
+  logReadableActivity('Sensors', message, {
+    level: diagnostics?.recovering === true || warning ? 'WARN' : 'INFO',
+    key: 'sensor-runtime-state'
+  });
+
+  if (Number(readDurationMs) >= 5000) {
+    logReadableActivity('Performance', `Slow sensor read detected: ${Math.round(Number(readDurationMs))} ms.`, {
+      level: 'WARN',
+      key: 'slow-sensor-read',
+      minimumIntervalMs: 60000
+    });
+  }
+
+  if (diagnostics) {
+    const fpsState = String(diagnostics.nativeFpsError || '').trim()
+      ? `error: ${String(diagnostics.nativeFpsError).trim()}`
+      : String(diagnostics.nativeFpsApplication || '').trim()
+        ? `capturing ${String(diagnostics.nativeFpsApplication).trim()} (PID ${Number(diagnostics.nativeFpsProcessId) || 0})`
+        : diagnostics.nativeFpsRunning === true
+          ? 'ready; waiting for a foreground 3D application'
+          : diagnostics.nativeFpsAvailable === true
+            ? 'starting'
+            : 'unavailable';
+    const method = [diagnostics.nativeFpsGpuVendor, diagnostics.nativeFpsCaptureMethod].filter(Boolean).join(', ');
+    const frameGeneration = diagnostics.nativeFrameGenerationActive === true
+      ? ` Frame generation active: ${diagnostics.nativeFrameGenerationMethod || 'detected'}.`
+      : '';
+    logReadableActivity('FPS', `PresentMon ${fpsState}${method ? ` (${method})` : ''}.${frameGeneration}`, {
+      level: String(diagnostics.nativeFpsError || '').trim() ? 'WARN' : 'INFO',
+      key: 'fps-runtime-state'
+    });
+  }
+}
 const SENSOR_GROUP_ICONS = {
   cpu: 'bi-cpu-fill',
   gpu: 'bi-gpu-card',
@@ -652,6 +748,7 @@ const DEFAULT_APP_BEHAVIOR_SETTINGS = {
   autoCheckForUpdates: true,
   startupDelaySeconds: 0,
   disableGpuAcceleration: false,
+  enableFileLogging: false,
   enableDiscordRichPresence: true
 };
 
@@ -737,6 +834,7 @@ function normalizeAppBehaviorSettings(input) {
     autoCheckForUpdates: input?.autoCheckForUpdates !== false,
     startupDelaySeconds,
     disableGpuAcceleration: input?.disableGpuAcceleration === true,
+    enableFileLogging: input?.enableFileLogging === true,
     enableDiscordRichPresence: typeof input?.enableDiscordRichPresence === 'boolean'
       ? input.enableDiscordRichPresence
       : true
@@ -2088,6 +2186,7 @@ function stopWebMonitorServer() {
       webMonitorRuntime.error = '';
       webMonitorRuntime.urls = [];
       refreshWebMonitorStatusUi();
+      logReadableActivity('Web Monitor', 'Web service is stopped.', { key: 'web-monitor-state' });
       resolve();
       return;
     }
@@ -2102,6 +2201,7 @@ function stopWebMonitorServer() {
       webMonitorRuntime.error = '';
       webMonitorRuntime.urls = [];
       refreshWebMonitorStatusUi();
+      logReadableActivity('Web Monitor', 'Web service stopped.', { key: 'web-monitor-state' });
       resolve();
     };
 
@@ -2221,6 +2321,10 @@ async function startWebMonitorServer(settingsInput) {
       webMonitorRuntime.error = err && err.message ? err.message : 'Unknown server error';
       webMonitorRuntime.urls = [];
       refreshWebMonitorStatusUi();
+      logReadableActivity('Web Monitor', `Web service failed: ${webMonitorRuntime.error}.`, {
+        level: 'ERROR',
+        key: 'web-monitor-state'
+      });
       resolve(false);
     });
 
@@ -2239,6 +2343,9 @@ async function startWebMonitorServer(settingsInput) {
       webMonitorRuntime.port = settings.port;
       webMonitorRuntime.urls = getWebMonitorUrls(settings.host, settings.port);
       refreshWebMonitorStatusUi();
+      logReadableActivity('Web Monitor', `Web service started on ${settings.host}:${settings.port}; authentication ${settings.requireAuth ? 'required' : 'disabled'}; API-only mode ${settings.readOnlyApiMode ? 'on' : 'off'}.`, {
+        key: 'web-monitor-state'
+      });
       resolve(true);
     });
   });
@@ -2788,6 +2895,7 @@ function buildFanControlHostConfiguration() {
   const providers = loadProviderSelection();
   return {
     enabled: fanControlSettings.enabled === true && providers.enhanced === true,
+    lowRpmSafetyEnabled: fanControlSettings.lowRpmSafetyEnabled !== false,
     channels: Object.entries(fanControlSettings.channels || {}).map(([controlId, value]) => {
       const channel = normalizeFanChannel(value);
       const effectiveChannel = channel.mode === 'global'
@@ -2804,7 +2912,16 @@ function buildFanControlHostConfiguration() {
 
 function syncFanControlRuntime() {
   if (!sensorReader || typeof sensorReader.setFanControlConfiguration !== 'function') return;
-  sensorReader.setFanControlConfiguration(buildFanControlHostConfiguration());
+  const configuration = buildFanControlHostConfiguration();
+  sensorReader.setFanControlConfiguration(configuration);
+
+  const configuredChannels = Array.isArray(configuration.channels) ? configuration.channels : [];
+  const softwareControlledChannels = configuredChannels.filter((channel) => channel.mode !== 'auto').length;
+  logReadableActivity(
+    'Fan Control',
+    `Fan control ${configuration.enabled ? 'enabled' : 'disabled'}; ${configuredChannels.length} configured channel${configuredChannels.length === 1 ? '' : 's'}, ${softwareControlledChannels} under software control.`,
+    { key: 'fan-control-state' }
+  );
 }
 
 function scheduleFanControlRuntimeApply() {
@@ -3120,8 +3237,10 @@ function updateFanControlRuntimeLabels() {
 function renderFanControlSettings(force = false) {
   const container = document.getElementById('fanControlChannels');
   const enabledToggle = document.getElementById('fanControlEnabled');
+  const lowRpmSafetyToggle = document.getElementById('fanControlLowRpmSafetyEnabled');
   if (!container || !enabledToggle) return;
   if (!fanControlEnableRequestPending) enabledToggle.checked = fanControlSettings.enabled === true;
+  if (lowRpmSafetyToggle) lowRpmSafetyToggle.checked = fanControlSettings.lowRpmSafetyEnabled !== false;
   if (!force && (fanCurveDragState || (container.contains(document.activeElement) && document.activeElement?.matches('input, select')))) {
     updateFanControlRuntimeLabels();
     return;
@@ -3177,11 +3296,19 @@ function initializeFanControlSettings() {
   fanControlSettings = loadFanControlSettings();
   syncFanControlRuntime();
   const enabledToggle = document.getElementById('fanControlEnabled');
+  const lowRpmSafetyToggle = document.getElementById('fanControlLowRpmSafetyEnabled');
   const restoreButton = document.getElementById('fanControlRestoreAllBtn');
   const container = document.getElementById('fanControlChannels');
   if (!enabledToggle || !container || container.dataset.initialized === 'true') return;
   container.dataset.initialized = 'true';
   enabledToggle.checked = fanControlSettings.enabled === true;
+  if (lowRpmSafetyToggle) lowRpmSafetyToggle.checked = fanControlSettings.lowRpmSafetyEnabled !== false;
+
+  lowRpmSafetyToggle?.addEventListener('change', () => {
+    fanControlSettings.lowRpmSafetyEnabled = lowRpmSafetyToggle.checked === true;
+    saveFanControlSettings();
+    renderFanControlSettings(true);
+  });
 
   enabledToggle.addEventListener('change', async () => {
     const requestedEnabled = enabledToggle.checked === true;
@@ -3206,7 +3333,7 @@ function initializeFanControlSettings() {
           confirmLabel: 'Enable Fan Control',
           cancelLabel: 'Cancel',
           detailIcon: 'bi-shield-exclamation',
-          detail: 'Missing temperature data, a stalled fan, or an emergency temperature forces 100%. Closing SiR normally, disabling this feature, or losing the app heartbeat returns claimed channels to BIOS control.'
+          detail: 'Missing temperature data or an emergency temperature forces 100%. The optional low-RPM recovery pulse can also request 100% when enabled. Closing SiR normally, disabling this feature, or losing the app heartbeat returns claimed channels to BIOS control.'
         }
       );
       if (!accepted) {
@@ -3555,6 +3682,21 @@ function loadProviderSelection() {
 
 function saveProviderSelection(selection) {
   localStorage.setItem(PROVIDER_SELECTION_KEY, JSON.stringify(selection));
+  const providerLabels = [
+    ['builtin', 'Built-in'],
+    ['enhanced', 'Enhanced hardware'],
+    ['rtss', 'RTSS'],
+    ['aida64', 'AIDA64'],
+    ['hwinfo', 'HWiNFO']
+  ];
+  const enabledProviders = providerLabels
+    .filter(([key]) => selection?.[key] === true)
+    .map(([, label]) => label);
+  logReadableActivity(
+    'Sensors',
+    `Sensor sources changed: ${enabledProviders.length ? enabledProviders.join(', ') : 'none enabled'}.`,
+    { key: 'provider-selection' }
+  );
 }
 
 function showEnhancedSensorsConfirmation() {
@@ -4395,6 +4537,10 @@ function prepareSensorCollectorForShutdown() {
 }
 
 if (ipcRenderer && typeof ipcRenderer.on === 'function') {
+  ipcRenderer.on('app:health-check', () => {
+    ipcRenderer.send('app:health-ack', { timestamp: Date.now() });
+  });
+
   ipcRenderer.on('app:prepare-shutdown', async (_event, payload = {}) => {
     let error = '';
     try {
@@ -4409,6 +4555,25 @@ if (ipcRenderer && typeof ipcRenderer.on === 'function') {
     });
   });
 }
+
+window.addEventListener('error', (event) => {
+  if (!ipcRenderer || typeof ipcRenderer.send !== 'function') return;
+  ipcRenderer.send('logging:renderer-event', {
+    level: 'ERROR',
+    message: event.message || 'Unhandled renderer error.',
+    detail: event.error?.stack || `${event.filename || 'unknown'}:${event.lineno || 0}:${event.colno || 0}`
+  });
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  if (!ipcRenderer || typeof ipcRenderer.send !== 'function') return;
+  const reason = event.reason;
+  ipcRenderer.send('logging:renderer-event', {
+    level: 'ERROR',
+    message: 'Unhandled renderer promise rejection.',
+    detail: reason?.stack || reason?.message || String(reason || '')
+  });
+});
 
 function closeImportSettingsModal() {
   setImportSettingsModalVisible(false);
@@ -4549,6 +4714,10 @@ async function applyImportedSettingsNow() {
   } catch (e) {}
 
   await persistCrossProcessSettingsFromSnapshot(parsed);
+  logReadableActivity('Settings', `Imported settings were applied without a reload (${Object.keys(parsed || {}).length} saved fields).`, {
+    key: 'settings-import',
+    force: true
+  });
   closeImportSettingsModal();
 }
 
@@ -4570,6 +4739,10 @@ async function applyImportedSettingsAndReload() {
     } catch (e) {}
   });
   await persistCrossProcessSettingsFromSnapshot(parsed);
+  logReadableActivity('Settings', `Imported settings were applied and the dashboard is reloading (${Object.keys(parsed || {}).length} saved fields).`, {
+    key: 'settings-import',
+    force: true
+  });
   await prepareSensorCollectorForReload();
   location.reload();
 }
@@ -5039,19 +5212,25 @@ function setupSidebarResize() {
   });
 }
 
-function applyWindowSizes() {
-  const sizes = loadWindowSizes();
-  const layoutPresetId = getSelectedLayoutPreset();
-  const layoutPreset = getActiveLayoutConfig(layoutPresetId);
-  const isCustomLayout = layoutPresetId === 'custom';
+function applyWindowSizes(mode = getCurrentLayoutMode()) {
+  const normalizedMode = normalizeLayoutMode(mode);
   const container = document.getElementById('statsContainer');
-  const containerStyles = container ? getComputedStyle(container) : null;
+  // Never derive or persist card spans from a dashboard hidden behind another
+  // workspace. A hidden grid reports zero width and previously overwrote valid
+  // custom sizes while moving between Fan Control and Summary Mode.
+  if (!container || container.hidden || container.clientWidth < 1) return;
+
+  const sizes = loadWindowSizes(normalizedMode);
+  const layoutPresetId = getSelectedLayoutPreset(normalizedMode);
+  const layoutPreset = getActiveLayoutConfig(layoutPresetId, normalizedMode);
+  const isCustomLayout = layoutPresetId === 'custom';
+  const containerStyles = getComputedStyle(container);
   const measuredColumns = containerStyles
     ? Math.max(1, containerStyles.gridTemplateColumns.split(' ').filter((track) => (parseFloat(track) || 0) > 1).length)
     : 1;
   const columns = isCustomLayout ? CUSTOM_LAYOUT_COLUMNS : measuredColumns;
   const gap = containerStyles ? (parseFloat(containerStyles.columnGap || containerStyles.gap || '14') || 14) : 14;
-  const containerWidth = container ? container.clientWidth : window.innerWidth;
+  const containerWidth = container.clientWidth;
   const columnWidth = Math.max(isCustomLayout ? 1 : 120, (containerWidth - (gap * (columns - 1))) / columns);
   const minCardWidthPx = layoutPreset.minCardWidth;
   const minSpan = Math.max(1, Math.ceil((minCardWidthPx + gap) / (columnWidth + gap)));
@@ -5059,7 +5238,7 @@ function applyWindowSizes() {
   const defaultSpan = Math.max(minSpan, Math.ceil((defaultCardWidthPx + gap) / (columnWidth + gap)));
   let changed = false;
 
-  const cards = document.querySelectorAll('.sensor-group');
+  const cards = container.querySelectorAll('.sensor-group');
   cards.forEach((card) => {
     const savedEntry = sizes[card.id];
     const savedHeight = Number(typeof savedEntry === 'object' ? savedEntry.height : savedEntry);
@@ -5116,7 +5295,7 @@ function applyWindowSizes() {
     card.style.removeProperty('justify-self');
   });
 
-  if (changed) saveWindowSizes(sizes);
+  if (changed) saveWindowSizes(sizes, normalizedMode);
 }
 
 function setupWindowResize() {
@@ -5143,6 +5322,7 @@ function setupWindowResize() {
       event.preventDefault();
       event.stopPropagation();
 
+      const resizeLayoutMode = getCurrentLayoutMode();
       const container = document.getElementById('statsContainer');
       const containerStyles = container ? getComputedStyle(container) : null;
       const columns = containerStyles
@@ -5150,11 +5330,11 @@ function setupWindowResize() {
         : 1;
       const gap = containerStyles ? (parseFloat(containerStyles.columnGap || containerStyles.gap || '14') || 14) : 14;
       const containerWidth = container ? container.clientWidth : card.getBoundingClientRect().width;
-      const layoutPresetId = getSelectedLayoutPreset();
+      const layoutPresetId = getSelectedLayoutPreset(resizeLayoutMode);
       const isCustomLayout = layoutPresetId === 'custom';
       const effectiveColumns = isCustomLayout ? CUSTOM_LAYOUT_COLUMNS : columns;
       const columnWidth = Math.max(isCustomLayout ? 1 : 120, (containerWidth - (gap * (effectiveColumns - 1))) / effectiveColumns);
-      const layoutPreset = getActiveLayoutConfig(layoutPresetId);
+      const layoutPreset = getActiveLayoutConfig(layoutPresetId, resizeLayoutMode);
       const minCardWidthPx = layoutPreset.minCardWidth;
       const minSpan = Math.max(1, Math.ceil((minCardWidthPx + gap) / (columnWidth + gap)));
 
@@ -5197,13 +5377,13 @@ function setupWindowResize() {
         const finalHeight = snapToStep(card.getBoundingClientRect().height, heightSnap, minHeight, maxHeight);
         const finalSpanMatch = (card.style.gridColumn || '').match(/span\s+(\d+)/i);
         const finalSpan = finalSpanMatch ? Math.max(minSpan, parseInt(finalSpanMatch[1], 10)) : minSpan;
-        const sizeMap = loadWindowSizes();
+        const sizeMap = loadWindowSizes(resizeLayoutMode);
         sizeMap[card.id] = {
           height: finalHeight,
           span: finalSpan,
           width: Math.round(card.getBoundingClientRect().width)
         };
-        saveWindowSizes(sizeMap);
+        saveWindowSizes(sizeMap, resizeLayoutMode);
       };
 
       document.addEventListener('mousemove', onMove);
@@ -5212,13 +5392,14 @@ function setupWindowResize() {
   });
 }
 
-function applyWindowOrder() {
+function applyWindowOrder(mode = getCurrentLayoutMode()) {
+  const normalizedMode = normalizeLayoutMode(mode);
   const container = document.getElementById('statsContainer');
   if (!container) return;
 
   const cards = Array.from(container.querySelectorAll('.sensor-group'));
   const cardById = new Map(cards.map((card) => [card.id, card]));
-  const savedOrder = loadWindowOrder();
+  const savedOrder = loadWindowOrder(normalizedMode);
   const validSavedOrder = savedOrder.filter((id) => cardById.has(id));
   const missing = cards.map((card) => card.id).filter((id) => !validSavedOrder.includes(id));
   const finalOrder = [...validSavedOrder, ...missing];
@@ -5228,7 +5409,7 @@ function applyWindowOrder() {
     if (card) container.appendChild(card);
   });
 
-  saveWindowOrder(finalOrder);
+  saveWindowOrder(finalOrder, normalizedMode);
 }
 
 function reorderCardIdsForDrop(allIds, sourceId, targetId, before = true) {
@@ -6144,6 +6325,7 @@ function sendOverlayPayload(payload) {
 function refreshOverlayWindowState(enabled) {
   if (!ipcRenderer || typeof ipcRenderer.invoke !== 'function') return;
   ipcRenderer.invoke('overlay:set-enabled', !!enabled).then(() => {
+    logReadableActivity('Overlay', `On-screen overlay ${enabled ? 'enabled' : 'disabled'}.`, { key: 'overlay-state' });
     const dragUnlock = normalizeOverlayDragUnlock(localStorage.getItem(OVERLAY_DRAG_UNLOCK_KEY));
     ipcRenderer.invoke('overlay:set-drag-enabled', dragUnlock).catch(() => {});
   }).catch(() => {});
@@ -6248,7 +6430,7 @@ function applyLayoutPreset(presetId, options = {}) {
     document.body.classList.toggle('layout-stacked', preset.stacked === true);
     document.body.classList.toggle('layout-custom', normalized === 'custom');
 
-    applyWindowSizes();
+    applyWindowSizes(mode);
     invalidateRenderGroupCache();
     forceNextUiRender = true;
   }
@@ -6447,6 +6629,13 @@ function applyFanControlView(enabled, options = {}) {
   const workspace = document.getElementById('fanControlView');
   const dashboard = document.getElementById('statsContainer');
   const button = document.getElementById('fanControlViewBtn');
+  if (nextEnabled && changed && dashboard && !dashboard.hidden) {
+    const activeLayoutMode = getCurrentLayoutMode();
+    const currentOrder = Array.from(dashboard.querySelectorAll('.sensor-group'))
+      .map((card) => card.id)
+      .filter(Boolean);
+    saveWindowOrder(currentOrder, activeLayoutMode);
+  }
   if (workspace) workspace.hidden = !fanControlViewEnabled;
   if (dashboard) dashboard.hidden = fanControlViewEnabled;
   if (button) {
@@ -6459,6 +6648,14 @@ function applyFanControlView(enabled, options = {}) {
 
   if (fanControlViewEnabled) {
     renderFanControlSettings(true);
+  } else if (changed) {
+    const activeLayoutMode = getCurrentLayoutMode();
+    applyWindowOrder(activeLayoutMode);
+    applyLayoutPreset(getSelectedLayoutPreset(activeLayoutMode), {
+      mode: activeLayoutMode,
+      persist: false,
+      resetCustomSizes: false
+    });
   }
   if (changed && options.animate !== false) {
     triggerFanControlViewTransition(fanControlViewEnabled);
@@ -6488,8 +6685,8 @@ function applySummaryMode(enabled, options = {}) {
     applyDebugMode(false);
   }
 
-  applyWindowOrder();
   const activeLayoutMode = getCurrentLayoutMode();
+  applyWindowOrder(activeLayoutMode);
   applyLayoutPreset(getSelectedLayoutPreset(activeLayoutMode), {
     mode: activeLayoutMode,
     persist: false,
@@ -8698,6 +8895,10 @@ const SettingsManager = {
           a.click();
           a.remove();
           URL.revokeObjectURL(url);
+          logReadableActivity('Settings', `Settings exported successfully (${Object.keys(payload || {}).length} saved fields).`, {
+            key: 'settings-export',
+            force: true
+          });
         } catch (error) {
           console.error('Export failed', error);
           alert('Failed to export settings: ' + (error && error.message ? error.message : String(error)));
@@ -8738,6 +8939,10 @@ const SettingsManager = {
                   body.innerHTML = `<div class="setup-guide-highlight">Settings file loaded. Choose an action below to apply the imported settings.</div>`;
                 }
                 setImportSettingsModalVisible(true);
+                logReadableActivity('Settings', `A settings file was loaded for review (${Object.keys(data || {}).length} saved fields).`, {
+                  key: 'settings-import-loaded',
+                  force: true
+                });
               } else {
                 // fallback: apply immediately and prompt reload
                 Object.keys(data || {}).forEach((k) => {
@@ -8934,6 +9139,10 @@ const SettingsManager = {
           localStorage.setItem(ACTIVE_SETTINGS_PROFILE_KEY, name);
           renderSettingsProfiles();
           if (settingsProfileSelect) settingsProfileSelect.value = name;
+          logReadableActivity('Profiles', `Settings profile saved. Total profiles: ${Object.keys(profiles).length}.`, {
+            key: 'profile-save',
+            force: true
+          });
           await showThemedMessage('Profile Saved', `Profile "${name}" was saved successfully.`, {
             icon: 'bi-check-circle-fill',
             tone: 'success',
@@ -8987,6 +9196,10 @@ const SettingsManager = {
 
         if (settingsSnapshotMatchesCurrent(profileSnapshot)) {
           localStorage.setItem(ACTIVE_SETTINGS_PROFILE_KEY, selected);
+          logReadableActivity('Profiles', 'Selected settings profile already matches the active configuration.', {
+            key: 'profile-apply',
+            force: true
+          });
           return;
         }
 
@@ -9002,6 +9215,10 @@ const SettingsManager = {
         });
         await persistCrossProcessSettingsFromSnapshot(profileSnapshot);
         localStorage.setItem(ACTIVE_SETTINGS_PROFILE_KEY, selected);
+        logReadableActivity('Profiles', 'Settings profile applied; the dashboard is reloading.', {
+          key: 'profile-apply',
+          force: true
+        });
         await prepareSensorCollectorForReload();
         location.reload();
       });
@@ -9052,6 +9269,7 @@ const SettingsManager = {
         localStorage.setItem(ACTIVE_SETTINGS_PROFILE_KEY, nextName);
         renderSettingsProfiles();
         if (settingsProfileNameInput) settingsProfileNameInput.value = nextName;
+        logReadableActivity('Profiles', 'Settings profile renamed.', { key: 'profile-rename', force: true });
         await showThemedMessage('Profile Renamed', `Profile renamed to "${nextName}".`, {
           icon: 'bi-check-circle-fill',
           tone: 'success',
@@ -9084,6 +9302,10 @@ const SettingsManager = {
           localStorage.removeItem(ACTIVE_SETTINGS_PROFILE_KEY);
         }
         renderSettingsProfiles();
+        logReadableActivity('Profiles', `Settings profile deleted. Remaining profiles: ${Object.keys(profiles).length}.`, {
+          key: 'profile-delete',
+          force: true
+        });
       });
     }
 
@@ -9702,12 +9924,16 @@ const SettingsManager = {
       closeToTray: document.getElementById('closeToTray'),
       autoCheckForUpdates: document.getElementById('autoCheckForUpdates'),
       startupDelaySeconds: document.getElementById('startupDelaySeconds'),
-      disableGpuAcceleration: document.getElementById('disableGpuAcceleration')
+      disableGpuAcceleration: document.getElementById('disableGpuAcceleration'),
+      enableFileLogging: document.getElementById('enableFileLogging')
     };
 
     const hardwareAccelerationStatus = document.getElementById('hardwareAccelerationStatus');
     const appCacheStatus = document.getElementById('appCacheStatus');
     const clearAppCacheBtn = document.getElementById('clearAppCacheBtn');
+    const fileLoggingStatus = document.getElementById('fileLoggingStatus');
+    const openLogsFolderBtn = document.getElementById('openLogsFolderBtn');
+    const clearLogFileBtn = document.getElementById('clearLogFileBtn');
 
     const formatCacheSize = (bytes) => {
       const numeric = Number(bytes);
@@ -9738,6 +9964,28 @@ const SettingsManager = {
       } catch (error) {
         if (hardwareAccelerationStatus) hardwareAccelerationStatus.textContent = `Hardware acceleration status unavailable: ${error.message}`;
         if (appCacheStatus) appCacheStatus.textContent = 'Cache size: Unavailable';
+        return null;
+      }
+    };
+
+    const refreshFileLoggingStatus = async () => {
+      try {
+        const status = await ipcRenderer.invoke('logging:get-status');
+        if (!status || status.ok !== true) throw new Error(status?.error || 'Logging status is unavailable.');
+        if (openLogsFolderBtn) openLogsFolderBtn.disabled = status.enabled !== true;
+        if (clearLogFileBtn) clearLogFileBtn.disabled = status.enabled !== true;
+        if (fileLoggingStatus) {
+          if (!status.enabled) {
+            fileLoggingStatus.textContent = 'Readable file logging is disabled. Crash recovery remains active.';
+          } else if (status.usingFallback) {
+            fileLoggingStatus.textContent = `Logging to ${status.filePath} (the install directory was not writable).`;
+          } else {
+            fileLoggingStatus.textContent = `Logging to ${status.filePath}`;
+          }
+        }
+        return status;
+      } catch (error) {
+        if (fileLoggingStatus) fileLoggingStatus.textContent = `Logging status unavailable: ${error.message}`;
         return null;
       }
     };
@@ -9811,6 +10059,7 @@ const SettingsManager = {
         autoCheckForUpdates: !!appBehaviorControls.autoCheckForUpdates?.checked,
         startupDelaySeconds: appBehaviorControls.startupDelaySeconds?.value,
         disableGpuAcceleration: !!appBehaviorControls.disableGpuAcceleration?.checked,
+        enableFileLogging: !!appBehaviorControls.enableFileLogging?.checked,
         enableDiscordRichPresence: discordPresenceSelect ? (discordPresenceSelect.value === 'enabled') : true
       });
     };
@@ -9834,6 +10083,14 @@ const SettingsManager = {
               detail: 'Keep acceleration enabled for best performance. Disable it only when diagnosing GPU-driver or rendering problems.'
             }
           );
+        }
+        if (key === 'enableFileLogging') {
+          resetReadableActivityState();
+          await refreshFileLoggingStatus();
+          logReadableActivity('Logging', `Readable file logging ${saved.enableFileLogging ? 'enabled' : 'disabled'}.`, {
+            key: 'logging-state',
+            force: true
+          });
         }
       });
     });
@@ -9884,11 +10141,51 @@ const SettingsManager = {
       });
     }
 
+    if (openLogsFolderBtn) {
+      openLogsFolderBtn.addEventListener('click', async () => {
+        const result = await ipcRenderer.invoke('logging:open-folder').catch((error) => ({ ok: false, error: error.message }));
+        if (result?.ok === true) return;
+        await showThemedMessage('Unable to Open Logs', result?.error || 'The log folder is unavailable.', {
+          icon: 'bi-exclamation-triangle-fill',
+          tone: 'error'
+        });
+      });
+    }
+
+    if (clearLogFileBtn) {
+      clearLogFileBtn.addEventListener('click', async () => {
+        const accepted = await showThemedConfirmation(
+          'Clear Readable Log?',
+          'This removes the current logs.txt contents. Rotated older logs are kept for crash-history context.',
+          {
+            icon: 'bi-file-earmark-x',
+            tone: 'warning',
+            confirmLabel: 'Clear Log',
+            cancelLabel: 'Cancel'
+          }
+        );
+        if (!accepted) return;
+        const result = await ipcRenderer.invoke('logging:clear').catch((error) => ({ ok: false, error: error.message }));
+        if (result?.ok !== true) {
+          await showThemedMessage('Unable to Clear Log', result?.error || 'The log file is unavailable.', {
+            icon: 'bi-exclamation-triangle-fill',
+            tone: 'error'
+          });
+          return;
+        }
+        await refreshFileLoggingStatus();
+      });
+    }
+
     if (discordPresenceSelect) {
       discordPresenceSelect.addEventListener('change', async () => {
+        const requestedEnabled = discordPresenceSelect.value === 'enabled';
+        updateDiscordPresenceStatusUi({ enabled: requestedEnabled, connected: requestedEnabled ? null : false });
         const saved = await setAppBehaviorSettings(readAppBehaviorFromUi());
         applyAppBehaviorToUi(saved);
-        updateDiscordPresenceStatusUi({ enabled: saved.enableDiscordRichPresence, connected: false });
+        if (!saved.enableDiscordRichPresence) {
+          updateDiscordPresenceStatusUi({ enabled: false, connected: false });
+        }
       });
     }
 
@@ -9901,15 +10198,21 @@ const SettingsManager = {
         if (discordPresenceSelect) {
           discordPresenceSelect.value = newEnabled ? 'enabled' : 'disabled';
         }
+        updateDiscordPresenceStatusUi({ enabled: newEnabled, connected: newEnabled ? null : false });
         const saved = await setAppBehaviorSettings(readAppBehaviorFromUi());
         applyAppBehaviorToUi(saved);
-        updateDiscordPresenceStatusUi({ enabled: saved.enableDiscordRichPresence, connected: false });
+        if (!saved.enableDiscordRichPresence) {
+          updateDiscordPresenceStatusUi({ enabled: false, connected: false });
+        }
       });
     }
 
     ipcRenderer.on('discord-presence:status', (_event, payload) => {
       updateDiscordPresenceStatusUi(payload);
     });
+    ipcRenderer.invoke('discord-presence:get-status')
+      .then((status) => updateDiscordPresenceStatusUi(status))
+      .catch(() => {});
 
     ipcRenderer.on('overlay:toggle-state-changed', (_event, enabled) => {
       const overlayEnabledToggle = document.getElementById('overlayEnabledToggle');
@@ -9963,7 +10266,13 @@ const SettingsManager = {
 
       applyAppBehaviorToUi(effectiveSettings);
       await refreshPerformanceStatus();
-      updateDiscordPresenceStatusUi({ enabled: effectiveSettings.enableDiscordRichPresence, connected: effectiveSettings.enableDiscordRichPresence ? null : false });
+      await refreshFileLoggingStatus();
+      const discordStatus = await ipcRenderer.invoke('discord-presence:get-status')
+        .catch(() => ({
+          enabled: effectiveSettings.enableDiscordRichPresence,
+          connected: effectiveSettings.enableDiscordRichPresence ? null : false
+        }));
+      updateDiscordPresenceStatusUi(discordStatus);
       if (effectiveSettings.autoCheckForUpdates) {
         setTimeout(() => {
           performUpdateCheck({ automatic: true }).catch(() => {});
@@ -10808,6 +11117,7 @@ async function updateStats(forceRender = false) {
     const data = await sensorReader.getEnhancedData(mode, { aidaPath, providers: providerSelection });
     lastSensorReadDurationMs = Math.max(0, performance.now() - sensorReadStartedAt);
     const appRuntimeStats = await appRuntimeStatsPromise;
+    logSensorRuntimeStatus(data, providerSelection, lastSensorReadDurationMs);
     const builtinStatus = shouldUpdateDesktopUi ? document.getElementById('builtinSensorStatus') : null;
     if (builtinStatus) {
       const diagnostics = data && data.external && data.external.diagnostics;
@@ -11153,6 +11463,7 @@ function applyUiTooltips() {
     providerEnhanced: 'Enable expanded hardware access through the bundled LibreHardwareMonitor library.',
     hardwareAccessDriverInstallBtn: 'Install the bundled low-level driver used for Intel CPU package power and other protected hardware readings.',
     fanControlEnabled: 'Enable guarded software control for supported fan channels.',
+    fanControlLowRpmSafetyEnabled: 'When enabled, a fan commanded to at least 40% that remains below 100 RPM receives a temporary 100% recovery pulse. Disable this for fans with unreliable RPM telemetry or intentional zero-RPM operation.',
     fanControlRestoreAllBtn: 'Disable SiR fan control and return every claimed channel to BIOS automatic control.',
     providerRTSS: 'Enable RTSS/MSI shared-memory provider.',
     providerAIDA64: 'Enable AIDA64 shared-memory provider.',
@@ -11180,6 +11491,11 @@ function applyUiTooltips() {
     hardwareAccelerationStatus: 'Shows the acceleration mode used for the current app session and whether a restart is required.',
     clearAppCacheBtn: 'Clear regenerable Chromium web-resource and compiled-code caches without removing settings, profiles, or sensor data.',
     appCacheStatus: 'Shows the current Chromium HTTP cache size or the result of the latest cache-clear action.',
+    enableFileLogging: 'Write a readable activity and diagnostic timeline to a rotating logs.txt file, including startup, sensor discovery, recovery, services, profiles, and diagnostics. Live readings are not logged every refresh. This preference is included in profiles and exported settings.',
+    openLogsFolderBtn: 'Open the folder containing the active readable log file.',
+    clearLogFileBtn: 'Clear the current logs.txt file while keeping rotated crash-history logs.',
+    fileLoggingStatus: 'Shows whether readable logging is active and the exact path currently in use.',
+    crashRecoveryStatus: 'Crash recovery remains active independently of optional readable file logging.',
     checkForUpdatesBtn: 'Check GitHub releases for updates.',
     openLatestReleaseBtn: 'Open latest release page in browser.'
   };

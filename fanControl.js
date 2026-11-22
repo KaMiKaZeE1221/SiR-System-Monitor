@@ -98,6 +98,7 @@ function normalizeFanControlSettings(value = {}) {
 
   return {
     enabled: input.enabled === true,
+    lowRpmSafetyEnabled: input.lowRpmSafetyEnabled !== false,
     channels,
     globalCurve: normalizeFanCurve(input.globalCurve || {}),
     curveStudioCollapsed: input.curveStudioCollapsed === true

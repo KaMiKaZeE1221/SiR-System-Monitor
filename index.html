@@ -681,6 +681,21 @@
         <div class="settings-note">Disabling hardware acceleration is intended for GPU-driver or rendering compatibility problems and takes effect after restarting SiR. Clearing the cache removes regenerable Chromium web and compiled-code data only; profiles, layouts, sensor choices, and custom names are preserved.</div>
       </div>
 
+      <div class="settings-section" data-section-key="app_behavior_recovery_logging">
+        <label class="settings-label"><i class="bi bi-shield-check settings-label-icon" aria-hidden="true"></i><span>Recovery &amp; Logging</span></label>
+        <label class="checkbox-label settings-switch-row settings-inline-gap-sm">
+          <input type="checkbox" id="enableFileLogging">
+          <span>Enable readable file logging</span>
+        </label>
+        <div class="web-monitor-actions action-grid-two settings-inline-gap-sm">
+          <button id="openLogsFolderBtn" class="test-btn" type="button" disabled><i class="bi bi-folder2-open" aria-hidden="true"></i><span>Open Logs Folder</span></button>
+          <button id="clearLogFileBtn" class="test-btn" type="button" disabled><i class="bi bi-file-earmark-x" aria-hidden="true"></i><span>Clear Current Log</span></button>
+        </div>
+        <div id="fileLoggingStatus" class="settings-note settings-path-note" aria-live="polite">Readable file logging is disabled. Crash recovery remains active.</div>
+        <div id="crashRecoveryStatus" class="settings-note">Crash recovery is always active. SiR restarts stalled sensor hosts, reloads a failed dashboard/GPU renderer, and uses an external watchdog to restart the application after an unrecoverable crash or hang.</div>
+        <div class="settings-note">Logs include startup and hardware context, sensor discovery milestones, collector/FPS/provider state, slow-read warnings, recovery actions, and important web, overlay, fan-control, profile, settings, and diagnostic activity. Live sensor values are not written every refresh. Logs rotate automatically at 5 MB. SiR first uses a <strong>Logs</strong> folder beside the installed executable; if Windows blocks writes there, it reports and uses the per-user app-data Logs folder instead.</div>
+      </div>
+
       <div class="settings-section">
         <label class="settings-label"><i class="bi bi-cloud-arrow-down-fill settings-label-icon" aria-hidden="true"></i><span>App Updates</span></label>
         <label class="checkbox-label settings-switch-row settings-inline-gap-sm">
@@ -818,13 +833,17 @@
             <input type="checkbox" id="fanControlEnabled">
             <span>Enable guarded fan control</span>
           </label>
+          <label class="checkbox-label settings-switch-row fan-control-master" title="Disable this for fans with unreliable RPM telemetry or intentional zero-RPM operation.">
+            <input type="checkbox" id="fanControlLowRpmSafetyEnabled">
+            <span>Low-RPM 100% recovery pulse</span>
+          </label>
           <button id="fanControlRestoreAllBtn" class="test-btn" type="button"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> Return All Fans to BIOS</button>
         </div>
       </div>
 
       <div id="fanControlStatus" class="settings-note fan-control-workspace-status" aria-live="polite">Waiting for enhanced fan-control capabilities...</div>
       <div id="fanControlChannels" class="fan-control-list"></div>
-      <div class="settings-note fan-control-safety-note"><i class="bi bi-shield-check" aria-hidden="true"></i><span>Safety: 20% absolute minimum, configurable safe floor, gradual ramping, 100% on missing temperature or detected stall, 15-second heartbeat fallback, and BIOS restoration on normal shutdown. Pump, AIO, and PSU controls remain protected.</span></div>
+      <div class="settings-note fan-control-safety-note"><i class="bi bi-shield-check" aria-hidden="true"></i><span>Safety: 20% absolute minimum, configurable safe floor, gradual ramping, optional low-RPM recovery pulse, 100% on missing temperature or emergency temperature, heartbeat fallback, and BIOS restoration on normal shutdown. Pump, AIO, and PSU controls remain protected.</span></div>
     </section>
   </div>
 

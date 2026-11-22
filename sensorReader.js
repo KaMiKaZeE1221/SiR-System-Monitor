@@ -7,7 +7,12 @@ const path = require('path');
 const RTSSReader = require('./rtssReader');
 
 const HOST_RETRY_DELAY_MS = 1500;
-const HOST_SNAPSHOT_HOLD_MS = 8000;
+const ENHANCED_INITIAL_SNAPSHOT_TIMEOUT_MS = 12000;
+const ENHANCED_WARM_SNAPSHOT_TIMEOUT_MS = 9000;
+// Enhanced discovery can take around nine seconds after a 12-second timeout.
+// Keep the last valid values long enough for a killed host to be replaced so a
+// transient recovery does not blank every card on the dashboard.
+const HOST_SNAPSHOT_HOLD_MS = 30000;
 
 class BuiltinSensorHostClient {
   constructor() {
@@ -18,10 +23,13 @@ class BuiltinSensorHostClient {
     this.enhanced = false;
     this.lastFailureAt = 0;
     this.lastError = '';
+    this.lastHostActivity = '';
     this.lastSnapshot = null;
     this.lastSnapshotAt = 0;
     this.lastSnapshotEnhanced = false;
-    this.fanControlConfiguration = { enabled: false, channels: [] };
+    this.recoveryCount = 0;
+    this.currentHostSnapshotCount = 0;
+    this.fanControlConfiguration = { enabled: false, lowRpmSafetyEnabled: true, channels: [] };
   }
 
   resolveExecutablePath() {
@@ -142,12 +150,14 @@ class BuiltinSensorHostClient {
       this.enhanced = enhanced;
       this.buffer = '';
       this.lastError = '';
+      this.lastHostActivity = '';
+      this.currentHostSnapshotCount = 0;
 
       child.stdout.setEncoding('utf8');
       child.stdout.on('data', (chunk) => this.handleStdout(chunk));
       child.stderr.setEncoding('utf8');
       child.stderr.on('data', (chunk) => {
-        this.lastError = `${this.lastError}\n${chunk}`.trim().slice(-4000);
+        this.lastHostActivity = `${this.lastHostActivity}\n${chunk}`.trim().slice(-4000);
       });
       child.on('error', (error) => this.handleExit(child, error));
       child.on('exit', (code) => this.handleExit(child, new Error(`Built-in sensor host exited with code ${code}.`)));
@@ -166,6 +176,24 @@ class BuiltinSensorHostClient {
     this.lastError = error.message;
     this.lastFailureAt = Date.now();
     this.rejectPending(error);
+  }
+
+  terminateUnresponsiveHost(child, error) {
+    if (!child || this.child !== child) return;
+    const activityLines = String(this.lastHostActivity || '').trim().split(/\r?\n/).filter(Boolean);
+    const activityDetail = activityLines.length
+      ? ` Last native activity: ${activityLines[activityLines.length - 1]}`
+      : '';
+    const recoveryError = new Error(`${error.message}${activityDetail}`);
+    this.child = null;
+    this.buffer = '';
+    this.lastError = recoveryError.message;
+    this.lastFailureAt = Date.now();
+    this.recoveryCount += 1;
+    this.rejectPending(recoveryError);
+    try { child.stdin.destroy(); } catch (stdinError) {}
+    try { child.kill(); } catch (killError) {}
+    console.warn(`Built-in sensor host recovery #${this.recoveryCount}: ${recoveryError.message}`);
   }
 
   handleStdout(chunk) {
@@ -198,6 +226,7 @@ class BuiltinSensorHostClient {
         this.lastSnapshot = message.snapshot;
         this.lastSnapshotAt = Date.now();
         this.lastSnapshotEnhanced = message.snapshot?.diagnostics?.enhancedRequested === true;
+        this.currentHostSnapshotCount += 1;
       }
       entry.resolve(message.snapshot || message.result || null);
     } else entry.reject(new Error(message.error || 'Built-in sensor host request failed.'));
@@ -205,14 +234,24 @@ class BuiltinSensorHostClient {
 
   getHeldSnapshot(enhanced) {
     if (!this.lastSnapshot || this.lastSnapshotEnhanced !== enhanced) return null;
-    if ((Date.now() - this.lastSnapshotAt) > HOST_SNAPSHOT_HOLD_MS) return null;
-    return this.lastSnapshot;
+    const snapshotAgeMs = Date.now() - this.lastSnapshotAt;
+    if (snapshotAgeMs > HOST_SNAPSHOT_HOLD_MS) return null;
+    return {
+      ...this.lastSnapshot,
+      diagnostics: {
+        ...(this.lastSnapshot.diagnostics || {}),
+        recovering: true,
+        staleSnapshotAgeMs: snapshotAgeMs,
+        warning: this.lastError || 'The sensor collector is restarting; the last valid values are being retained temporarily.'
+      }
+    };
   }
 
   setFanControlConfiguration(configuration) {
     const input = configuration && typeof configuration === 'object' ? configuration : {};
     this.fanControlConfiguration = {
       enabled: input.enabled === true,
+      lowRpmSafetyEnabled: input.lowRpmSafetyEnabled !== false,
       channels: Array.isArray(input.channels) ? input.channels : []
     };
   }
@@ -225,14 +264,21 @@ class BuiltinSensorHostClient {
     if (!this.start(enhanced) || !this.child) return this.getHeldSnapshot(enhanced);
 
     const id = this.nextRequestId++;
+    const requestChild = this.child;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error('Built-in sensor host timed out.'));
-      }, enhanced ? 12000 : 5000);
+        const timeoutError = new Error('Built-in sensor host timed out and was restarted.');
+        this.terminateUnresponsiveHost(requestChild, timeoutError);
+        reject(timeoutError);
+      }, enhanced
+        ? (this.currentHostSnapshotCount > 0
+          ? ENHANCED_WARM_SNAPSHOT_TIMEOUT_MS
+          : ENHANCED_INITIAL_SNAPSHOT_TIMEOUT_MS)
+        : 5000);
       this.pending.set(id, { resolve, reject, timer });
       try {
-        this.child.stdin.write(`${JSON.stringify({
+        requestChild.stdin.write(`${JSON.stringify({
           id,
           command: 'snapshot',
           fanControl: this.fanControlConfiguration
@@ -302,7 +348,7 @@ class SensorReader {
       };
 
       const request = https.get('https://api.ipify.org', {
-        headers: { 'User-Agent': 'SiR-System-Monitor/1.3.9' }
+        headers: { 'User-Agent': 'SiR-System-Monitor/1.4.1' }
       }, (response) => {
         let body = '';
         response.setEncoding('utf8');
