@@ -2,7 +2,7 @@
   <h1>SiR System Monitor</h1>
   <p><strong>Real-time hardware monitoring for Windows, your desktop, your overlay, and your browser.</strong></p>
   <p>
-    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.4.0" src="https://img.shields.io/badge/version-1.4.0-f97316?style=for-the-badge"></a>
+    <a href="https://github.com/KaMiKaZeE1221/SiR-System-Monitor/releases/latest"><img alt="Version 1.4.1" src="https://img.shields.io/badge/version-1.4.1-f97316?style=for-the-badge"></a>
     <a href="#requirements"><img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&amp;logo=windows"></a>
     <a href="./LICENSE.txt"><img alt="GNU GPL v3" src="https://img.shields.io/badge/license-GPL--3.0-3DA639?style=for-the-badge"></a>
   </p>
@@ -32,19 +32,19 @@ SiR System Monitor is an open-source Windows desktop app that combines live syst
 | **Guarded fan control** | Opt-in manual levels and temperature curves for explicitly supported writable channels, including curves driven by one sensor or the average of two. |
 | **App telemetry** | Monitor SiR's own CPU/RAM use, uptime, process/window counts, refresh timing, sensor counts, active alerts, and Web Monitor connections. |
 | **Built-in diagnostics** | Run support-oriented checks, copy a combined report, or create a privacy-scrubbed ZIP support bundle directly from the app. |
-| **Layered crash recovery** | Automatically restarts a stalled sensor collector, reloads a failed dashboard/GPU renderer, or relaunches the full app after an unrecoverable crash. |																																													 
+| **Layered crash recovery** | Automatically restarts a stalled sensor collector, reloads a failed dashboard/GPU renderer, or relaunches the full app after an unrecoverable crash. |											 
 | **Configurable motion** | Independently control settings, dialog, Summary transition, and sensor-card icon animations, with matching Web Monitor behavior. |
 | **Profiles and portability** | Save named profiles or export the complete setup to JSON for backup and transfer. |
 
 Sensor groups include **FPS, CPU, GPU, Memory, PSU, Fans, Network, Ping, Drives, App, and Other**. FPS, generated-FPS, and frame-time values appear when an enabled source provides them. Generated FPS requires the game or display driver to expose an explicit generated-frame type to the bundled PresentMon collector; unsupported paths are left at zero rather than estimated.
 
-## What's new in 1.4.0
+## What's new in 1.4.1
 
-- Added an external watchdog with sleep/resume and crash-loop protection so an unrecoverable crash or long application hang can relaunch SiR automatically.
-- Added renderer and Chromium GPU-process recovery, while keeping sensor-host recovery independent so the smallest failed component is restarted first.
-- Added **App Behavior → Recovery & Logging** with optional rotating `Logs\\logs.txt`, exact-path feedback, Open Logs Folder, Clear Current Log, and profile/export/import support.
-- Added sanitized readable logs to support bundles when logging is enabled, and recovery state to the built-in System & App report.
-- Fixed a timed-out native collector remaining alive and leaving every later sensor request wedged after high CPU load or a GPU-driver timeout.
+- Separated fan-safety evaluation from low-level sensor refreshes so a blocked hardware device cannot also block fan recovery.
+- Added bounded fan-control leases: stalled refreshes and expired app heartbeats return claimed channels to BIOS/automatic control before the native collector is restarted.
+- Changed missing-temperature and low-RPM failsafes to use a short 100% safety attempt, then release the channel to firmware control if the fault persists.
+- Fixed disappearing fan-control sensors retaining their last software duty, including cases where the retained value was 100%.
+- Improved warm sensor-host recovery and timeout logs so a stalled hardware family can be identified from the readable log.
 
 See the [full changelog](./CHANGELOG.md) for every change and fix.
 
