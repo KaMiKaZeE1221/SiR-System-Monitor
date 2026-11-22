@@ -10,10 +10,17 @@
 - Reduced the timeout for an already-running enhanced collector from twelve to nine seconds while retaining the full twelve-second allowance for initial enhanced-hardware discovery and recovery startup.
 
 ### Fixed
+- Fixed enhanced AMD core-clock readings that could remain normalized to a fixed 100 MHz reference after a BCLK overclock. The native host now rebuilds affected clocks directly from the current core multiplier and measured bus clock, producing approximately 4.09 GHz for a 40.5x multiplier at 101 MHz BCLK, while avoiding double-correction when the source is already accurate.
+- Added a persisted **Low-RPM 100% recovery pulse** option to Fan Control. It remains enabled by default but can be disabled for intentional zero-RPM fans or unreliable tachometer readings without disabling missing-temperature, emergency-temperature, stale-data, heartbeat, shutdown, or BIOS-handoff protections.
+- Fixed the overall **CPU Clock Speed** row using the all-core average even when individual enhanced core clocks were available. It now follows the fastest corrected current non-effective core reading, while the separate average and effective-clock sensors remain available.
 - Fixed a stalled enhanced sensor refresh blocking the fan-control heartbeat behind the same native lock and leaving the last software fan command latched.
 - Fixed a fan-control sensor disappearing from enumeration without releasing its previously claimed control, including channels left at the 100% failsafe duty.
 - Fixed persistent missing temperature or RPM readings holding fans at 100% indefinitely instead of handing control back to the motherboard, GPU firmware, or BIOS.
 - Improved sensor-host recovery logs with the last native hardware-refresh phase, making intermittent device-family stalls identifiable in readable logs and support reports.
+
+### Known Issues (will be fixed next release...)
+- GPU fans when using the Fan Control may not act correctly, often going to 100% fan speed when they shouldn't.
+- When going to the Fan Control or Summary Modes the main tab sensor blocks may not resolve back to the correct saved positions, a small work around for now is to just minimize and maximize the app.
 
 ## 1.4.0 - 2026-10-06
 
