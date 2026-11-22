@@ -1,5 +1,20 @@
 # Changelog
 
+1.4.1 - 2026-11-22
+
+### Changed
+- Separated the native fan-safety timer from the low-level enhanced-hardware refresh lock, allowing heartbeat and stale-sensor protection to run even while a hardware polling call is blocked.
+- Added a seven-second sensor-refresh and application-heartbeat lease for software-controlled fans. Expired leases now return every claimed channel to BIOS/automatic control before the renderer terminates an unresponsive sensor host.
+- Changed missing-temperature failsafes to request 100% for up to five seconds, then release the affected channel to firmware control until its selected source recovers.
+- Changed low-RPM stall handling to retain the existing five-second 100% safety attempt, then return the channel to BIOS control after ten seconds if the RPM reading remains below 100.
+- Reduced the timeout for an already-running enhanced collector from twelve to nine seconds while retaining the full twelve-second allowance for initial enhanced-hardware discovery and recovery startup.
+
+### Fixed
+- Fixed a stalled enhanced sensor refresh blocking the fan-control heartbeat behind the same native lock and leaving the last software fan command latched.
+- Fixed a fan-control sensor disappearing from enumeration without releasing its previously claimed control, including channels left at the 100% failsafe duty.
+- Fixed persistent missing temperature or RPM readings holding fans at 100% indefinitely instead of handing control back to the motherboard, GPU firmware, or BIOS.
+- Improved sensor-host recovery logs with the last native hardware-refresh phase, making intermittent device-family stalls identifiable in readable logs and support reports.
+
 ## 1.4.0 - 2026-10-06
 
 ### Added
